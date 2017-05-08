@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 import time
 import astropy.wcs
 import astropy.io.fits
+import sys
+import os
+from image_eval import psf_poly_fit, image_model_eval
 
-visual = True
-
-def psf_poly_fit(psf0, nbin):
+'''def psf_poly_fit(psf0, nbin):
 	assert psf0.shape[0] == psf0.shape[1] # assert PSF is square
 	npix = psf0.shape[0]
 
@@ -37,7 +38,7 @@ def psf_poly_fit(psf0, nbin):
 	
 	return cf
 
-def image_model_eval(x, y, f, back, imsz, cf, weights=None, ref=None, lib=None):
+def image_model_eval(x, y, f, back, imsz, nc, cf, weights=None, ref=None, lib=None):
 	assert x.dtype == np.float32
 	assert y.dtype == np.float32
 	assert f.dtype == np.float32
@@ -49,7 +50,6 @@ def image_model_eval(x, y, f, back, imsz, cf, weights=None, ref=None, lib=None):
 		weights = np.full(imsz, 1., dtype=np.float32)
 
 	nstar = x.size
-	nc = 25 # should pass this in
 	rad = nc/2 # 12 for nc = 25
 
 	ix = np.ceil(x).astype(np.int32)
@@ -81,11 +81,11 @@ def image_model_eval(x, y, f, back, imsz, cf, weights=None, ref=None, lib=None):
 	if ref is not None:
 		return image, diff2
 	else:
-		return image
+		return image'''
 
 # ix, iy = 0. to 3.999
-def testpsf(cf, psf, ix, iy, lib=None):
-	psf0 = image_model_eval(np.array([12.-ix/5.], dtype=np.float32), np.array([12.-iy/5.], dtype=np.float32), np.array([1.], dtype=np.float32), 0., (25,25), cf, lib=lib)
+def testpsf(nc, cf, psf, ix, iy, lib=None):
+	psf0 = image_model_eval(np.array([12.-ix/5.], dtype=np.float32), np.array([12.-iy/5.], dtype=np.float32), np.array([1.], dtype=np.float32), 0., (25,25), nc, cf, lib=lib)
 	plt.subplot(2,2,1)
 	plt.imshow(psf0, interpolation='none', origin='lower')
 	plt.title('matrix multiply PSF')
@@ -114,33 +114,29 @@ def testpsf(cf, psf, ix, iy, lib=None):
 	plt.title('fractional difference')
 	plt.show()
 
-def numpairs(x,y,neigh,generate=False):
-	neighx = np.abs(x[:,np.newaxis] - x[np.newaxis,:])
-	neighy = np.abs(y[:,np.newaxis] - y[np.newaxis,:])
-	#adjacency = np.logical_and(neighx < neigh, neighy < neigh)
+def neighbours(x,y,neigh,i,generate=False):
+	neighx = np.abs(x - x[i])
+	neighy = np.abs(y - y[i])
 	adjacency = np.exp(-(neighx*neighx + neighy*neighy)/(2.*neigh*neigh))
-	nn = x.size
-	adjacency[xrange(nn), xrange(nn)] = False
-	pairs = np.sum(adjacency)
+	adjacency[i] = 0.
+	neighbours = np.sum(adjacency)
 	if generate:
-		if pairs:
-			idx = np.random.choice(x.size*x.size, p=adjacency.flatten()/float(pairs))
-			i = idx / nn
-			j = idx % nn
-			if i > j:
-				i, j = j, i
+		if neighbours:
+			j = np.random.choice(adjacency.size, p=adjacency.flatten()/float(neighbours))
 		else:
-			i, j = -1, -1
-		return pairs, i, j
+			j = -1
+		return neighbours, j
 	else:
-		return pairs
+		return neighbours
 
-psf = np.loadtxt('/n/fink1/sportillo/pcat-dnest/Data/sdss.0921_psf.txt', skiprows=1)
-print 'effective pixel number', 1./np.sum(psf[0:125:5,0:125:5]**2)
-# uncomment to use test "PSF" with no x or y symmetry
-#yy, xx = np.mgrid[0:125,0:125]
-#psf = xx*yy*yy*yy
-cf = psf_poly_fit(psf, nbin=5)
+dataname = sys.argv[1]
+visual = bool(sys.argv[2])
+
+f = open('Data/'+dataname+'_psf.txt')
+nc, nbin = [np.int32(i) for i in f.readline().split()]
+f.close()
+psf = np.loadtxt('Data/'+dataname+'_psf.txt', skiprows=1).astype(np.float32)
+cf = psf_poly_fit(psf, nbin=nbin)
 npar = cf.shape[2]
 cff = cf.reshape((cf.shape[0]*cf.shape[1], cf.shape[2]))
 
@@ -151,72 +147,29 @@ libmmult.pcat_model_eval.restype = c_double
 libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_1d_int, array_1d_int, array_2d_float, array_2d_float, array_2d_float]
 
 if visual:
-	testpsf(cff, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), lib=libmmult.pcat_model_eval)
+	testpsf(nc, cff, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), lib=libmmult.pcat_model_eval)
 
-# make mock data
-imsz = (100, 100) # image size width, height
-nstar = 1000
-truex = (np.random.uniform(size=nstar)*(imsz[0]-1)).astype(np.float32)
-truey = (np.random.uniform(size=nstar)*(imsz[1]-1)).astype(np.float32)
-truealpha = np.float32(2.0)
-trueminf = np.float32(250.)
-truelogf = np.random.exponential(scale=1./(truealpha-1.), size=nstar).astype(np.float32)
-truef = trueminf * np.exp(truelogf)
-trueback = np.float32(179.)
-gain = np.float32(4.62)
-
-noise = np.random.normal(size=(imsz[1],imsz[0])).astype(np.float32)
-mock = image_model_eval(truex, truey, truef, trueback, imsz, cff, lib=libmmult.pcat_model_eval)
-mock[mock < 1] = 1.
-variance = mock / gain
-mock += (np.sqrt(variance) * np.random.normal(size=(imsz[1],imsz[0]))).astype(np.float32)
-weight = np.float32(1.) / variance
-
-
-# uncomment this to use real data
-'''f = open('/n/fink1/sportillo/pcat-dnest/Data/sdss.0921_pix.txt')
+f = open('Data/'+dataname+'_pix.txt')
 w, h, nband = [np.int32(i) for i in f.readline().split()]
 imsz = (w, h)
 assert nband == 1
-junk1, junk2, junk3, junk4 = f.readline().split()
-bias, gain, exposure = [np.float32(i) for i in f.readline().split()]
-mock = np.loadtxt('/n/fink1/sportillo/pcat-dnest/Data/sdss.0921_cts.txt').astype(np.float32)
-mock -= bias
+bias, gain = [np.float32(i) for i in f.readline().split()]
+f.close()
+data = np.loadtxt('Data/'+dataname+'_cts.txt').astype(np.float32)
+data -= bias
 trueback = np.float32(179.)
-variance = mock / gain + (0.00*(mock-trueback))**2
-print '1 sigma is', np.min(np.sqrt(variance)), 'ADU'
+variance = data / gain
 weight = 1. / variance # inverse variance
-trueback = np.float32(179.) # from run-0923
 trueminf = np.float32(250.)
+truealpha = np.float32(2.00)
 
-CCcat = np.loadtxt('/n/fink1/sportillo/pcat-dnest/923_classical_sigfac')
-CCx = CCcat[:,0]
-CCy = CCcat[:,2]
-CCf = CCcat[:,4]
-conf = CCcat[:,8]
-mask = conf > 0.9
-CCx = CCx[mask]
-CCy = CCy[mask]
-CCf = CCf[mask]
+havetruth = os.path.isfile('Data/'+dataname+'_tru.txt')
+if havetruth:
+	truth = np.loadtxt('Data/'+dataname+'_tru.txt')
+	truex = truth[:,0]
+	truey = truth[:,1]
+	truef = truth[:,2]
 
-HTcat = np.loadtxt('/n/fink1/sportillo/pcat-dnest/Data/NGC7089R.RDVIQ.cal.adj.zpt', skiprows=1)
-HTra = HTcat[:,21]
-HTdc = HTcat[:,22]
-HT606= HTcat[:,3]
-hdulist = astropy.io.fits.open('/n/fink1/sportillo/pcat-dnest/Data/frame-r-002583-2-0136.fits')
-w = astropy.wcs.WCS(hdulist['PRIMARY'].header)
-pix_coordinates = w.wcs_world2pix(HTra, HTdc, 0)
-HTx = pix_coordinates[0] - 310
-HTy = pix_coordinates[1] - 630# - 75
-mask = HT606 > 0
-mask = np.logical_and(np.logical_and(np.logical_and(HTx > -0.5, HTx < 99.5), np.logical_and(HTy > -0.5, HTy < 99.5)), mask)
-truex = HTx[mask]
-truey = HTy[mask]
-def magtoadu(mag):
-        return 10**((22.5 - mag)/2.5) / 0.00546689
-truef = magtoadu(HT606[mask])
-print 'alpha', 1./np.mean(np.log(truef[truef>trueminf]/trueminf)) + 1.
-truealpha = np.float32(2.00) #placeholder'''
 # number of stars to use in fit
 nstar = 2000
 n = np.random.randint(nstar)+1
@@ -228,7 +181,7 @@ y[n:] = 0.
 f[n:] = 0.
 back = trueback
 
-nsamp = 100000
+nsamp = 10000
 nloop = 1000
 nsample = np.zeros(nsamp, dtype=np.int32)
 xsample = np.zeros((nsamp, nstar), dtype=np.float32)
@@ -250,8 +203,8 @@ for j in xrange(nsamp):
 	accept = np.zeros(nloop)
 	outbounds = np.zeros(nloop)
 
-	resid = mock.copy() # residual for zero image is data
-	model, diff2 = image_model_eval(x[0:n], y[0:n], f[0:n], back, imsz, cff, weights=weight, ref=resid, lib=libmmult.pcat_model_eval)
+	resid = data.copy() # residual for zero image is data
+	model, diff2 = image_model_eval(x[0:n], y[0:n], f[0:n], back, imsz, nc, cff, weights=weight, ref=resid, lib=libmmult.pcat_model_eval)
 	logL = -0.5*diff2
 	resid -= model
 
@@ -274,26 +227,30 @@ for j in xrange(nsamp):
 			mover = np.logical_and(np.abs(cx-x) < crad, np.abs(cy-y) < crad)
 			mover[n:] = False
 			nw = np.sum(mover).astype(np.int32)
-			dlogf = np.random.normal(size=nw).astype(np.float32)*np.float32(0.01/np.sqrt(50.))
+			df = np.random.normal(size=nw).astype(np.float32)*np.float32(25./np.sqrt(50.))
 			f0 = f[mover]
 
-			pf = f0*np.exp(dlogf)
+			oob_flux = (df < (trueminf - f0))
+			df[oob_flux] = -2*(f0[oob_flux]-trueminf) - df[oob_flux]
+			pf = f0+df
+			# bounce flux
+			if (pf < trueminf).any():
+				print f0[oob_flux], pf[oob_flux]
+			# calculate flux distribution prior factor
+			dlogf = np.log(pf/f0)
+			factor = -truealpha*np.sum(dlogf)
+
 			dpos_rms = np.float32(50./np.sqrt(50.))/(np.maximum(f0, pf))
 			dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
 			dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
 			px = x[mover] + dx
 			py = y[mover] + dy
-			# bounce fluxes
-			dlogf[pf < trueminf] = -2*np.log(f0[pf < trueminf] / trueminf) - dlogf[pf < trueminf]
-			pf[pf < trueminf] = trueminf*trueminf / pf[pf < trueminf]
-			factor = -truealpha*np.sum(dlogf)
-			# bouncing is awesome
 			# bounce off of crad box?
 			px[px < 0] = -px[px < 0]
 			px[px > (imsz[0] - 1)] = 2*(imsz[0] - 1) - px[px > (imsz[0] - 1)]
 			py[py < 0] = -py[py < 0]
 			py[py > (imsz[1] - 1)] = 2*(imsz[1] - 1) - py[py > (imsz[1] - 1)]
-			goodmove = True # because we bounce off the edges of the image and fmin
+			goodmove = True # always True because we bounce off the edges of the image and fmin
 		# hopper
 		elif rtype == 1:
 			mover = np.random.uniform(size=nstar) < 4./float(n+1)
@@ -346,23 +303,17 @@ for j in xrange(nsamp):
 		elif rtype == 4:
 			mover = np.full(nstar, False, dtype=np.bool)
 			splitsville = np.random.uniform() < 1./(np.exp(penalty) + 1.)
-			kickrange = 0.7
+			kickrange = 1.
 			sum_f = 0
 			low_n = 0
 			bright_n = 0
 			pn = n
 
-			cx = np.random.uniform()*(imsz[0]-1)
-			cy = np.random.uniform()*(imsz[1]-1)
-			matched = np.logical_and(np.abs(cx-x) < crad, np.abs(cy-y) < crad)
-			matched[n:] = False
-			nm = np.sum(matched)
-			bright_n = np.sum(np.logical_and(matched, f > 2*trueminf))
 			# split
-			if splitsville and n > 0 and n < nstar and nm > 0 and bright_n > 0: # need something to split, but don't exceed nstar
+			if splitsville and n > 0 and n < nstar and (f > 2*trueminf).any(): # need something to split, but don't exceed nstar
 				dx = np.random.normal()*kickrange
 				dy = np.random.normal()*kickrange
-				bright = np.logical_and(matched, f > 2*trueminf)
+				bright = f > 2*trueminf
 				bright_n = np.sum(bright)
 				im = np.random.randint(bright_n)
 				isplit = np.where(bright)[0][im]
@@ -379,23 +330,27 @@ for j in xrange(nsamp):
 					goodmove = True
 					# need to calculate factor
 					sum_f = f[isplit]
-					low_n = n # should this be nm?
-					xtemp = x[matched].copy()
-					ytemp = y[matched].copy()
+					low_n = n
+					xtemp = x[0:n].copy()
+					ytemp = y[0:n].copy()
 					xtemp[im] = px[0]
 					ytemp[im] = py[0]
-					pairs = numpairs(np.concatenate((xtemp, px[1:2])), np.concatenate((ytemp, py[1:2])), kickrange)
+					pairs = 0.5*(neighbours(np.concatenate((xtemp, px[1:2])), np.concatenate((ytemp, py[1:2])), kickrange, im) + \
+						neighbours(np.concatenate((xtemp, px[1:2])), np.concatenate((ytemp, py[1:2])), kickrange, -1))
 			# merge
-			elif not splitsville and n > 1 and nm > 1: # need two things to merge!
-				pairs, isplit, jsplit = numpairs(x[matched], y[matched], kickrange, generate=True) # jsplit > isplit
-				isplit = np.where(matched)[0][isplit]
-				jsplit = np.where(matched)[0][jsplit]
-				if pairs:
+			elif not splitsville and n > 1: # need two things to merge!
+				isplit = np.random.randint(n)
+				pairs, jsplit = neighbours(x[0:n], y[0:n], kickrange, isplit, generate=True) # jsplit, isplit order not guaranteed
+				pairs += neighbours(x[0:n], y[0:n], kickrange, jsplit)
+				pairs *= 0.5
+				if jsplit < isplit:
+					isplit, jsplit = jsplit, isplit
+				if jsplit != -1:
 					mover[isplit] = True
 					mover[jsplit] = True
 					sum_f = f[isplit] + f[jsplit]
 					frac = f[isplit] / sum_f
-					if jsplit != n-1: # merge to isplit and move last source to jsplit; only need to check jsplit because jsplit > isplit
+					if jsplit != n-1: # merge to isplit and move last source to jsplit, only need to check jsplit because jsplit > isplit
 						mover[n-1] = True
 						px = np.array([frac*x[isplit]+(1-frac)*x[jsplit], x[n-1], 0], dtype=np.float32)
 						py = np.array([frac*y[isplit]+(1-frac)*y[jsplit], y[n-1], 0], dtype=np.float32)
@@ -404,13 +359,15 @@ for j in xrange(nsamp):
 						px = np.array([frac*x[isplit]+(1-frac)*y[jsplit], 0], dtype=np.float32)
 						py = np.array([frac*y[isplit]+(1-frac)*y[jsplit], 0], dtype=np.float32)
 						pf = np.array([f[isplit] + f[jsplit], 0], dtype=np.float32)
-					low_n = n-1 # should this be nm - 1?
-					bright_n = np.sum(f[matched] > 2*trueminf) - np.sum(f[mover] > 2*trueminf) + np.sum(pf > 2*trueminf)
+					low_n = n
+					bright_n = np.sum(f > 2*trueminf) - np.sum(f[mover] > 2*trueminf) + np.sum(pf > 2*trueminf)
 					pn = n-1
 					goodmove = True # merge will be within image, and above min flux
 			if goodmove:
 				fminratio = sum_f / trueminf
-				factor = np.log(truealpha-1) + (truealpha-1)*np.log(trueminf) - truealpha*np.log(frac*(1-frac)*sum_f) + np.log(2*np.pi*kickrange*kickrange) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) + np.log(bright_n*(low_n+1)) - np.log(pairs) + np.log(sum_f) # last term is Jacobian
+				if frac == 1:
+					print '!!!', isplit, pairs, jsplit
+				factor = np.log(truealpha-1) + (truealpha-1)*np.log(trueminf) - truealpha*np.log(frac*(1-frac)*sum_f) + np.log(2*np.pi*kickrange*kickrange) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) + np.log(bright_n) - np.log(pairs) + np.log(sum_f) # last term is Jacobian
 				factor *= (pn - n)
 			nw = 2
 		# endif rtype	
@@ -419,7 +376,7 @@ for j in xrange(nsamp):
 
 		t2 = time.clock()
 		if goodmove:
-			dmodel, diff2 = image_model_eval(np.concatenate((px, x[mover])), np.concatenate((py, y[mover])), np.concatenate((pf, -f[mover])), dback, imsz, cff, weights=weight, ref=resid, lib=libmmult.pcat_model_eval)
+			dmodel, diff2 = image_model_eval(np.concatenate((px, x[mover])), np.concatenate((py, y[mover])), np.concatenate((pf, -f[mover])), dback, imsz, nc, cff, weights=weight, ref=resid, lib=libmmult.pcat_model_eval)
 
 			plogL = -0.5*diff2
 			if np.log(np.random.uniform()) < plogL + factor - logL:
@@ -443,12 +400,12 @@ for j in xrange(nsamp):
 		if visual and i == 0:
 			plt.clf()
 			plt.subplot(1,3,1)
-			plt.imshow(mock, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(mock), vmax=np.percentile(mock, 95))
-			mask = truef > 250
-			plt.scatter(truex[mask], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='lime')
-			mask = np.logical_not(mask)
-			plt.scatter(truex[mask], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
-			#plt.scatter(CCx, CCy, marker='1', s=np.sqrt(CCf), color='b')
+			plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+			if havetruth:
+				mask = truef > 250 # will have to change this for other data sets
+				plt.scatter(truex[mask], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='lime')
+				mask = np.logical_not(mask)
+				plt.scatter(truex[mask], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
 			plt.scatter(x[0:n], y[0:n], marker='x', s=np.sqrt(f[0:n]), color='r')
 			plt.xlim(-0.5, imsz[0]-0.5)
 			plt.ylim(-0.5, imsz[1]-0.5)
@@ -457,8 +414,11 @@ for j in xrange(nsamp):
 			if j == 0:
 				plt.tight_layout()
 			plt.subplot(1,3,3)
-			plt.hist(np.log10(truef), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='HST 606W', histtype='step')
-			plt.hist(np.log10(f[0:n]), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='Chain', histtype='step')
+			if havetruth:
+				plt.hist(np.log10(truef), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='HST 606W', histtype='step')
+				plt.hist(np.log10(f[0:n]), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='Chain', histtype='step')
+			else:
+				plt.hist(np.log10(f[0:n]), range=(np.log10(trueminf), np.ceil(np.log10(np.max(f[0:n])))), log=True, alpha=0.5, label='Chain', histtype='step')
 			plt.legend()
 			plt.xlabel('log10 flux')
 			plt.ylim((0.5, nstar))
