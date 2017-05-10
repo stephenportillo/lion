@@ -326,7 +326,7 @@ for j in xrange(nsamp):
 			outbounds[i] = 1
 		dt2[j] += time.clock() - t2
 	
-        if visual and i == 0:
+        	if visual and i == 0:
 			plt.clf()
 			plt.subplot(1,3,1)
 			plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
