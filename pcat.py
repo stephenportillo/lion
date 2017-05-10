@@ -9,80 +9,6 @@ import sys
 import os
 from image_eval import psf_poly_fit, image_model_eval
 
-'''def psf_poly_fit(psf0, nbin):
-	assert psf0.shape[0] == psf0.shape[1] # assert PSF is square
-	npix = psf0.shape[0]
-
-	# pad by one row and one column
-	psf = np.zeros((npix+1, npix+1), dtype=np.float32)
-	psf[0:npix, 0:npix] = psf0
-	
-	# make design matrix for each nbin x nbin region
-	nc = npix/nbin # dimension of original psf
-	nx = nbin+1
-	y, x = np.mgrid[0:nx, 0:nx] / np.float32(nbin)
-	x = x.flatten()
-	y = y.flatten()
-	A = np.array([np.full(nx*nx, 1, dtype=np.float32), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y], dtype=np.float32).T
-	# output array of coefficients
-	cf = np.zeros((nc, nc, A.shape[1]), dtype=np.float32)
-
-	# loop over original psf pixels and get fit coefficients
-	for iy in xrange(nc):
-	 for ix in xrange(nc):
-		# solve p = A cf for cf
-		p = psf[iy*nbin:(iy+1)*nbin+1, ix*nbin:(ix+1)*nbin+1].flatten()
-		AtAinv = np.linalg.inv(np.dot(A.T, A))
-		ans = np.dot(AtAinv, np.dot(A.T, p))
-		cf[iy,ix,:] = ans
-	
-	return cf
-
-def image_model_eval(x, y, f, back, imsz, nc, cf, weights=None, ref=None, lib=None):
-	assert x.dtype == np.float32
-	assert y.dtype == np.float32
-	assert f.dtype == np.float32
-	assert cf.dtype == np.float32
-	if ref is not None:
-		assert ref.dtype == np.float32
-
-	if weights is None:
-		weights = np.full(imsz, 1., dtype=np.float32)
-
-	nstar = x.size
-	rad = nc/2 # 12 for nc = 25
-
-	ix = np.ceil(x).astype(np.int32)
-	dx = ix - x
-	iy = np.ceil(y).astype(np.int32)
-	dy = iy - y
-
-	dd = np.stack((np.full(nstar, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32) * f
-
-	if lib is None:
-		image = np.full((imsz[1]+2*rad+1,imsz[0]+2*rad+1), back, dtype=np.float32)
-		recon = np.dot(dd.T, cf.T).reshape((nstar,nc,nc))
-		for i in xrange(nstar):
-			image[iy[i]:iy[i]+rad+rad+1,ix[i]:ix[i]+rad+rad+1] += recon[i,:,:]
-
-		image = image[rad:imsz[1]+rad,rad:imsz[0]+rad]
-
-		if ref is not None:
-			diff = ref - image
-			diff2 = np.sum(diff*diff*weights)
-	else:
-		image = np.full((imsz[1], imsz[0]), back, dtype=np.float32)
-		recon = np.zeros((nstar,nc*nc), dtype=np.float32)
-		reftemp = ref
-		if ref is None:
-			reftemp = np.zeros((imsz[1], imsz[0]), dtype=np.float32)
-		diff2 = lib(imsz[0], imsz[1], nstar, nc, cf.shape[1], dd, cf, recon, ix, iy, image, reftemp, weights)
-
-	if ref is not None:
-		return image, diff2
-	else:
-		return image'''
-
 # ix, iy = 0. to 3.999
 def testpsf(nc, cf, psf, ix, iy, lib=None):
 	psf0 = image_model_eval(np.array([12.-ix/5.], dtype=np.float32), np.array([12.-iy/5.], dtype=np.float32), np.array([1.], dtype=np.float32), 0., (25,25), nc, cf, lib=lib)
@@ -130,7 +56,7 @@ def neighbours(x,y,neigh,i,generate=False):
 		return neighbours
 
 dataname = sys.argv[1]
-visual = bool(sys.argv[2])
+visual = int(sys.argv[2]) > 0
 
 f = open('Data/'+dataname+'_psf.txt')
 nc, nbin = [np.int32(i) for i in f.readline().split()]
@@ -181,7 +107,7 @@ y[n:] = 0.
 f[n:] = 0.
 back = trueback
 
-nsamp = 10000
+nsamp = 1000
 nloop = 1000
 nsample = np.zeros(nsamp, dtype=np.int32)
 xsample = np.zeros((nsamp, nstar), dtype=np.float32)
@@ -227,7 +153,7 @@ for j in xrange(nsamp):
 			mover = np.logical_and(np.abs(cx-x) < crad, np.abs(cy-y) < crad)
 			mover[n:] = False
 			nw = np.sum(mover).astype(np.int32)
-			df = np.random.normal(size=nw).astype(np.float32)*np.float32(25./np.sqrt(50.))
+			df = np.random.normal(size=nw).astype(np.float32)*np.float32(60./np.sqrt(25.))
 			f0 = f[mover]
 
 			oob_flux = (df < (trueminf - f0))
@@ -240,7 +166,7 @@ for j in xrange(nsamp):
 			dlogf = np.log(pf/f0)
 			factor = -truealpha*np.sum(dlogf)
 
-			dpos_rms = np.float32(50./np.sqrt(50.))/(np.maximum(f0, pf))
+			dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0, pf))
 			dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
 			dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
 			px = x[mover] + dx
@@ -343,9 +269,9 @@ for j in xrange(nsamp):
 				pairs, jsplit = neighbours(x[0:n], y[0:n], kickrange, isplit, generate=True) # jsplit, isplit order not guaranteed
 				pairs += neighbours(x[0:n], y[0:n], kickrange, jsplit)
 				pairs *= 0.5
-				if jsplit < isplit:
-					isplit, jsplit = jsplit, isplit
 				if jsplit != -1:
+					if jsplit < isplit:
+						isplit, jsplit = jsplit, isplit
 					mover[isplit] = True
 					mover[jsplit] = True
 					sum_f = f[isplit] + f[jsplit]
@@ -365,8 +291,6 @@ for j in xrange(nsamp):
 					goodmove = True # merge will be within image, and above min flux
 			if goodmove:
 				fminratio = sum_f / trueminf
-				if frac == 1:
-					print '!!!', isplit, pairs, jsplit
 				factor = np.log(truealpha-1) + (truealpha-1)*np.log(trueminf) - truealpha*np.log(frac*(1-frac)*sum_f) + np.log(2*np.pi*kickrange*kickrange) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) + np.log(bright_n) - np.log(pairs) + np.log(sum_f) # last term is Jacobian
 				factor *= (pn - n)
 			nw = 2
