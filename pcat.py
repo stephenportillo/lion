@@ -1,7 +1,12 @@
 import numpy as np
 import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
+
+# in order for visual=True to work, interactive backend should be loaded before importing pyplot
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
+
 import time
 import astropy.wcs
 import astropy.io.fits
@@ -320,8 +325,8 @@ for j in xrange(nsamp):
 			acceptance[j] += 0 # null move always accepted
 			outbounds[i] = 1
 		dt2[j] += time.clock() - t2
-		
-		if visual and i == 0:
+	
+        if visual and i == 0:
 			plt.clf()
 			plt.subplot(1,3,1)
 			plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
