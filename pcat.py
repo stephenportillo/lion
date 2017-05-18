@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
-
+import h5py
 # in order for visual=True to work, interactive backend should be loaded before importing pyplot
 import matplotlib
 matplotlib.use('TkAgg')
@@ -60,8 +60,16 @@ def neighbours(x,y,neigh,i,generate=False):
 	else:
 		return neighbours
 
+# script arguments
 dataname = sys.argv[1]
 visual = int(sys.argv[2]) > 0
+# 1 to test, 0 not to test
+testpsfn = int(sys.argv[3]) > 0
+# 'star' for star only, 'stargalx' for star and galaxy
+strgmode = sys.argv[4]
+# 'mock' for simulated
+datatype = sys.argv[5]
+
 
 f = open('Data/'+dataname+'_psf.txt')
 nc, nbin = [np.int32(i) for i in f.readline().split()]
@@ -77,7 +85,7 @@ libmmult = npct.load_library('pcat-lion', '.')
 libmmult.pcat_model_eval.restype = c_double
 libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_1d_int, array_1d_int, array_2d_float, array_2d_float, array_2d_float]
 
-if visual:
+if visual and testpsfn:
 	testpsf(nc, cff, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), lib=libmmult.pcat_model_eval)
 
 f = open('Data/'+dataname+'_pix.txt')
@@ -94,12 +102,29 @@ weight = 1. / variance # inverse variance
 trueminf = np.float32(250.)
 truealpha = np.float32(2.00)
 
-havetruth = os.path.isfile('Data/'+dataname+'_tru.txt')
-if havetruth:
-	truth = np.loadtxt('Data/'+dataname+'_tru.txt')
-	truex = truth[:,0]
-	truey = truth[:,1]
-	truef = truth[:,2]
+print 'Lion mode'
+print strgmode
+print 'datatype'
+print datatype
+
+if datatype == 'mock':
+    if strgmode == 'star':
+        truth = np.loadtxt('Data/'+dataname+'_tru.txt')
+        truex = truth[:,0]
+        truey = truth[:,1]
+        truef = truth[:,2]
+    if strgmode == 'stargalx':
+        pathliondata = os.environ["LION_DATA_PATH"] + '/data/'
+        truth = np.loadtxt(pathliondata + 'truecnts.txt')
+        filetrue = h5py.File(pathliondata + 'true.h5', 'r')
+        dictglob = dict()
+        for attr in filetrue:
+            dictglob[attr] = filetrue[attr][()]
+        filetrue.close()
+    
+    labldata = 'True'
+else:
+    labldata = 'HST 606W'
 
 # number of stars to use in fit
 nstar = 2000
@@ -330,7 +355,7 @@ for j in xrange(nsamp):
 			plt.clf()
 			plt.subplot(1,3,1)
 			plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
-			if havetruth:
+			if datatype == 'mock':
 				mask = truef > 250 # will have to change this for other data sets
 				plt.scatter(truex[mask], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='lime')
 				mask = np.logical_not(mask)
@@ -343,8 +368,9 @@ for j in xrange(nsamp):
 			if j == 0:
 				plt.tight_layout()
 			plt.subplot(1,3,3)
-			if havetruth:
-				plt.hist(np.log10(truef), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='HST 606W', histtype='step')
+
+			if datatype == 'mock':
+				plt.hist(np.log10(truef), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step')
 				plt.hist(np.log10(f[0:n]), range=(np.log10(trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='Chain', histtype='step')
 			else:
 				plt.hist(np.log10(f[0:n]), range=(np.log10(trueminf), np.ceil(np.log10(np.max(f[0:n])))), log=True, alpha=0.5, label='Chain', histtype='step')
