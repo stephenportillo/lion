@@ -1,8 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn
-seaborn.set(color_codes=True)
+import seaborn as sns
+sns.set(context='poster', style='ticks', color_codes=True)
 import sys, os, h5py
+import scipy as sp
 
 def summgene(varb):
     print np.amin(varb)
@@ -12,29 +13,63 @@ def summgene(varb):
     print
 
 
-def retr_sers(numbsidegrid, sersindx):
+def retr_factsers(sersindx):
     
-    # approximation to the b_n factor
-    fact = 1.9992 * sersindx - 0.3271
+    factsers = 1.9992 * sersindx - 0.3271
 
-    # number of pixels out to which the profile is sampled
-    numbsamp = 5.
+    return factsers
+
+
+def retr_sers(numbsidegrid=21, sersindx=2., factradigalx=2., pathplot=None):
+    
+    # numbsidegrid is the number of pixels along one side of the grid and should be an odd number
 
     # generate the grid
-    xpostemp = np.linspace(0., numbsamp, numbsidegrid)
-    ypostemp = np.linspace(0., numbsamp, numbsidegrid)
+    xpostemp = np.linspace(-factradigalx, factradigalx, numbsidegrid)
+    ypostemp = np.linspace(-factradigalx, factradigalx, numbsidegrid)
     xpos, ypos = np.meshgrid(xpostemp, ypostemp)
-    xpos = 2. * xpos - numbsamp
-    ypos = 2. * ypos - numbsamp
     gridphon = np.vstack((xpos.flatten(), ypos.flatten()))
-
+    
     # evaluate the Sersic profile
-    amplphon = np.exp(-fact * np.sqrt(xpos**2 + ypos**2)**(1. / sersindx)).flatten()
-
-    # normalize such that the sum is unity
+    ## approximation to the b_n factor
+    factsers = retr_factsers(sersindx)
+    ## profile sampled over the square grid
+    amplphon = np.exp(-factsers * np.sqrt(xpos**2 + ypos**2)**(1. / sersindx)).flatten()
+    ## normalize such that the sum is unity
     amplphon /= sum(amplphon)
+    
+    if pathplot != None:
+        figr, axis = plt.subplots(figsize=(6, 6))
+        radi = np.sqrt(xpos**2 + ypos**2).flatten()
+        axis.plot(radi, amplphon)
+        axis.set_yscale('log')
+        axis.set_xlabel(r'$\theta$ [pixel]')
+        axis.set_ylabel(r'$\Sigma$')
+        axis.axvline(1., ls='--')
+        path = pathplot + 'sersprof.pdf'
+        plt.tight_layout()
+        plt.savefig(path)
+        plt.close(figr)
 
     return gridphon, amplphon
+
+
+def main():
+    
+    # sample the Sersic profile to get the phonion positions and amplitudes
+
+    return gridphon, amplphon
+
+
+def samp_powr(minm, maxm, indx, size=1):
+    
+    cdfn = np.random.random(size=size)
+    minmtran = minm**(1. - indx)
+    maxmtran = maxm**(1. - indx)
+
+    icdf = (minmtran + (maxmtran - minmtran) * cdfn)**(1. / (1. - indx))
+    
+    return icdf
 
 
 def retr_tranphon(gridphon, amplphon, xposgalx, yposgalx, specgalx, argsfrst, argsseco, argsthrd, paratype='fris'):
@@ -72,19 +107,41 @@ def retr_tranphon(gridphon, amplphon, xposgalx, yposgalx, specgalx, argsfrst, ar
     # positions of the phonions
     xposphon = xposgalx + gridphontran[0, :]
     yposphon = yposgalx + gridphontran[1, :]
-
+    
     # spectrum of the phonions
-    specphon = amplphon * specgalx * 7.2 * np.pi * radigalx**2
+    specphon = amplphon[None, :] * specgalx[:, None]
     
     return xposphon, yposphon, specphon
 
 
-def retr_sizephon(specphon):
+def retr_sbrt(spec, radigalx, sersindx):
+    
+    factsers = retr_factsers(sersindx)
+    
+    sbrt = spec / 7.2 / np.pi / radigalx[None, :]**2
+    
+    #fact = 1. / 2. / np.pi * factsers**(sersindx*2) / sersindx / sp.special.gamma(2. * sersindx)
+    #print 'retr_sbrt'
+    #print 'sersindx'
+    #print sersindx
+    #print 'fact'
+    #print fact
+    #print
+    #sbrt = fact * spec / radigalx**2
+    
+    return sbrt
+
+
+def retr_sizephonmrkr(specphon):
     
     # minimum and maximum marker sizes
-    minm = 1e-1
-    maxm = 1000.
-    size = 30. * (np.log10(specphon) - np.log10(minm)) / (np.log10(maxm) - np.log10(minm))
+    minm = 1e-4
+    maxm = 1e6
+    size = 5. * (np.log10(specphon) - np.log10(minm)) / (np.log10(maxm) - np.log10(minm))
+    if ((specphon < minm) | (specphon > maxm)).any():
+        print 'specphon'
+        summgene(specphon)
+        raise
 
     return size
 
@@ -96,8 +153,12 @@ def writ_truedata():
     from image_eval import image_model_eval, psf_poly_fit
     
     dictglob = dict()
+    
+    sersindx = 2.
+    numbsidegrid = 21
 
     pathliondata = os.environ["LION_DATA_PATH"] + '/data/'
+    pathlionimag = os.environ["LION_DATA_PATH"] + '/imag/'
     fileobjt = open(pathliondata + 'sdss.0921_psf.txt')
     numbsidepsfn, factsamp = [np.int32(i) for i in fileobjt.readline().split()]
     fileobjt.close()
@@ -110,7 +171,7 @@ def writ_truedata():
     numbside = [100, 100]
     
     # generate stars
-    numbstar = 100
+    numbstar = 1
     fluxdistslop = np.float32(2.0)
     minmflux = np.float32(250.)
     logtflux = np.random.exponential(scale=1. / (fluxdistslop - 1.), size=numbstar).astype(np.float32)
@@ -121,40 +182,54 @@ def writ_truedata():
     dictglob['fluxdistslop'] = fluxdistslop
     dictglob['minmflux'] = minmflux
     dictglob['fluxstar'] = minmflux * np.exp(logtflux)
-    dictglob['specstar'] = dictglob['fluxstar']
+    dictglob['specstar'] = dictglob['fluxstar'][None, :]
     
     dictglob['back'] = np.float32(179.)
     dictglob['gain'] = np.float32(4.62)
     
     # generate galaxies
-    dictglob['numbgalx'] = 100
+    numbgalx = 100
+    dictglob['numbgalx'] = numbgalx
     
-    dictglob['xposgalx'] = (np.random.uniform(size=numbstar) * (numbside[0] - 1)).astype(np.float32)
-    dictglob['yposgalx'] = (np.random.uniform(size=numbstar) * (numbside[1] - 1)).astype(np.float32)
-    dictglob['avecfrst'] = (0.2 * (np.random.uniform(size=numbstar) * - 0.5)).astype(np.float32)
-    dictglob['avecseco'] = (np.random.uniform(size=numbstar) * 5.).astype(np.float32)
-    dictglob['avecthrd'] = (np.random.uniform(size=numbstar) * 5.).astype(np.float32)
-    dictglob['specgalx'] = dictglob['fluxstar'][None, :]
+    dictglob['xposgalx'] = (np.random.uniform(size=numbgalx) * (numbside[0] - 1)).astype(np.float32)
+    dictglob['yposgalx'] = (np.random.uniform(size=numbgalx) * (numbside[1] - 1)).astype(np.float32)
+
+    dictglob['sizegalx'] = samp_powr(2., 10., 1.5, size=numbgalx)
+    dictglob['avecfrst'] = (2. * np.random.uniform(size=numbgalx) - 1.).astype(np.float32)
+    dictglob['avecseco'] = (2. * np.random.uniform(size=numbgalx) - 1.).astype(np.float32)
+    dictglob['avecthrd'] = (2. * np.random.uniform(size=numbgalx) - 1.).astype(np.float32)
+    mgtd = np.sqrt(dictglob['avecfrst']**2 + dictglob['avecseco']**2 + dictglob['avecthrd']**2)
+    dictglob['avecfrst'] /= mgtd
+    dictglob['avecseco'] /= mgtd
+    dictglob['avecthrd'] /= mgtd
+    dictglob['specgalx'] = samp_powr(2500., 25000., 2., size=numbgalx)[None, :]
+    dictglob['sbrtgalx'] = retr_sbrt(dictglob['specgalx'], dictglob['sizegalx'], sersindx)
     
-    sersindx = 4.
-    numbsidegrid = 21
-    gridphon, amplphon = retr_sers(numbsidegrid, sersindx)
+    gridphon, amplphon = retr_sers(numbsidegrid=numbsidegrid, sersindx=sersindx, pathplot=pathlionimag)
+    numbphongalx = numbsidegrid**2
+    numbener = 1
+    numbphon = numbgalx * numbphongalx
+    xposphon = np.empty(numbphon)
+    yposphon = np.empty(numbphon)
+    specphon = np.empty((numbener, numbphon))
     for k in range(dictglob['numbgalx']):
-        xposphon, yposphon, specphon = retr_tranphon(gridphon, amplphon, dictglob['xposgalx'][k], dictglob['yposgalx'][k], dictglob['specgalx'][:, k], \
-                                                                                        dictglob['avecfrst'][k], dictglob['avecseco'][k], dictglob['avecthrd'][k], 'fris')
+        indx = np.arange(k * numbphongalx, (k + 1) * numbphongalx)
+        gridphontemp = gridphon * dictglob['sizegalx'][k]
+        xposphon[indx], yposphon[indx], specphon[:, indx] = retr_tranphon(gridphontemp, amplphon, dictglob['xposgalx'][k], dictglob['yposgalx'][k], dictglob['specgalx'][:, k], \
+                                                                                             dictglob['avecfrst'][k], dictglob['avecseco'][k], dictglob['avecthrd'][k], 'fris')
     
 
     xposcand = np.concatenate((xposphon, dictglob['xposstar'])).astype(np.float32)
     yposcand = np.concatenate((yposphon, dictglob['yposstar'])).astype(np.float32)
-    fluxcand = np.concatenate((specphon, dictglob['fluxstar'])).astype(np.float32)
+    speccand = np.concatenate((specphon, dictglob['specstar']), axis=1).astype(np.float32)
     
     indx = np.where((xposcand < 100.) & (xposcand > 0.) & (yposcand < 100.) & (yposcand > 0.))[0]
     xposcand =  xposcand[indx]
     yposcand =  yposcand[indx]
-    fluxcand =  fluxcand[indx]
-
+    speccand =  speccand[:, indx]
+    
     # generate data
-    datacnts = image_model_eval(xposcand, yposcand, fluxcand, dictglob['back'], numbside, numbsidepsfn, cpsf)
+    datacnts = image_model_eval(xposcand, yposcand, speccand[0, :], dictglob['back'], numbside, numbsidepsfn, cpsf)
     #datacnts[datacnts < 1] = 1. # maybe some negative pixels
     variance = datacnts / dictglob['gain']
     datacnts += (np.sqrt(variance) * np.random.normal(size=(numbside[1],numbside[0]))).astype(np.float32)
@@ -169,18 +244,40 @@ def writ_truedata():
     for attr, valu in dictglob.iteritems():
         filearry.create_dataset(attr, data=valu)
     filearry.close()
-   
+
+    gdat = gdatstrt()
+    gdat.pathlionimag = pathlionimag
+    plot_cntsmaps(gdat, datacnts, 'truedatacnts')
+    plot_cntsmaps(gdat, datacnts, 'truedatacntsphon', xposcand=xposcand, yposcand=yposcand, speccand=speccand)
+  
+
+class gdatstrt(object):
+    
+    def __init__(self):
+        pass
+
+    ##def __setattr__(self, attr, valu):
+    #    super(gdatstrt, self).__setattr__(attr, valu)
+
+
+def plot_cntsmaps(gdat, maps, name, xposcand=None, yposcand=None, speccand=None):
+    
+    figr, axis = plt.subplots(figsize=(6, 6))
+    axis.imshow(np.arcsinh(maps), interpolation='nearest')
+    if speccand != None:
+        size = retr_sizephonmrkr(speccand[0, :])
+        axis.scatter(xposcand, yposcand, s=size, alpha=0.2)
+    axis.set_ylim([0., 100.])
+    axis.set_xlim([0., 100.])
+    path = gdat.pathlionimag + name + '.pdf'
+    plt.savefig(path)
+    plt.close(figr)
+
 
 def main():
     
-    # number of profile samples along the edge of the square grid
-    numbsidegrid = 11
-
-    # Sersic index
-    sersindx = 4.
-
     # sample the Sersic profile to get the phonion positions and amplitudes
-    gridphon, amplphon = retr_sers(numbsidegrid, sersindx)
+    gridphon, amplphon = retr_sers()
     
     sizesqrt = 5. / np.sqrt(2.)
         
@@ -229,16 +326,17 @@ def main():
         listparagalx = []
         listavec = []
         numbiterfrst = 5
-        numbiterseco = 5
-        numbiterthrd = 5
-        listavecfrst = np.linspace(0.1, 2., numbiterfrst)
-        listavecseco = np.linspace(0.1, 2., numbiterseco)
-        #listavecthrd = np.array([2.])#np.linspace(0.1, 2., numbiterthrd)
-        listavecthrd = np.linspace(0.1, 2., numbiterthrd)
+        numbiterseco = 2
+        numbiterthrd = 2
+        listavecfrst = np.linspace(-1., 1., numbiterfrst)
+        listavecseco = np.linspace(0., 1., numbiterseco)
+        listavecthrd = np.linspace(0., 1., numbiterthrd)
         for k in range(numbiterfrst):
             for l in range(numbiterseco):
                 for m in range(numbiterthrd):
-                    listparagalx.append([0., 0., 100., listavecfrst[k], listavecseco[l], listavecthrd[m], 'fris'])
+                    if listavecfrst[k] == 0. and listavecseco[l] == 0. and listavecthrd[m] == 0.:
+                        continue
+                    listparagalx.append([0., 0., np.array([10.]), listavecfrst[k], listavecseco[l], listavecthrd[m], 'fris'])
                     listavec.append([listavecfrst[k], listavecseco[l], listavecthrd[m]])
     
     plot_phon(listparagalx, gridphon, amplphon, listavec)
@@ -261,20 +359,21 @@ def plot_phon(listparagalx, gridphon, amplphon, listavec=None):
         figr, axis = plt.subplots(figsize=(6, 6))
         
         xposphon, yposphon, specphon = retr_tranphon(gridphon, amplphon, xposgalx, yposgalx, specgalx, argsfrst, argsseco, argsthrd, paratype)
-        size = retr_sizephon(specphon)
+        size = retr_sizephonmrkr(specphon[0, :])
         
-        indxgrtr = np.where(specphon > minmflux)
+        indxgrtr = np.where(specphon[0, :] > minmflux)
         axis.scatter(xposphon, yposphon, s=size, color='g')
         axis.scatter(xposphon[indxgrtr], yposphon[indxgrtr], s=size[indxgrtr], color='b')
         
         if listavec != None:
-            axis.set_title('$A_x=%4.2g A_y=%4.2g A_z=%4.2g$' % (listavec[k][0], listavec[k][1], listavec[k][2]))
-        axis.set_xlim([-50, 50])
-        axis.set_ylim([-50, 50])
+            axis.set_title('$A_x=%4.2g, A_y=%4.2g, A_z=%4.2g$' % (listavec[k][0], listavec[k][1], listavec[k][2]))
+        axis.set_xlim([-4, 4])
+        axis.set_ylim([-4, 4])
         axis.set_xlabel('$x$')
-        axis.set_xlabel('$y$')
+        axis.set_ylabel('$y$')
     
         path = pathplot + 'galx%s.pdf' % k
+        plt.tight_layout()
         figr.savefig(path)
         plt.close(figr)
 
