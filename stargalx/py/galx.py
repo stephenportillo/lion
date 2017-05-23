@@ -20,7 +20,7 @@ def retr_factsers(sersindx):
     return factsers
 
 
-def retr_sers(numbsidegrid=21, sersindx=2., factradigalx=2., pathplot=None):
+def retr_sers(numbsidegrid=21, sersindx=4., factradigalx=2., pathplot=None):
     
     # numbsidegrid is the number of pixels along one side of the grid and should be an odd number
 
@@ -34,7 +34,7 @@ def retr_sers(numbsidegrid=21, sersindx=2., factradigalx=2., pathplot=None):
     ## approximation to the b_n factor
     factsers = retr_factsers(sersindx)
     ## profile sampled over the square grid
-    amplphon = np.exp(-factsers * np.sqrt(xpos**2 + ypos**2)**(1. / sersindx)).flatten()
+    amplphon = np.exp(-factsers * (np.sqrt(xpos**2 + ypos**2)**(1. / sersindx) - 1.)).flatten()
     ## normalize such that the sum is unity
     amplphon /= sum(amplphon)
     
