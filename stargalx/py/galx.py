@@ -20,33 +20,50 @@ def retr_factsers(sersindx):
     return factsers
 
 
-def retr_sers(numbsidegrid=21, sersindx=4., factradigalx=2., pathplot=None):
+def retr_sers(numbsidegrid=20, sersindx=4., factusam=100, factradigalx=2., pathplot=None):
     
     # numbsidegrid is the number of pixels along one side of the grid and should be an odd number
 
+    numbsidegridusam = numbsidegrid * factusam
+
     # generate the grid
-    xpostemp = np.linspace(-factradigalx, factradigalx, numbsidegrid)
-    ypostemp = np.linspace(-factradigalx, factradigalx, numbsidegrid)
+    xpostemp = np.linspace(-factradigalx, factradigalx, numbsidegridusam + 1)
+    ypostemp = np.linspace(-factradigalx, factradigalx, numbsidegridusam + 1)
     xpos, ypos = np.meshgrid(xpostemp, ypostemp)
-    gridphon = np.vstack((xpos.flatten(), ypos.flatten()))
     
     # evaluate the Sersic profile
     ## approximation to the b_n factor
     factsers = retr_factsers(sersindx)
     ## profile sampled over the square grid
-    amplphon = np.exp(-factsers * (np.sqrt(xpos**2 + ypos**2)**(1. / sersindx) - 1.)).flatten()
+    amplphonusam = np.exp(-factsers * (np.sqrt(xpos**2 + ypos**2)**(1. / sersindx) - 1.))#.flatten()
+    ## down sample
+    amplphon = np.empty((numbsidegrid + 1, numbsidegrid + 1))
+    for k in range(numbsidegrid + 1):
+        for l in range(numbsidegrid + 1):
+            amplphon[k, l] = np.mean(amplphonusam[k*factusam:(k+1)*factusam, l*factusam:(l+1)*factusam])
+    #indx = np.arange(factusam / 2, numbsidegridusam - factusam / 2 + 1, factusam) 
+    indx = np.linspace(factusam / 2, numbsidegridusam - factusam / 2 + 1, numbsidegrid + 1, dtype=int) 
+    
+    xpostemp = xpostemp[indx]
+    ypostemp = ypostemp[indx]
+    
+    xpos, ypos = np.meshgrid(xpostemp, ypostemp)
+    
+    amplphon = amplphon.flatten()
     ## normalize such that the sum is unity
     amplphon /= sum(amplphon)
+    
+    gridphon = np.vstack((xpos.flatten(), ypos.flatten()))
     
     if pathplot != None:
         figr, axis = plt.subplots(figsize=(6, 6))
         radi = np.sqrt(xpos**2 + ypos**2).flatten()
-        axis.plot(radi, amplphon)
+        axis.plot(radi, amplphon, ls='', marker='o', markersize=1)
         axis.set_yscale('log')
         axis.set_xlabel(r'$\theta$ [pixel]')
         axis.set_ylabel(r'$\Sigma$')
         axis.axvline(1., ls='--')
-        path = pathplot + 'sersprof.pdf'
+        path = pathplot + 'sersprof%03.2g.pdf' % sersindx
         plt.tight_layout()
         plt.savefig(path)
         plt.close(figr)
@@ -117,7 +134,8 @@ def retr_tranphon(gridphon, amplphon, xposgalx, yposgalx, specgalx, argsfrst, ar
 def retr_sbrt(spec, radigalx, sersindx):
     
     factsers = retr_factsers(sersindx)
-    
+   
+    # temp -- only works for sersindx == 4
     sbrt = spec / 7.2 / np.pi / radigalx[None, :]**2
     
     #fact = 1. / 2. / np.pi * factsers**(sersindx*2) / sersindx / sp.special.gamma(2. * sersindx)
@@ -155,7 +173,7 @@ def writ_truedata():
     dictglob = dict()
     
     sersindx = 2.
-    numbsidegrid = 21
+    numbsidegrid = 20
 
     pathliondata = os.environ["LION_DATA_PATH"] + '/data/'
     pathlionimag = os.environ["LION_DATA_PATH"] + '/imag/'
@@ -205,59 +223,62 @@ def writ_truedata():
     dictglob['specgalx'] = samp_powr(2500., 25000., 2., size=numbgalx)[None, :]
     dictglob['sbrtgalx'] = retr_sbrt(dictglob['specgalx'], dictglob['sizegalx'], sersindx)
     
-    gridphon, amplphon = retr_sers(numbsidegrid=numbsidegrid, sersindx=sersindx, pathplot=pathlionimag)
-    numbphongalx = numbsidegrid**2
-    numbener = 1
-    numbphon = numbgalx * numbphongalx
-    xposphon = np.empty(numbphon)
-    yposphon = np.empty(numbphon)
-    specphon = np.empty((numbener, numbphon))
-    for k in range(dictglob['numbgalx']):
-        indx = np.arange(k * numbphongalx, (k + 1) * numbphongalx)
-        gridphontemp = gridphon * dictglob['sizegalx'][k]
-        xposphon[indx], yposphon[indx], specphon[:, indx] = retr_tranphon(gridphontemp, amplphon, dictglob['xposgalx'][k], dictglob['yposgalx'][k], dictglob['specgalx'][:, k], \
-                                                                                             dictglob['avecfrst'][k], dictglob['avecseco'][k], dictglob['avecthrd'][k], 'fris')
-    
-
-    xposcand = np.concatenate((xposphon, dictglob['xposstar'])).astype(np.float32)
-    yposcand = np.concatenate((yposphon, dictglob['yposstar'])).astype(np.float32)
-    speccand = np.concatenate((specphon, dictglob['specstar']), axis=1).astype(np.float32)
-    
-    indx = np.where((xposcand < 100.) & (xposcand > 0.) & (yposcand < 100.) & (yposcand > 0.))[0]
-    xposcand =  xposcand[indx]
-    yposcand =  yposcand[indx]
-    speccand =  speccand[:, indx]
-    
-    # generate data
-    datacnts = image_model_eval(xposcand, yposcand, speccand[0, :], dictglob['back'], numbside, numbsidepsfn, cpsf)
-    #datacnts[datacnts < 1] = 1. # maybe some negative pixels
-    variance = datacnts / dictglob['gain']
-    datacnts += (np.sqrt(variance) * np.random.normal(size=(numbside[1],numbside[0]))).astype(np.float32)
-    dictglob['datacnts'] = datacnts 
-    # auxiliary data
-    dictglob['numbside'] = numbside
-    dictglob['psfn'] = psfn
-    
-    # write data to disk
-    path = pathliondata + 'true.h5'
-    filearry = h5py.File(path, 'w')
-    for attr, valu in dictglob.iteritems():
-        filearry.create_dataset(attr, data=valu)
-    filearry.close()
-
     gdat = gdatstrt()
-    gdat.pathlionimag = pathlionimag
-    plot_cntsmaps(gdat, datacnts, 'truedatacnts')
-    plot_cntsmaps(gdat, datacnts, 'truedatacntsphon', xposcand=xposcand, yposcand=yposcand, speccand=speccand)
+    
+    listsersindx = [0.5, 1., 2., 4., 6., 8., 10.]
+    for sersindx in listsersindx:
+        gdat.sersindx = sersindx
+        gridphon, amplphon = retr_sers(numbsidegrid=numbsidegrid, sersindx=sersindx, pathplot=pathlionimag)
+    
+        gridphon, amplphon = retr_sers(numbsidegrid=numbsidegrid, sersindx=sersindx, pathplot=pathlionimag)
+        numbphongalx = (numbsidegrid + 1)**2
+        numbener = 1
+        numbphon = numbgalx * numbphongalx
+        xposphon = np.empty(numbphon)
+        yposphon = np.empty(numbphon)
+        specphon = np.empty((numbener, numbphon))
+        for k in range(dictglob['numbgalx']):
+            indx = np.arange(k * numbphongalx, (k + 1) * numbphongalx)
+            gridphontemp = gridphon * dictglob['sizegalx'][k]
+            xposphon[indx], yposphon[indx], specphon[:, indx] = retr_tranphon(gridphontemp, amplphon, dictglob['xposgalx'][k], dictglob['yposgalx'][k], dictglob['specgalx'][:, k], \
+                                                                                                 dictglob['avecfrst'][k], dictglob['avecseco'][k], dictglob['avecthrd'][k], 'fris')
+        
+    
+        xposcand = np.concatenate((xposphon, dictglob['xposstar'])).astype(np.float32)
+        yposcand = np.concatenate((yposphon, dictglob['yposstar'])).astype(np.float32)
+        speccand = np.concatenate((specphon, dictglob['specstar']), axis=1).astype(np.float32)
+        
+        indx = np.where((xposcand < 100.) & (xposcand > 0.) & (yposcand < 100.) & (yposcand > 0.))[0]
+        xposcand =  xposcand[indx]
+        yposcand =  yposcand[indx]
+        speccand =  speccand[:, indx]
+        
+        # generate data
+        datacnts = image_model_eval(xposcand, yposcand, speccand[0, :], dictglob['back'], numbside, numbsidepsfn, cpsf)
+        #datacnts[datacnts < 1] = 1. # maybe some negative pixels
+        variance = datacnts / dictglob['gain']
+        datacnts += (np.sqrt(variance) * np.random.normal(size=(numbside[1],numbside[0]))).astype(np.float32)
+        dictglob['datacnts'] = datacnts 
+        # auxiliary data
+        dictglob['numbside'] = numbside
+        dictglob['psfn'] = psfn
+        
+        # write data to disk
+        path = pathliondata + 'true.h5'
+        filearry = h5py.File(path, 'w')
+        for attr, valu in dictglob.iteritems():
+            filearry.create_dataset(attr, data=valu)
+        filearry.close()
+    
+        gdat.pathlionimag = pathlionimag
+        plot_cntsmaps(gdat, datacnts, 'truedatacnts')
+        plot_cntsmaps(gdat, datacnts, 'truedatacntsphon', xposcand=xposcand, yposcand=yposcand, speccand=speccand)
   
 
 class gdatstrt(object):
     
     def __init__(self):
         pass
-
-    ##def __setattr__(self, attr, valu):
-    #    super(gdatstrt, self).__setattr__(attr, valu)
 
 
 def plot_cntsmaps(gdat, maps, name, xposcand=None, yposcand=None, speccand=None):
@@ -269,7 +290,7 @@ def plot_cntsmaps(gdat, maps, name, xposcand=None, yposcand=None, speccand=None)
         axis.scatter(xposcand, yposcand, s=size, alpha=0.2)
     axis.set_ylim([0., 100.])
     axis.set_xlim([0., 100.])
-    path = gdat.pathlionimag + name + '.pdf'
+    path = gdat.pathlionimag + name + '%03.2g.pdf' % gdat.sersindx
     plt.savefig(path)
     plt.close(figr)
 
