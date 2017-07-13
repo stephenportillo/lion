@@ -48,36 +48,6 @@ void pcat_like_eval(int NX, int NY, float* image, float* ref, float* weight, dou
     }
 }
 
-void pcat_like_eval2(int NX, int NY, float* image, float* ref, float* weight, double* diff2, int regsize, int margin, int offsetx, int offsety) {
-    int NREGX = (NX / regsize) + 1;
-    int NREGY = (NY / regsize) + 1;
-    int i, j;
-
-    for (j=0; j<NY; j++) {
-        int regy = (j + offsety) / regsize;
-        int remy = (j + offsety) % regsize;
-        for (i=0; i<NX; i++){
-            int regx = (i + offsetx) / regsize;
-            int remx = (i + offsetx) / regsize;
-            double pixdiff2 = (image[j*NX+i]-ref[j*NX+i])*(image[j*NX+i]-ref[j*NX+i]) * weight[j*NX+i];
-            int idx = regy*NREGX+regx;
-            diff2[idx] += pixdiff2;
-            bool clearD = (regy > 0) && (remy < margin);
-            bool clearU = (regy < NREGY-1) && ((regsize - 1 - remy) < margin);
-            bool clearL = (regx > 0) && (remx < margin);
-            bool clearR = (regx < NREGX-1) && ((regsize - 1 - remx) < margin);
-            if (clearD) diff2[idx-NREGX] += pixdiff2;
-            if (clearU) diff2[idx+NREGX] += pixdiff2;
-            if (clearL) diff2[idx-1] += pixdiff2;
-            if (clearR) diff2[idx+1] += pixdiff2;
-            if (clearD && clearL) diff2[idx-NREGX-1] += pixdiff2;
-            if (clearD && clearR) diff2[idx-NREGX+1] += pixdiff2;
-            if (clearU && clearL) diff2[idx+NREGX-1] += pixdiff2;
-            if (clearU && clearR) diff2[idx+NREGX+1] += pixdiff2;
-        }
-    }
-}
-
 void pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* B, float* C, int* x,
 	int* y, float* image, float* ref, float* weight, double* diff2, int regsize, int margin,
 	int offsetx, int offsety)
