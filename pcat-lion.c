@@ -1,8 +1,5 @@
-/*
- * icc -c -mkl -shared -static-intel -liomp5 -fPIC pcat-lion.c mklsmall.so -o pcat-lion.o
- * icc -shared -Wl,-soname,pcat-lion.so -o pcat-lion.so pcat-lion.o
- */
 #include <stdlib.h>
+#include <stdbool.h>
 #include "mkl_cblas.h"
 #include "i_malloc.h"
 #define max(a,b) \
@@ -13,8 +10,77 @@
     ({ typeof (a) _a = (a);    \
 	typeof (b) _b = (b);   \
         _a < _b ? _a : _b; })
-double pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* B, float* C, int* x,
-	int* y, float* image, float* ref, float* weight)
+
+void pcat_imag_acpt(int NX, int NY, float* image, float* image_acpt, int* reg_acpt, int regsize, int margin, int offsetx, int offsety) {
+    int NREGX = (NX / regsize) + 1;
+    int NREGY = (NY / regsize) + 1;
+    int y0, y1, x0, x1, i, j, ii, jj;
+    for (j=0 ; j < NREGY ; j++) {
+        y0 = max(j*regsize-offsety-margin, 0);
+        y1 = min((j+1)*regsize-offsety+margin, NY);
+        for (i=0 ; i < NREGX ; i++) {
+                x0 = max(i*regsize-offsetx-margin, 0);
+                x1 = min((i+1)*regsize-offsetx+margin, NX);
+                if (reg_acpt[j*NREGX+i] > 0) {
+                    for (jj=y0 ; jj<y1; jj++)
+                     for (ii=x0 ; ii<x1; ii++)
+                        image_acpt[jj*NX+ii] = image[jj*NX+ii];
+                }
+        }
+    }
+}
+
+void pcat_like_eval(int NX, int NY, float* image, float* ref, float* weight, double* diff2, int regsize, int margin, int offsetx, int offsety) {
+    int NREGX = (NX / regsize) + 1;
+    int NREGY = (NY / regsize) + 1;
+    int y0, y1, x0, x1, i, j, ii, jj;
+    for (j=0 ; j < NREGY ; j++) {
+        y0 = max(j*regsize-offsety-margin, 0);
+        y1 = min((j+1)*regsize-offsety+margin, NY);
+        for (i=0 ; i < NREGX ; i++) {
+                x0 = max(i*regsize-offsetx-margin, 0);
+                x1 = min((i+1)*regsize-offsetx+margin, NX);
+                diff2[j*NREGX+i] = 0.;
+                for (jj=y0 ; jj<y1; jj++)
+                 for (ii=x0 ; ii<x1; ii++)
+                    diff2[j*NREGX+i] += (image[jj*NX+ii]-ref[jj*NX+ii])*(image[jj*NX+ii]-ref[jj*NX+ii]) * weight[jj*NX+ii];
+        }
+    }
+}
+
+void pcat_like_eval2(int NX, int NY, float* image, float* ref, float* weight, double* diff2, int regsize, int margin, int offsetx, int offsety) {
+    int NREGX = (NX / regsize) + 1;
+    int NREGY = (NY / regsize) + 1;
+    int i, j;
+
+    for (j=0; j<NY; j++) {
+        int regy = (j + offsety) / regsize;
+        int remy = (j + offsety) % regsize;
+        for (i=0; i<NX; i++){
+            int regx = (i + offsetx) / regsize;
+            int remx = (i + offsetx) / regsize;
+            double pixdiff2 = (image[j*NX+i]-ref[j*NX+i])*(image[j*NX+i]-ref[j*NX+i]) * weight[j*NX+i];
+            int idx = regy*NREGX+regx;
+            diff2[idx] += pixdiff2;
+            bool clearD = (regy > 0) && (remy < margin);
+            bool clearU = (regy < NREGY-1) && ((regsize - 1 - remy) < margin);
+            bool clearL = (regx > 0) && (remx < margin);
+            bool clearR = (regx < NREGX-1) && ((regsize - 1 - remx) < margin);
+            if (clearD) diff2[idx-NREGX] += pixdiff2;
+            if (clearU) diff2[idx+NREGX] += pixdiff2;
+            if (clearL) diff2[idx-1] += pixdiff2;
+            if (clearR) diff2[idx+1] += pixdiff2;
+            if (clearD && clearL) diff2[idx-NREGX-1] += pixdiff2;
+            if (clearD && clearR) diff2[idx-NREGX+1] += pixdiff2;
+            if (clearU && clearL) diff2[idx+NREGX-1] += pixdiff2;
+            if (clearU && clearR) diff2[idx+NREGX+1] += pixdiff2;
+        }
+    }
+}
+
+void pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* B, float* C, int* x,
+	int* y, float* image, float* ref, float* weight, double* diff2, int regsize, int margin,
+	int offsetx, int offsety)
 {
     int      i,i2,imax,j,j2,jmax,rad,istar,xx,yy;
     float    alpha, beta;
@@ -25,8 +91,8 @@ double pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float
     alpha = 1.0; beta = 0.0;
 
 //  matrix multiplication
-    cblas_sgemm(CblasRowMajor, CblasTrans, CblasTrans,
-        nstar, n, k, alpha, A, nstar, B, k, beta, C, n);
+    cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+        nstar, n, k, alpha, A, k, B, n, beta, C, n);
 
 //  loop over stars, insert psfs into image    
     for (istar = 0 ; istar < nstar ; istar++)
@@ -40,10 +106,5 @@ double pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float
 		image[j*NX+i] += C[i2+j2];
     }
 
-    double diff2 = 0.0;
-    for (j=0 ; j < NY ; j++)
-	for (i=0 ; i < NX ; i++)
-		diff2 += (image[j*NX+i]-ref[j*NX+i])*(image[j*NX+i]-ref[j*NX+i]) * weight[j*NX+i];
-
-    return diff2;
+    pcat_like_eval(NX, NY, image, ref, weight, diff2, regsize, margin, offsetx, offsety);
 }

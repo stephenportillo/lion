@@ -12,6 +12,8 @@ import astropy.wcs
 import astropy.io.fits
 import sys
 import os
+import warnings
+
 from image_eval import psf_poly_fit, image_model_eval
 
 # ix, iy = 0. to 3.999
@@ -60,6 +62,15 @@ def neighbours(x,y,neigh,i,generate=False):
     else:
         return neighbours
 
+
+def get_region(x, offsetx, regsize):
+    return np.floor(x + offsetx).astype(np.int) / regsize
+
+def idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize):
+    match_x = (get_region(x[0:n], offsetx, regsize) % 2) == parity_x
+    match_y = (get_region(y[0:n], offsety, regsize) % 2) == parity_y
+    return np.flatnonzero(np.logical_and(match_x, match_y))
+
 # script arguments
 dataname = sys.argv[1]
 visual = int(sys.argv[2]) > 0
@@ -76,17 +87,26 @@ nc, nbin = [np.int32(i) for i in f.readline().split()]
 f.close()
 psf = np.loadtxt('Data/'+dataname+'_psf.txt', skiprows=1).astype(np.float32)
 cf = psf_poly_fit(psf, nbin=nbin)
-npar = cf.shape[2]
-cff = cf.reshape((cf.shape[0]*cf.shape[1], cf.shape[2]))
+npar = cf.shape[0]
+
+if os.path.getmtime('pcat-lion.c') > os.path.getmtime('pcat-lion.so'):
+    warnings.warn('pcat-lion.c modified after compiled pcat-lion.so', Warning)
 
 array_2d_float = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
 array_1d_int = npct.ndpointer(dtype=np.int32, ndim=1, flags="C_CONTIGUOUS")
+array_2d_double = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
 libmmult = npct.load_library('pcat-lion', '.')
-libmmult.pcat_model_eval.restype = c_double
-libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_1d_int, array_1d_int, array_2d_float, array_2d_float, array_2d_float]
+libmmult.pcat_model_eval.restype = None
+libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_1d_int, array_1d_int, array_2d_float, array_2d_float, array_2d_float, array_2d_double, c_int, c_int, c_int, c_int]
+array_2d_int = npct.ndpointer(dtype=np.int32, ndim=2, flags="C_CONTIGUOUS")
+libmmult.pcat_imag_acpt.restype = None
+libmmult.pcat_imag_acpt.argtypes = [c_int, c_int, array_2d_float, array_2d_float, array_2d_int, c_int, c_int, c_int, c_int]
+#
+libmmult.pcat_like_eval.restype = None
+libmmult.pcat_like_eval.argtypes = [c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_2d_double, c_int, c_int, c_int, c_int]
 
 if visual and testpsfn:
-    testpsf(nc, cff, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), lib=libmmult.pcat_model_eval)
+    testpsf(nc, cf, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), lib=libmmult.pcat_model_eval)
 
 f = open('Data/'+dataname+'_pix.txt')
 w, h, nband = [np.int32(i) for i in f.readline().split()]
@@ -102,10 +122,8 @@ weight = 1. / variance # inverse variance
 trueminf = np.float32(250.)
 truealpha = np.float32(2.00)
 
-print 'Lion mode'
-print strgmode
-print 'datatype'
-print datatype
+print 'Lion mode:', strgmode
+print 'datatype:', datatype
 
 if datatype == 'mock':
     if strgmode == 'star':
@@ -143,12 +161,11 @@ nsample = np.zeros(nsamp, dtype=np.int32)
 xsample = np.zeros((nsamp, nstar), dtype=np.float32)
 ysample = np.zeros((nsamp, nstar), dtype=np.float32)
 fsample = np.zeros((nsamp, nstar), dtype=np.float32)
-acceptance = np.zeros(nsamp, dtype=np.float32)
-dt1 = np.zeros(nsamp, dtype=np.float32)
-dt2 = np.zeros(nsamp, dtype=np.float32)
 
 penalty = 1.5
-crad = 10
+regsize = 20
+margin = 10
+kickrange = 1.
 if visual:
     plt.ion()
     plt.figure(figsize=(15,5))
@@ -158,200 +175,347 @@ for j in xrange(nsamp):
     movetype = np.zeros(nloop)
     accept = np.zeros(nloop)
     outbounds = np.zeros(nloop)
+    dt1 = np.zeros(nloop)
+    dt2 = np.zeros(nloop)
+    dt3 = np.zeros(nloop)
+
+    offsetx = np.random.randint(regsize)
+    offsety = np.random.randint(regsize)
+    nregx = imsz[0] / regsize + 1
+    nregy = imsz[1] / regsize + 1
 
     resid = data.copy() # residual for zero image is data
-    model, diff2 = image_model_eval(x[0:n], y[0:n], f[0:n], back, imsz, nc, cff, weights=weight, ref=resid, lib=libmmult.pcat_model_eval)
+    model, diff2 = image_model_eval(x[0:n], y[0:n], f[0:n], back, imsz, nc, cf, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, \
+        regsize=regsize, margin=margin, offsetx=offsetx, offsety=offsety)
     logL = -0.5*diff2
     resid -= model
 
+    moveweights = np.array([80., 0., 40., 40.])
+    moveweights /= np.sum(moveweights)
+
     for i in xrange(nloop):
         t1 = time.clock()
-        moveweights = np.array([80., 0., 0., 30., 30., 0.])
-        moveweights /= np.sum(moveweights)
         rtype = np.random.choice(moveweights.size, p=moveweights)
         movetype[i] = rtype
         # defaults
         nw = 0
         dback = np.float32(0.)
         pn = n
-        factor = 0. # best way to incorporate acceptance ratio factors?
+        factor = None # best way to incorporate acceptance ratio factors?
         goodmove = False
+
+	# should regions be perturbed randomly or systematically?
+	parity_x = np.random.randint(2)
+	parity_y = np.random.randint(2)
+
+	idx_move = None
+	do_birth = False
+	idx_kill = None
         # mover
         if rtype == 0:
-            cx = np.random.uniform()*(imsz[0]-1)
-            cy = np.random.uniform()*(imsz[1]-1)
-            mover = np.logical_and(np.abs(cx-x) < crad, np.abs(cy-y) < crad)
-            mover[n:] = False
-            nw = np.sum(mover).astype(np.int32)
-            df = np.random.normal(size=nw).astype(np.float32)*np.float32(60./np.sqrt(25.))
-            f0 = f[mover]
+            idx_move = idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize)
+            nw = idx_move.size
+            f0 = f.take(idx_move)
 
-            oob_flux = (df < (trueminf - f0))
-            df[oob_flux] = -2*(f0[oob_flux]-trueminf) - df[oob_flux]
-            pf = f0+df
-            # bounce flux
-            if (pf < trueminf).any():
-                print f0[oob_flux], pf[oob_flux]
-            # calculate flux distribution prior factor
-            dlogf = np.log(pf/f0)
-            factor = -truealpha*np.sum(dlogf)
+            if np.random.uniform() < 0.95:
+                # linear in flux
+                df = np.random.normal(size=nw).astype(np.float32)*np.float32(60./np.sqrt(25.))
+                # bounce flux off of fmin
+                abovefmin = f0 - trueminf
+                oob_flux = (-df > abovefmin)
+                df[oob_flux] = -2*abovefmin[oob_flux] - df[oob_flux]
+                pf = f0+df
+                # calculate flux distribution prior factor
+                dlogf = np.log(pf/f0)
+                factor = -truealpha*dlogf
+            else:
+                # logarithmic, to give bright sources a chance
+                # might be bad to do and not that helpful
+                dlogf = np.random.normal(size=nw).astype(np.float32)*np.float32(0.01)#/np.sqrt(25.))
+                # bounce flux off of fmin
+                abovefmin = np.log(f0/trueminf)
+                oob_flux = (-dlogf > abovefmin)
+                dlogf[oob_flux] = -2*abovefmin[oob_flux] - dlogf[oob_flux]
+                pf = f0*np.exp(dlogf)
+                factor = -truealpha*dlogf
 
             dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0, pf))
             dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
             dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
-            px = x[mover] + dx
-            py = y[mover] + dy
-            # bounce off of crad box?
-            px[px < 0] = -px[px < 0]
-            px[px > (imsz[0] - 1)] = 2*(imsz[0] - 1) - px[px > (imsz[0] - 1)]
-            py[py < 0] = -py[py < 0]
-            py[py > (imsz[1] - 1)] = 2*(imsz[1] - 1) - py[py > (imsz[1] - 1)]
+            x0 = x.take(idx_move)
+            y0 = y.take(idx_move)
+            px = x0 + dx
+            py = y0 + dy
+            # bounce off of edges of image
+            mask = px < 0
+            px[mask] *= -1
+            mask = px > (imsz[0] - 1)
+            px[mask] *= -1
+            px[mask] += 2*(imsz[0] - 1)
+            mask = py < 0
+            py[mask] *= -1
+            mask = py > (imsz[1] - 1)
+            py[mask] *= -1
+            py[mask] += 2*(imsz[1] - 1)
             goodmove = True # always True because we bounce off the edges of the image and fmin
-        # hopper
-        elif rtype == 1:
-            mover = np.random.uniform(size=nstar) < 4./float(n+1)
-            mover[n:] = False
-            nw = np.sum(mover).astype(np.int32)
-            px = np.random.uniform(size=nw).astype(np.float32)*(imsz[0]-1)
-            py = np.random.uniform(size=nw).astype(np.float32)*(imsz[1]-1)
-            pf = f[mover]
-            goodmove = (nw > 0)
         # background change
-        elif rtype == 2:
+        elif rtype == 1:
             dback = np.float32(np.random.normal())
-            mover = np.full(nstar, False, dtype=np.bool)
-            nw = 0
-            px = np.array([], dtype=np.float32)
-            py = np.array([], dtype=np.float32)
-            pf = np.array([], dtype=np.float32)
             goodmove = True 
         # birth and death
-        elif rtype == 3:
-            lifeordeath = np.random.uniform() < 1./(np.exp(penalty) + 1.)
-            mover = np.full(nstar, False, dtype=np.bool)
+        elif rtype == 2:
+            lifeordeath = np.random.uniform() < 1./(np.exp(penalty) + 1.) # better to do this or put in factor?
+            nbd = 9
             # birth
-            if lifeordeath and n < nstar: # do not exceed n = nstar
-                # append to end
-                mover[n] = True
-                px = np.random.uniform(size=1).astype(np.float32)*(imsz[0]-1)
-                py = np.random.uniform(size=1).astype(np.float32)*(imsz[1]-1)
-                pf = trueminf * np.exp(np.random.exponential(scale=1./(truealpha-1.),size=1)).astype(np.float32)
-                pn = n+1
+            if lifeordeath and n < nstar: # need room for at least one source
+                nbd = min(nbd, nstar-n) # add nbd sources, or just as many as will fit
+                                        # mildly violates detailed balance when n close to nstar
+                # want number of regions in each direction, divided by two, rounded up
+                nregx = ((imsz[0] / regsize + 1) + 1) / 2 # assumes that imsz are multiples of regsize
+                nregy = ((imsz[1] / regsize + 1) + 1) / 2
+                bx = ((np.random.randint(nregx, size=nbd)*2 + parity_x + np.random.uniform(size=nbd))*regsize - offsetx).astype(np.float32)
+                by = ((np.random.randint(nregy, size=nbd)*2 + parity_y + np.random.uniform(size=nbd))*regsize - offsety).astype(np.float32)
+                bf = trueminf * np.exp(np.random.exponential(scale=1./(truealpha-1.),size=nbd)).astype(np.float32)
+
+		# some sources might be generated outside image
+		inbounds = (bx > 0) * (bx < (imsz[0] -1)) * (by > 0) * (by < imsz[1] - 1)
+		idx_in = np.flatnonzero(inbounds)
+                nw = idx_in.size
+		bx = bx.take(idx_in)
+                by = by.take(idx_in)
+                bf = bf.take(idx_in)
+                do_birth = True
                 goodmove = True
             # death
+            # does region based death obey detailed balance?
             elif not lifeordeath and n > 0: # need something to kill
-                ikill = np.random.randint(n)
-                mover[ikill] = True
-                singlezero = np.array([0.], dtype=np.float32)
-                if ikill != n-1: # put last source in killed source's place
-                    mover[n-1] = True
-                    px = np.array([x[n-1], 0], dtype=np.float32)
-                    py = np.array([y[n-1], 0], dtype=np.float32)
-                    pf = np.array([f[n-1], 0], dtype=np.float32)
-                else: # or just kill the last source if we chose it
-                    px = singlezero
-                    py = singlezero
-                    pf = singlezero
-                pn = n-1
+                idx_reg = idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize)
+
+		nbd = min(nbd, idx_reg.size) # kill nbd sources, or however many sources remain
+                nw = nbd
+                # need to handle case where nbd = 0?
+                idx_kill = np.random.choice(idx_reg, size=nbd, replace=False)
+		xk = x.take(idx_kill)
+                yk = y.take(idx_kill)
+                fk = f.take(idx_kill)
                 goodmove = True
-            nw = 1
         # merges and splits
-        elif rtype == 4:
-            mover = np.full(nstar, False, dtype=np.bool)
+        elif rtype == 3:
             splitsville = np.random.uniform() < 1./(np.exp(penalty) + 1.)
-            kickrange = 1.
+            idx_reg = idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize)
             sum_f = 0
             low_n = 0
-            bright_n = 0
-            pn = n
+            idx_bright = idx_reg.take(np.flatnonzero(f.take(idx_reg) > 2*trueminf)) # in region!
+            bright_n = idx_bright.size
 
+            nms = 9
             # split
-            if splitsville and n > 0 and n < nstar and (f > 2*trueminf).any(): # need something to split, but don't exceed nstar
-                dx = np.random.normal()*kickrange
-                dy = np.random.normal()*kickrange
-                bright = f > 2*trueminf
-                bright_n = np.sum(bright)
-                im = np.random.randint(bright_n)
-                isplit = np.where(bright)[0][im]
-                mover[isplit] = True
-                mover[n] = True # split in place and add to end of array
-                fminratio = f[isplit] / trueminf
-                frac = 1./fminratio + np.random.uniform()*(1. - 2./fminratio)
-                px = x[isplit] + np.array([(1-frac)*dx, -frac*dx], dtype=np.float32)
-                py = y[isplit] + np.array([(1-frac)*dy, -frac*dy], dtype=np.float32)
-                pf = f[isplit] * np.array([frac, 1-frac], dtype=np.float32)
-                pn = n + 1
+            if splitsville and n > 0 and n < nstar and bright_n > 0: # need something to split, but don't exceed nstar
+                nms = min(nms, bright_n, nstar-n) # need bright source AND room for split source
+                dx = (np.random.normal(size=nms)*kickrange).astype(np.float32)
+                dy = (np.random.normal(size=nms)*kickrange).astype(np.float32)
+		idx_move = np.random.choice(idx_bright, size=nms, replace=False)
+                x0 = x.take(idx_move)
+                y0 = y.take(idx_move)
+		f0 = f.take(idx_move)
+                fminratio = f0 / trueminf
+                frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
+                px = x0 + ((1-frac)*dx)
+                py = y0 + ((1-frac)*dy)
+                pf = f0 * frac
+                do_birth = True
+                bx = x0 - frac*dx
+                by = y0 - frac*dy
+                bf = f0 * (1-frac)
 
-                if bright_n > 0 and (px > 0).all() and (px < imsz[0] - 1).all() and (py > 0).all() and (py < imsz[1] - 1).all() and (pf > trueminf).all():
-                    goodmove = True
-                    # need to calculate factor
-                    sum_f = f[isplit]
-                    low_n = n
+                # don't want to think about how to bounce split-merge
+                # don't need to check if above fmin, because of how frac is decided
+                inbounds = (px > 0) * (px < imsz[0] - 1) * (py > 0) * (py < imsz[1] - 1) * \
+                           (bx > 0) * (bx < imsz[0] - 1) * (by > 0) * (by < imsz[1] - 1)
+                idx_in = np.flatnonzero(inbounds)
+                x0 = x0.take(idx_in)
+                y0 = y0.take(idx_in)
+                f0 = f0.take(idx_in)
+                px = px.take(idx_in)
+                py = py.take(idx_in)
+                pf = pf.take(idx_in)
+                bx = bx.take(idx_in)
+                by = by.take(idx_in)
+                bf = bf.take(idx_in)
+                idx_move = idx_move.take(idx_in)
+                fminratio = fminratio.take(idx_in)
+                frac = frac.take(idx_in)
+                goodmove = idx_in.size > 0
+
+                # need to calculate factor
+                sum_f = f0
+                nms = idx_in.size
+                nw = nms
+                pairs = np.zeros(nms)
+                for k in xrange(nms):
                     xtemp = x[0:n].copy()
                     ytemp = y[0:n].copy()
-                    xtemp[im] = px[0]
-                    ytemp[im] = py[0]
-                    pairs = 0.5*(neighbours(np.concatenate((xtemp, px[1:2])), np.concatenate((ytemp, py[1:2])), kickrange, im) + \
-                        neighbours(np.concatenate((xtemp, px[1:2])), np.concatenate((ytemp, py[1:2])), kickrange, -1))
-            # merge
-            elif not splitsville and n > 1: # need two things to merge!
-                isplit = np.random.randint(n)
-                pairs, jsplit = neighbours(x[0:n], y[0:n], kickrange, isplit, generate=True) # jsplit, isplit order not guaranteed
-                pairs += neighbours(x[0:n], y[0:n], kickrange, jsplit)
+                    xtemp[idx_move[k]] = px[k]
+                    ytemp[idx_move[k]] = py[k]
+                    xtemp = np.concatenate([xtemp, bx[k:k+1]])
+                    ytemp = np.concatenate([ytemp, by[k:k+1]])
+
+                    pairs[k] =  neighbours(xtemp, ytemp, kickrange, idx_move[k])
+                    pairs[k] += neighbours(xtemp, ytemp, kickrange, n)
                 pairs *= 0.5
-                if jsplit != -1:
-                    if jsplit < isplit:
-                        isplit, jsplit = jsplit, isplit
-                    mover[isplit] = True
-                    mover[jsplit] = True
-                    sum_f = f[isplit] + f[jsplit]
-                    frac = f[isplit] / sum_f
-                    if jsplit != n-1: # merge to isplit and move last source to jsplit, only need to check jsplit because jsplit > isplit
-                        mover[n-1] = True
-                        px = np.array([frac*x[isplit]+(1-frac)*x[jsplit], x[n-1], 0], dtype=np.float32)
-                        py = np.array([frac*y[isplit]+(1-frac)*y[jsplit], y[n-1], 0], dtype=np.float32)
-                        pf = np.array([f[isplit] + f[jsplit], f[n-1], 0], dtype=np.float32)
-                    else: # merge to isplit, and jsplit was last source so set it to 0
-                        px = np.array([frac*x[isplit]+(1-frac)*y[jsplit], 0], dtype=np.float32)
-                        py = np.array([frac*y[isplit]+(1-frac)*y[jsplit], 0], dtype=np.float32)
-                        pf = np.array([f[isplit] + f[jsplit], 0], dtype=np.float32)
-                    low_n = n
-                    bright_n = np.sum(f > 2*trueminf) - np.sum(f[mover] > 2*trueminf) + np.sum(pf > 2*trueminf)
-                    pn = n-1
-                    goodmove = True # merge will be within image, and above min flux
-            if goodmove:
+            # merge
+            elif not splitsville and idx_reg.size > 1: # need two things to merge!
+                nms = min(nms, idx_reg.size/2)
+                idx_move = np.zeros(nms, dtype=np.int)
+                idx_kill = np.zeros(nms, dtype=np.int)
+                choosable = np.zeros(nstar, dtype=np.bool)
+                choosable[idx_reg] = True
+                nchoosable = float(np.count_nonzero(choosable))
+                pairs = np.zeros(nms)
+
+                for k in xrange(nms):
+                    idx_move[k] = np.random.choice(nstar, p=choosable/nchoosable)
+                    pairs[k], idx_kill[k] = neighbours(x[0:n], y[0:n], kickrange, idx_move[k], generate=True)
+                    # prevent sources from being involved in multiple proposals
+                    if not choosable[idx_kill[k]]:
+                        idx_kill[k] = -1
+                    if idx_kill[k] != -1:
+                        pairs[k] += neighbours(x[0:n], y[0:n], kickrange, idx_kill[k])
+                        choosable[idx_move[k]] = False
+                        choosable[idx_kill[k]] = False
+                        nchoosable -= 2
+                pairs *= 0.5
+
+                inbounds = (idx_kill != -1)
+                idx_in = np.flatnonzero(inbounds)
+                nms = idx_in.size
+                nw = nms
+                idx_move = idx_move.take(idx_in)
+                idx_kill = idx_kill.take(idx_in)
+                pairs = pairs.take(idx_in)
+                goodmove = idx_in.size > 0
+
+                x0 = x.take(idx_move)
+                y0 = y.take(idx_move)
+                f0 = f.take(idx_move)
+                xk = x.take(idx_kill)
+                yk = y.take(idx_kill)
+                fk = f.take(idx_kill)
+                sum_f = f0 + fk
                 fminratio = sum_f / trueminf
+                frac = f0 / sum_f
+                px = frac*x0 + (1-frac)*xk
+                py = frac*y0 + (1-frac)*yk
+                pf = f0 + fk
+                # turn bright_n into an array
+                bright_n = bright_n - (f0 > 2*trueminf) - (fk > 2*trueminf) + (pf > 2*trueminf)
+            if goodmove:
                 factor = np.log(truealpha-1) + (truealpha-1)*np.log(trueminf) - truealpha*np.log(frac*(1-frac)*sum_f) + np.log(2*np.pi*kickrange*kickrange) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) + np.log(bright_n) - np.log(pairs) + np.log(sum_f) # last term is Jacobian
-                factor *= (pn - n)
-            nw = 2
+                if not splitsville:
+                    factor *= -1
         # endif rtype   
         nmov[i] = nw
-        dt1[j] += time.clock() - t1
+        dt1[i] = time.clock() - t1
 
-        t2 = time.clock()
         if goodmove:
-            dmodel, diff2 = image_model_eval(np.concatenate((px, x[mover])), np.concatenate((py, y[mover])), np.concatenate((pf, -f[mover])), dback, imsz, nc, cff, weights=weight, ref=resid, lib=libmmult.pcat_model_eval)
+            t2 = time.clock()
+            xtemp = []
+            ytemp = []
+            ftemp = []
+            if idx_move is not None:
+                xtemp.extend([ x0, px])
+                ytemp.extend([ y0, py])
+                ftemp.extend([-f0, pf])
+            if do_birth:
+                xtemp.append(bx)
+                ytemp.append(by)
+                ftemp.append(bf)
+            if idx_kill is not None:
+                xtemp.append(xk)
+                ytemp.append(yk)
+                ftemp.append(-fk)
 
+            dmodel, diff2 = image_model_eval(np.concatenate(xtemp), np.concatenate(ytemp), np.concatenate(ftemp), dback, imsz, nc, cf, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=offsetx, offsety=offsety)
             plogL = -0.5*diff2
-            if np.log(np.random.uniform()) < plogL + factor - logL:
-                if np.sum(mover) != px.size:
-                    print rtype, np.sum(mover), px, py, pf
-                x[mover] = px
-                y[mover] = py
-                f[mover] = pf
-                n = pn
-                back += dback
-                model += dmodel
-                resid -= dmodel
-                logL = plogL
-                acceptance[j] += 1
-                accept[i] = 1
+            dt2[i] = time.clock() - t2
+
+            t3 = time.clock()
+            nregx = imsz[0] / regsize + 1
+            nregy = imsz[1] / regsize + 1
+            refx = None
+            refy = None
+            if idx_move is not None:
+                refx = x0
+                refy = y0
+            else:
+                if do_birth:
+                    refx = bx
+                    refy = by
+                if idx_kill is not None:
+                    refx = xk
+                    refy = yk
+            regionx = get_region(refx, offsetx, regsize)
+            regiony = get_region(refy, offsety, regsize)
+
+            plogL[(1-parity_y)::2,:] = float('-inf') # don't accept off-parity regions
+            plogL[:,(1-parity_x)::2] = float('-inf')
+            dlogP = plogL - logL
+            if factor is not None:
+                dlogP[regiony, regionx] += factor
+            acceptreg = (np.log(np.random.uniform(size=(nregy, nregx))) < dlogP).astype(np.int32)
+            acceptprop = acceptreg[regiony, regionx]
+            numaccept = np.count_nonzero(acceptprop)
+
+            # only keep dmodel in accepted regions+margins
+            dmodel_acpt = np.zeros_like(dmodel)
+            libmmult.pcat_imag_acpt(imsz[0], imsz[1], dmodel, dmodel_acpt, acceptreg, regsize, margin, offsetx, offsety)
+            # using this dmodel containing only accepted moves, update logL
+            diff2.fill(0)
+            libmmult.pcat_like_eval(imsz[0], imsz[1], dmodel_acpt, resid, weight, diff2, regsize, margin, offsetx, offsety)
+            logL = -0.5*diff2
+            resid -= dmodel_acpt # has to occur after pcat_like_eval, because resid is used as ref
+            model += dmodel_acpt
+            # implement accepted moves
+            if idx_move is not None:
+                px_a = px.compress(acceptprop)
+                py_a = py.compress(acceptprop)
+                pf_a = pf.compress(acceptprop)
+                idx_move_a = idx_move.compress(acceptprop)
+                x[idx_move_a] = px_a
+                y[idx_move_a] = py_a
+                f[idx_move_a] = pf_a
+            if do_birth:
+                bx_a = bx.compress(acceptprop)
+                by_a = by.compress(acceptprop)
+                bf_a = bf.compress(acceptprop)
+                num_born = np.count_nonzero(acceptprop)
+                x[n:n+num_born] = bx_a
+                y[n:n+num_born] = by_a
+                f[n:n+num_born] = bf_a
+                n += num_born
+            if idx_kill is not None:
+                idx_kill_a = idx_kill.compress(acceptprop)
+                num_kill = idx_kill_a.size
+                x[0:nstar-num_kill] = np.delete(x, idx_kill_a)
+                y[0:nstar-num_kill] = np.delete(y, idx_kill_a)
+                f[0:nstar-num_kill] = np.delete(f, idx_kill_a)
+                x[nstar-num_kill:] = 0
+                y[nstar-num_kill:] = 0
+                f[nstar-num_kill:] = 0
+                n -= num_kill
+            dt3[i] = time.clock() - t3
+
+            # hmm...
+            #back += dback
+            if acceptprop.size > 0: 
+                accept[i] = np.count_nonzero(acceptprop) / float(acceptprop.size)
+            else:
+                accept[i] = 0
         else:
-            acceptance[j] += 0 # null move always accepted
             outbounds[i] = 1
-        dt2[j] += time.clock() - t2
     
         if visual and i == 0:
+            plt.figure(1)
             plt.clf()
             plt.subplot(1,3,1)
             plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
@@ -388,12 +552,18 @@ for j in xrange(nsamp):
     xsample[j,:] = x
     ysample[j,:] = y
     fsample[j,:] = f
-    acceptance[j] /= float(nloop)
-    print 'Loop', j, 'background', back, 'N', n, 'proposal (ms)', dt1[j], 'likelihood (ms)', dt2[j]
-    print 'nmov (mover)', np.mean(nmov[movetype == 0])
-    print 'Acceptance\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(accept), np.mean(accept[movetype == 0]), np.mean(accept[movetype == 3]), np.mean(accept[movetype == 4]))
-    print 'Out of bounds\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(outbounds), np.mean(outbounds[movetype == 0]), np.mean(outbounds[movetype == 3]), np.mean(outbounds[movetype == 4]))
+    print 'Loop', j, 'background', back, 'N', n
+    print 'Acceptance\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(accept), np.mean(accept[movetype == 0]), np.mean(accept[movetype == 2]), np.mean(accept[movetype == 3]))
+    print 'Out of bounds\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(outbounds), np.mean(outbounds[movetype == 0]), np.mean(outbounds[movetype == 2]), np.mean(outbounds[movetype == 3]))
+    print '# src pert\t(all) %0.1f (move) %0.1f (B-D) %0.1f (M-S) %0.1f' % (np.mean(nmov), np.mean(nmov[movetype == 0]), np.mean(nmov[movetype == 2]), np.mean(nmov[movetype == 3]))
+    print '-'*16
+    dt1 *= 1000
+    dt2 *= 1000
+    dt3 *= 1000
+    print 'Proposal (ms)\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt1), np.mean(dt1[movetype == 0]) , np.mean(dt1[movetype == 2]), np.mean(dt1[movetype == 3]))
+    print 'Likelihood (ms)\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt2), np.mean(dt2[movetype == 0]) , np.mean(dt2[movetype == 2]), np.mean(dt2[movetype == 3]))
+    print 'Implement (ms)\t(all) %0.3f (move) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt3), np.mean(dt3[movetype == 0]) , np.mean(dt3[movetype == 2]), np.mean(dt3[movetype == 3]))
+    print '='*16
 
-print 'dt1 avg', np.mean(dt1), 'dt2 avg', np.mean(dt2)
 print 'saving...'
 np.savez('chain.npz', n=nsample, x=xsample, y=ysample, f=fsample)
