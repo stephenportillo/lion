@@ -60,11 +60,34 @@ void pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* 
 
     alpha = 1.0; beta = 0.0;
 
-//  matrix multiplication
+    // overwrite and shorten A matrix
+    // save time if there are many sources per pixel
+    int hash[NY*NX];
+    for (i=0; i<NY*NX; i++) { hash[i] = -1; }
+    int jstar = 0;
+    for (istar = 0; istar < nstar; istar++)
+    {
+        xx = x[istar];
+        yy = y[istar];
+        int idx = yy*NX+xx;
+        if (hash[idx] != -1) {
+            for (i=0; i<k; i++) { A[hash[idx]*k+i] += A[istar*k+i]; }
+        }
+        else {
+            hash[idx] = jstar;
+            for (i=0; i<k; i++) { A[jstar*k+i] = A[istar*k+i]; }
+            x[jstar] = x[istar];
+            y[jstar] = y[istar];
+            jstar++;
+        }
+    }
+    nstar = jstar;
+
+    //  matrix multiplication
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
         nstar, n, k, alpha, A, k, B, n, beta, C, n);
 
-//  loop over stars, insert psfs into image    
+    //  loop over stars, insert psfs into image    
     for (istar = 0 ; istar < nstar ; istar++)
     {
 	xx = x[istar];
