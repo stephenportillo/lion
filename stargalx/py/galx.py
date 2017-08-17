@@ -399,5 +399,5 @@ def plot_phon(listparagalx, gridphon, amplphon, listavec=None):
         plt.close(figr)
 
 
-#main()
-writ_truedata()
+main()
+#writ_truedata()

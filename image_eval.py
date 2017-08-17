@@ -42,6 +42,12 @@ def image_model_eval(x, y, f, back, imsz, nc, cf, regsize=None, margin=0, offset
 	if regsize is None:
 		regsize = max(imsz[0], imsz[1])
 
+        # sometimes phonions are outside image... what is best way to handle?
+        goodsrc = (x > 0) * (x < imsz[0] - 1) * (y > 0) * (y < imsz[1] - 1)
+        x = x.compress(goodsrc)
+        y = y.compress(goodsrc)
+        f = f.compress(goodsrc)
+
         nstar = x.size
         rad = nc/2 # 12 for nc = 25
 
