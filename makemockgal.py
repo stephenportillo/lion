@@ -3,7 +3,7 @@ import numpy.ctypeslib as npct
 from ctypes import c_int
 import os
 from image_eval import image_model_eval, psf_poly_fit
-from galaxy import retr_sers, retr_tranphon
+from galaxy import retr_sers, retr_tranphon, to_moments
 
 f = open('Data/sdss.0921_psf.txt')
 nc, nbin = [np.int32(i) for i in f.readline().split()]
@@ -18,7 +18,7 @@ nstar = 30
 truex = (np.random.uniform(size=nstar)*(imsz[0]-1)).astype(np.float32)
 truey = (np.random.uniform(size=nstar)*(imsz[1]-1)).astype(np.float32)
 truealpha = np.float32(2.0)
-trueminf = np.float32(250.*40)
+trueminf = np.float32(250.)
 truelogf = np.random.exponential(scale=1./(truealpha-1.), size=nstar).astype(np.float32)
 truef = trueminf * np.exp(truelogf)
 trueback = np.float32(179.)
@@ -26,13 +26,21 @@ gain = np.float32(4.62)
 ngalx = 30
 truexg = (np.random.uniform(size=ngalx)*(imsz[0]-1)).astype(np.float32)
 trueyg = (np.random.uniform(size=ngalx)*(imsz[1]-1)).astype(np.float32)
-truelogf = np.random.exponential(scale=1./(truealpha-1.), size=nstar).astype(np.float32)
+truelogf = np.random.exponential(scale=1./(truealpha-1.), size=ngalx).astype(np.float32)
+truermin_g = np.float32(1.00)
+rg = truermin_g*np.exp(np.random.exponential(scale=1./(truealpha-1.),size=ngalx)).astype(np.float32)
+mask = rg > 100 # clip large galaxies
+rg[mask] /= 100.
+mask = rg > 10
+rg[mask] /= 10.
+ug = np.random.uniform(low=3e-4, high=1., size=ngalx).astype(np.float32) #3e-4 for numerics
+thetag = np.arccos(ug).astype(np.float32)
+phig = (np.random.uniform(size=ngalx)*np.pi - np.pi/2.).astype(np.float32)
+truexxg, truexyg, trueyyg = to_moments(rg, thetag, phig)
+assert (truexxg*trueyyg > truexyg*truexyg).all()
 truefg = trueminf * np.exp(truelogf)
-truerxg = (np.random.normal(size=ngalx, scale=4)).astype(np.float32) 
-trueryg = (np.random.normal(size=ngalx, scale=4)).astype(np.float32)
-truerzg = (np.random.normal(size=ngalx, scale=4)).astype(np.float32)
 gridphon, amplphon = retr_sers(sersindx=2.)
-xphon, yphon, fphon = retr_tranphon(gridphon, amplphon, truexg, trueyg, truefg, truerxg, trueryg, truerzg)
+xphon, yphon, fphon = retr_tranphon(gridphon, amplphon, truexg, trueyg, truefg, truexxg, truexyg, trueyyg)
 
 if os.path.getmtime('pcat-lion.c') > os.path.getmtime('pcat-lion.so'):
     warnings.warn('pcat-lion.c modified after compiled pcat-lion.so', Warning)
@@ -48,7 +56,11 @@ noise = np.random.normal(size=(imsz[1],imsz[0])).astype(np.float32)
 mock = image_model_eval(np.concatenate([truex,xphon]), np.concatenate([truey,yphon]), np.concatenate([truef,fphon]), trueback, imsz, nc, cf, lib=libmmult.pcat_model_eval)
 mock[mock < 1] = 1. # maybe some negative pixels
 variance = mock / gain
+oldmock = mock.copy() 
 mock += (np.sqrt(variance) * np.random.normal(size=(imsz[1],imsz[0]))).astype(np.float32)
+
+diff = mock - oldmock
+print np.sum(diff*diff/variance)
 
 f = open('Data/mockg2_pix.txt', 'w')
 f.write('%1d\t%1d\t1\n0.\t%0.3f' % (imsz[0], imsz[1], gain))
@@ -60,5 +72,5 @@ np.savetxt('Data/mockg2_psf.txt', psf, header='%1d\t%1d' % (nc, nbin), comments=
 
 truth = np.array([truex, truey, truef]).T
 np.savetxt('Data/mockg2_str.txt', truth)
-truth = np.array([truexg, trueyg, truefg, truerxg, trueryg, truerzg]).T
+truth = np.array([truexg, trueyg, truefg, truexxg, truexyg, trueyyg]).T
 np.savetxt('Data/mockg2_gal.txt', truth)

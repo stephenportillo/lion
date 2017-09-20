@@ -15,7 +15,7 @@ import os
 import warnings
 
 from image_eval import psf_poly_fit, image_model_eval
-from galaxy import retr_sers, retr_tranphon
+from galaxy import to_moments, from_moments, retr_sers, retr_tranphon
 
 # ix, iy = 0. to 3.999
 def testpsf(nc, cf, psf, ix, iy, lib=None):
@@ -140,8 +140,10 @@ if datatype == 'mock':
         truexg = truth_g[:,0]
         trueyg = truth_g[:,1]
         truefg = truth_g[:,2]
-        truerng= np.sqrt(truth_g[:,3]**2 + truth_g[:,4]**2 + truth_g[:,5]**2)
-        # read in frisbee vector too?
+        truexxg= truth_g[:,3]
+        truexyg= truth_g[:,4]
+        trueyyg= truth_g[:,5]
+        truerng, theta, phi = from_moments(truexxg, truexyg, trueyyg)
     if strgmode == 'stargalx':
         pathliondata = os.environ["LION_DATA_PATH"] + '/data/'
         truth = np.loadtxt(pathliondata + 'truecnts.txt')
@@ -168,25 +170,37 @@ y[n:] = 0.
 f[n:] = 0.
 back = trueback
 
+def moments_from_prior(truermin_g, slope, ngalx):
+    rg = truermin_g*np.exp(np.random.exponential(scale=1./(slope-1.),size=ngalx)).astype(np.float32)
+    ug = np.random.uniform(low=3e-4, high=1., size=ngalx).astype(np.float32) #3e-4 for numerics
+    thetag = np.arccos(ug).astype(np.float32)
+    phig = (np.random.uniform(size=ngalx)*np.pi - np.pi/2.).astype(np.float32)
+    return to_moments(rg, thetag, phig)
+
+
+def log_prior_moments(xx, xy, yy):
+    slope = 2.
+    a, theta, phi = from_moments(xx, xy, yy)
+    u = np.cos(theta)
+    return np.log(slope-1) + (slope-1)*np.log(truermin_g) - slope*np.log(a) - 5*np.log(a) - np.log(u*u) - np.log(1-u*u)
+
 ngalx = 100
 ng = np.random.randint(ngalx)+1
 trueminf_g = np.float32(250.)
 truealpha_g = np.float32(2.00)
-truer_g = np.float32(4.00) # normal dist for rx, ry, rz
 xg = (np.random.uniform(size=ngalx)*(imsz[0]-1)).astype(np.float32)
 yg = (np.random.uniform(size=ngalx)*(imsz[1]-1)).astype(np.float32)
 fg = trueminf_g * np.exp(np.random.exponential(scale=1./(truealpha_g-1.),size=ngalx)).astype(np.float32)
-rxg = np.random.normal(size=ngalx, scale=truer_g).astype(np.float32)
-ryg = np.random.normal(size=ngalx, scale=truer_g).astype(np.float32)
-rzg = np.random.normal(size=ngalx, scale=truer_g).astype(np.float32)
+truermin_g = np.float32(1.00)
+xxg, xyg, yyg = moments_from_prior(truermin_g, truealpha_g, ngalx)
 xg[ng:] = 0
 yg[ng:] = 0
 fg[ng:] = 0
-rxg[ng:]= 0
-ryg[ng:]= 0
-rzg[ng:]= 0
+xxg[ng:]= 0
+xyg[ng:]= 0
+yyg[ng:]= 0
 
-gridphon, amplphon = retr_sers(sersindx=2.) # use default parameters for Sersic
+gridphon, amplphon = retr_sers(sersindx=2.)
 
 nsamp = 1000
 nloop = 1000
@@ -198,18 +212,19 @@ ngsample = np.zeros(nsamp, dtype=np.int32)
 xgsample = np.zeros((nsamp, nstar), dtype=np.float32)
 ygsample = np.zeros((nsamp, nstar), dtype=np.float32)
 fgsample = np.zeros((nsamp, nstar), dtype=np.float32)
-rxgsample = np.zeros((nsamp, nstar), dtype=np.float32)
-rygsample = np.zeros((nsamp, nstar), dtype=np.float32)
-rzgsample = np.zeros((nsamp, nstar), dtype=np.float32)
+xxgsample = np.zeros((nsamp, nstar), dtype=np.float32)
+xygsample = np.zeros((nsamp, nstar), dtype=np.float32)
+yygsample = np.zeros((nsamp, nstar), dtype=np.float32)
 
 
 penalty = 1.5
 penalty_g = 3.0
-regsize = 25
+regsize = 20
 assert imsz[0] % regsize == 0
 assert imsz[1] % regsize == 0
 margin = 10
 kickrange = 1.
+kickrange_g = 1.
 if visual:
     plt.ion()
     plt.figure(figsize=(15,5))
@@ -234,7 +249,7 @@ for j in xrange(nsamp):
         evaly = y[0:n]
         evalf = f[0:n]
     else:
-        xposphon, yposphon, specphon = retr_tranphon(gridphon, amplphon, xg[0:ng], yg[0:ng], fg[0:ng], rxg[0:ng], ryg[0:ng], rzg[0:ng])
+        xposphon, yposphon, specphon = retr_tranphon(gridphon, amplphon, xg[0:ng], yg[0:ng], fg[0:ng], xxg[0:ng], xyg[0:ng], yyg[0:ng])
         evalx = np.concatenate([x[0:n], xposphon]).astype(np.float32)
         evaly = np.concatenate([y[0:n], yposphon]).astype(np.float32)
         evalf = np.concatenate([f[0:n], specphon]).astype(np.float32)
@@ -246,7 +261,7 @@ for j in xrange(nsamp):
 
     moveweights = np.array([80., 0., 40., 40.])
     if strgmode == 'galx':
-        moveweights = np.array([80., 0., 40., 40., 80., 40., 40., 40., 40.])
+        moveweights = np.array([80., 0., 40., 40., 80., 40., 40., 40., 40., 40.])
     moveweights /= np.sum(moveweights)
 
     for i in xrange(nloop):
@@ -276,27 +291,19 @@ for j in xrange(nsamp):
             nw = idx_move.size
             f0 = f.take(idx_move)
 
-            #if np.random.uniform() < 0.95:
-            # linear in flux
-            df = np.random.normal(size=nw).astype(np.float32)*np.float32(60./np.sqrt(25.))
-            # bounce flux off of fmin
-            abovefmin = f0 - trueminf
-            oob_flux = (-df > abovefmin)
-            df[oob_flux] = -2*abovefmin[oob_flux] - df[oob_flux]
-            pf = f0+df
+            lindf = np.float32(60./np.sqrt(25.))
+            logdf = np.float32(0.01/np.sqrt(25.))
+            ff = np.log(logdf*logdf*f0 + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0*f0)) / logdf
+            ffmin = np.log(logdf*logdf*trueminf + logdf*np.sqrt(lindf*lindf + logdf*logdf*trueminf*trueminf)) / logdf
+            dff = np.random.normal(size=nw).astype(np.float32)
+            aboveffmin = ff - ffmin
+            oob_flux = (-dff > aboveffmin)
+            dff[oob_flux] = -2*aboveffmin[oob_flux] - dff[oob_flux]
+            pff = ff + dff
+            pf = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
             # calculate flux distribution prior factor
             dlogf = np.log(pf/f0)
             factor = -truealpha*dlogf
-            #else:
-            #    # logarithmic, to give bright sources a chance
-            #    # might be bad to do and not that helpful
-            #    dlogf = np.random.normal(size=nw).astype(np.float32)*np.float32(0.01)#/np.sqrt(25.))
-            #    # bounce flux off of fmin
-            #    abovefmin = np.log(f0/trueminf)
-            #    oob_flux = (-dlogf > abovefmin)
-            #    dlogf[oob_flux] = -2*abovefmin[oob_flux] - dlogf[oob_flux]
-            #    pf = f0*np.exp(dlogf)
-            #    factor = -truealpha*dlogf
 
             dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0, pf))
             dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
@@ -324,7 +331,6 @@ for j in xrange(nsamp):
             goodmove = True 
         # birth and death
         elif rtype == 2:
-            ##lifeordeath = np.random.uniform() < 1./(np.exp(penalty) + 1.) # better to do this or put in factor?
             lifeordeath = np.random.randint(2)
             nbd = (nregx * nregy) / 4
             # birth
@@ -489,31 +495,51 @@ for j in xrange(nsamp):
             nw = idx_move_g.size
             f0g = fg.take(idx_move_g)
 
-            dfg = np.random.normal(size=nw).astype(np.float32)*np.float32(60./np.sqrt(25))
-            abovefmin = f0g - trueminf_g
-            oob_flux = (-dfg > abovefmin)
-            dfg[oob_flux] = -2*abovefmin[oob_flux] - dfg[oob_flux]
-            pfg = f0g+dfg
+            lindf = np.float32(60./np.sqrt(25.))
+            logdf = np.float32(0.01/np.sqrt(25.))
+            ff = np.log(logdf*logdf*f0g + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0g*f0g)) / logdf
+            ffmin = np.log(logdf*logdf*trueminf_g + logdf*np.sqrt(lindf*lindf + logdf*logdf*trueminf_g*trueminf_g)) / logdf
+            dff = np.random.normal(size=nw).astype(np.float32)
+            aboveffmin = ff - ffmin
+            oob_flux = (-dff > aboveffmin)
+            dff[oob_flux] = -2*aboveffmin[oob_flux] - dff[oob_flux]
+            pff = ff + dff
+            pfg = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
+
             dlogfg = np.log(pfg/f0g)
             factor = -truealpha_g*dlogfg
 
             dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0g, pfg))
             dxg = np.random.normal(size=nw).astype(np.float32)*dpos_rms
             dyg = np.random.normal(size=nw).astype(np.float32)*dpos_rms
-            drxg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
-            dryg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
-            drzg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
+            dxxg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
+            dxyg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
+            dyyg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
             x0g = xg.take(idx_move_g)
             y0g = yg.take(idx_move_g)
-            rx0g= rxg.take(idx_move_g)
-            ry0g= ryg.take(idx_move_g)
-            rz0g= rzg.take(idx_move_g)
+            xx0g= xxg.take(idx_move_g)
+            xy0g= xyg.take(idx_move_g)
+            yy0g= yyg.take(idx_move_g)
             pxg = x0g + dxg
             pyg = y0g + dyg
-            prxg=rx0g + drxg
-            pryg=ry0g + dryg
-            przg=rz0g + drzg
-            factor -= 0.5 * (prxg*prxg + pryg*pryg + przg*przg - rx0g*rx0g - ry0g*ry0g - rz0g*rz0g) / (truer_g*truer_g)
+            pxxg=xx0g + dxxg
+            pxyg=xy0g + dxyg
+            pyyg=yy0g + dyyg
+            # bounce xx, yy off of zero TODO min radius of galaxies?
+            mask = pxxg < 0
+            pxxg[mask] *= -1
+            mask = pyyg < 0
+            pyyg[mask] *= -1
+            # put in -inf for illegal ellipses
+            mask = (pxxg*pyyg - pxyg*pxyg) <= 0
+            pxxg[mask] = xx0g[mask] # make illegal ellipses legal so that prior factor can be calculated, even though not used
+            pxyg[mask] = xy0g[mask]
+            pyyg[mask] = yy0g[mask]
+            factor[mask] = -float('inf')
+
+            # calculate prior factor 
+            factor += -log_prior_moments(xx0g, xy0g, yy0g) + log_prior_moments(pxxg, pxyg, pyyg)
+            
             # bounce off of edges of image
             mask = pxg < 0
             pxg[mask] *= -1
@@ -525,11 +551,9 @@ for j in xrange(nsamp):
             mask = pyg > (imsz[1] - 1)
             pyg[mask] *= -1
             pyg[mask] += 2*(imsz[1] - 1)
-            # need to put in prior on frisbee vector
             goodmove = True
         # galaxy birth and death
         elif rtype == 5:
-            ##lifeordeath = np.random.uniform() < 1./(np.exp(penalty_g) + 1.) # better to do this or put in factor?
             lifeordeath = np.random.randint(2)
             nbd = (nregx * nregy) / 4
             # birth
@@ -542,10 +566,8 @@ for j in xrange(nsamp):
                 bxg = ((np.random.randint(mregx, size=nbd)*2 + parity_x + np.random.uniform(size=nbd))*regsize - offsetx).astype(np.float32)
                 byg = ((np.random.randint(mregy, size=nbd)*2 + parity_y + np.random.uniform(size=nbd))*regsize - offsety).astype(np.float32)
                 bfg = trueminf * np.exp(np.random.exponential(scale=1./(truealpha-1.),size=nbd)).astype(np.float32)
-                # need prior on frisbee vector
-                brxg= np.random.normal(size=nbd, scale=truer_g).astype(np.float32)
-                bryg= np.random.normal(size=nbd, scale=truer_g).astype(np.float32)
-                brzg= np.random.normal(size=nbd, scale=truer_g).astype(np.float32)
+                # put in function?
+                bxxg, bxyg, byyg = moments_from_prior(truermin_g, truealpha_g, nbd)
 
                 # some sources might be generated outside image
                 inbounds = (bxg > 0) * (bxg < (imsz[0] - 1)) * (byg > 0) * (byg < (imsz[1] - 1))
@@ -554,9 +576,9 @@ for j in xrange(nsamp):
                 bxg = bxg.take(idx_in)
                 byg = byg.take(idx_in)
                 bfg = bfg.take(idx_in)
-                brxg=brxg.take(idx_in)
-                bryg=bryg.take(idx_in)
-                brzg=brzg.take(idx_in)
+                bxxg=bxxg.take(idx_in)
+                bxyg=bxyg.take(idx_in)
+                byyg=byyg.take(idx_in)
                 do_birth_g = True
                 factor = np.full(nw, -penalty_g)
                 goodmove = True
@@ -572,9 +594,9 @@ for j in xrange(nsamp):
                     xkg = xg.take(idx_kill_g)
                     ykg = yg.take(idx_kill_g)
                     fkg = fg.take(idx_kill_g)
-                    rxkg=rxg.take(idx_kill_g)
-                    rykg=ryg.take(idx_kill_g)
-                    rzkg=rzg.take(idx_kill_g)
+                    xxkg=xxg.take(idx_kill_g)
+                    xykg=xyg.take(idx_kill_g)
+                    yykg=yyg.take(idx_kill_g)
                     factor = np.full(nbd, penalty_g)
                     goodmove = True
                 else:
@@ -597,11 +619,9 @@ for j in xrange(nsamp):
                         bxg = xk.copy()
                         byg = yk.copy()
                         bfg = fk.copy()
-                        # generate frisbee vector from prior
-                        brxg= np.random.normal(size=nsg, scale=truer_g).astype(np.float32)
-                        bryg= np.random.normal(size=nsg, scale=truer_g).astype(np.float32)
-                        brzg= np.random.normal(size=nsg, scale=truer_g).astype(np.float32)
-                        factor = np.full(nsg, penalty-penalty_g)
+
+                        bxxg, bxyg, byyg = moments_from_prior(truermin_g, truealpha_g, nsg)
+                        factor = np.full(nsg, penalty-penalty_g) # TODO factor if star and galaxy flux distributions different
                         goodmove = True
                     else:
                         goodmove = False
@@ -615,20 +635,19 @@ for j in xrange(nsamp):
                         xkg = xg.take(idx_kill_g)
                         ykg = yg.take(idx_kill_g)
                         fkg = fg.take(idx_kill_g)
-                        rxkg=rxg.take(idx_kill_g)
-                        rykg=ryg.take(idx_kill_g)
-                        rzkg=rzg.take(idx_kill_g)
+                        xxkg=xxg.take(idx_kill_g)
+                        xykg=xyg.take(idx_kill_g)
+                        yykg=yyg.take(idx_kill_g)
                         do_birth = True
                         bx = xkg.copy()
                         by = ykg.copy()
                         bf = fkg.copy()
-                        factor = np.full(nsg, penalty_g-penalty)
+                        factor = np.full(nsg, penalty_g-penalty) # TODO factor if star and galaxy flux distributions different
                         goodmove = True
                     else:
                         goodmove = False
         # one galaxy <-> two stars
         elif rtype == 7:
-            kickrange_g = truer_g
             splitsville = np.random.randint(2)
             idx_reg = idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize) # stars
             idx_reg_g = idx_parity(xg, yg, ng, offsetx, offsety, parity_x, parity_y, regsize) # galaxies
@@ -645,16 +664,15 @@ for j in xrange(nsamp):
                 xkg = xg.take(idx_kill_g)
                 ykg = yg.take(idx_kill_g)
                 fkg = fg.take(idx_kill_g)
-                rxkg=rxg.take(idx_kill_g)
-                rykg=ryg.take(idx_kill_g)
-                rzkg=rzg.take(idx_kill_g)
+                xxkg=xxg.take(idx_kill_g)
+                xykg=xyg.take(idx_kill_g)
+                yykg=yyg.take(idx_kill_g)
                 fminratio = fkg / trueminf # again, care about fmin for stars
                 frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
-                a2Pb2 = rxkg*rxkg + rykg*rykg # a^2 + b^2
-                a2Pb2Pc2 = a2Pb2 + rzkg*rzkg # a^2 + b^2 + c^2
                 f1Mf = frac * (1. - frac) # frac(1 - frac)
-                dx = rykg * np.sqrt(a2Pb2Pc2 / (a2Pb2 * f1Mf))
-                dy =-rxkg * np.sqrt(a2Pb2Pc2 / (a2Pb2 * f1Mf))
+                agalx, theta, phi = from_moments(xxkg, xykg, yykg)
+                dx = agalx * np.cos(phi) / np.sqrt(2 * f1Mf)
+                dy = agalx * np.sin(phi) / np.sqrt(2 * f1Mf)
                 dr2 = dx*dx + dy*dy
                 do_birth = True
                 bx = np.column_stack([xkg + ((1-frac)*dx), xkg - frac*dx])
@@ -669,9 +687,9 @@ for j in xrange(nsamp):
                 xkg = xkg.take(idx_in)
                 ykg = ykg.take(idx_in)
                 fkg = fkg.take(idx_in)
-                rxkg=rxkg.take(idx_in)
-                rykg=rykg.take(idx_in)
-                rzkg=rzkg.take(idx_in)
+                xxkg=xxkg.take(idx_in)
+                xykg=xykg.take(idx_in)
+                yykg=yykg.take(idx_in)
                 bx = bx.take(idx_in, axis=0) # birth arrays are 2D
                 by = by.take(idx_in, axis=0)
                 bf = bf.take(idx_in, axis=0)
@@ -680,8 +698,7 @@ for j in xrange(nsamp):
                 frac = frac.take(idx_in)
                 dr2 = dr2.take(idx_in)
                 f1Mf = f1Mf.take(idx_in)
-                a2Pb2 = a2Pb2.take(idx_in)
-                a2Pb2Pc2 = a2Pb2Pc2.take(idx_in)
+                theta = theta.take(idx_in)
                 goodmove = idx_in.size > 0
 
                 # need star pairs to calculate factor
@@ -749,24 +766,25 @@ for j in xrange(nsamp):
                 bxg = frac*xk[:,0] + (1-frac)*xk[:,1]
                 byg = frac*yk[:,0] + (1-frac)*yk[:,1]
                 bfg = sum_f
-                theta = (np.random.uniform(size=idx_in.size) * 2 * np.pi).astype(np.float32)
-                brxg =  dy * np.sqrt(f1Mf) * np.cos(theta)
-                bryg = -dx * np.sqrt(f1Mf) * np.cos(theta)
-                brzg = np.sqrt(f1Mf * (dx*dx + dy*dy)) * np.sin(theta)
-                a2Pb2 = brxg*brxg + bryg*bryg
-                a2Pb2Pc2 = a2Pb2 + brzg*brzg
+                u = np.random.uniform(low=3e-4, high=1., size=idx_in.size).astype(np.float32) #3e-4 for numerics
+                theta = np.arccos(u).astype(np.float32)
+                bxxg = f1Mf*(dx*dx+u*u*dy*dy)
+                bxyg = f1Mf*(1-u*u)*dx*dy
+                byyg = f1Mf*(dy*dy+u*u*dx*dx)
                 # this move proposes a splittable galaxy
                 bright_n += 1 
             if goodmove:
                 factor = 2*np.log(truealpha-1) - np.log(truealpha_g-1) + 2*(truealpha-1)*np.log(trueminf) - (truealpha_g-1)*np.log(trueminf_g) - \
-                    truealpha*np.log(f1Mf) - (2*truealpha - truealpha_g)*np.log(sum_f) + 1.5*np.log(2*np.pi*truer_g*truer_g) + 0.5*a2Pb2Pc2/(truer_g*truer_g) - \
-                    np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) - np.log(2*np.pi) + np.log(bright_n/(ng+1.-splitsville)) + np.log((n-1+2*splitsville)*weightoverpairs) + \
-                    np.log(sum_f) - 0.5*np.log(a2Pb2) - np.log(f1Mf)
+                    truealpha*np.log(f1Mf) - (2*truealpha - truealpha_g)*np.log(sum_f) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) - \
+                    np.log(2*np.pi*kickrange_g*kickrange_g) + np.log(bright_n/(ng+1.-splitsville)) + np.log((n-1+2*splitsville)*weightoverpairs) + \
+                    np.log(sum_f) - np.log(4.) - 2*np.log(dr2) - 3*np.log(f1Mf) - np.log(np.cos(theta)) - 3*np.log(np.sin(theta))
                 if not splitsville:
                     factor *= -1
                     factor += 2*penalty - penalty_g
+                    factor += log_prior_moments(bxxg, bxyg, byyg)
                 else:
                     factor -= 2*penalty - penalty_g
+                    factor -= log_prior_moments(xxkg, xykg, yykg)
         # galaxy <-> galaxy + star
         elif rtype == 8:
             splitsville = np.random.randint(2)
@@ -780,22 +798,22 @@ for j in xrange(nsamp):
             # split off star
             if splitsville and ng > 0 and n < nstar and bright_n > 0: # need something to split, but don't exceed nstar
                 nms = min(nms, bright_n, nstar-n) # need bright source AND room for split off star
-                dx = (np.random.normal(size=nms)*kickrange).astype(np.float32)
-                dy = (np.random.normal(size=nms)*kickrange).astype(np.float32)
+                dx = (np.random.normal(size=nms)*kickrange_g).astype(np.float32)
+                dy = (np.random.normal(size=nms)*kickrange_g).astype(np.float32)
                 idx_move_g = np.random.choice(idx_bright, size=nms, replace=False)
                 x0g = xg.take(idx_move_g)
                 y0g = yg.take(idx_move_g)
                 f0g = fg.take(idx_move_g)
-                rx0g = rxg.take(idx_move_g)
-                ry0g = ryg.take(idx_move_g)
-                rz0g = rzg.take(idx_move_g)
+                xx0g = xxg.take(idx_move_g)
+                xy0g = xyg.take(idx_move_g)
+                yy0g = yyg.take(idx_move_g)
                 frac = (trueminf_g/f0g + np.random.uniform(size=nms)*(1. - (trueminf_g + trueminf)/f0g)).astype(np.float32)
                 pxg = x0g + ((1-frac)*dx)
                 pyg = y0g + ((1-frac)*dy)
                 pfg = f0g * frac
-                prxg = rx0g * np.sqrt(frac)
-                pryg = ry0g * np.sqrt(frac)
-                przg = rz0g * np.sqrt(frac)
+                pxxg = (xx0g - frac*(1-frac)*dx*dx)/frac
+                pxyg = (xy0g - frac*(1-frac)*dx*dy)/frac
+                pyyg = (yy0g - frac*(1-frac)*dy*dy)/frac
                 do_birth = True
                 bx = x0g - frac*dx
                 by = y0g - frac*dy
@@ -804,22 +822,21 @@ for j in xrange(nsamp):
                 # don't want to think about how to bounce split-merge
                 # don't need to check if above fmin, because of how frac is decided
                 inbounds = (pxg > 0) * (pxg < imsz[0] - 1) * (pyg > 0) * (pyg < imsz[1] - 1) * \
-                           (bx > 0) * (bx < imsz[0] - 1) * (by > 0) * (by < imsz[1] - 1)
+                           (bx > 0) * (bx < imsz[0] - 1) * (by > 0) * (by < imsz[1] - 1) * \
+                           (pxxg > 0) * (pyyg > 0) * (pxxg*pyyg > pxyg*pxyg) # TODO minimum galaxy radius?
                 idx_in = np.flatnonzero(inbounds)
                 x0g = x0g.take(idx_in)
                 y0g = y0g.take(idx_in)
                 f0g = f0g.take(idx_in)
-                rx0g = rx0g.take(idx_in)
-                ry0g = ry0g.take(idx_in)
-                rz0g = rz0g.take(idx_in)
-                merger2 = rx0g*rx0g + ry0g*ry0g + rz0g*rz0g
+                xx0g = xx0g.take(idx_in)
+                xy0g = xy0g.take(idx_in)
+                yy0g = yy0g.take(idx_in)
                 pxg = pxg.take(idx_in)
                 pyg = pyg.take(idx_in)
                 pfg = pfg.take(idx_in)
-                prxg = prxg.take(idx_in)
-                pryg = pryg.take(idx_in)
-                przg = przg.take(idx_in)
-                splitr2 = prxg*prxg + pryg*pryg + przg*przg
+                pxxg = pxxg.take(idx_in)
+                pxyg = pxyg.take(idx_in)
+                pyyg = pyyg.take(idx_in)
                 bx = bx.take(idx_in)
                 by = by.take(idx_in)
                 bf = bf.take(idx_in)
@@ -838,7 +855,7 @@ for j in xrange(nsamp):
                     xtemp = np.concatenate([xtemp, pxg[k:k+1], bx[k:k+1]])
                     ytemp = np.concatenate([ytemp, pyg[k:k+1], by[k:k+1]])
 
-                    invpairs[k] =  1./neighbours(xtemp, ytemp, kickrange, n)
+                    invpairs[k] =  1./neighbours(xtemp, ytemp, kickrange_g, n)
             # merge star into galaxy
             elif not splitsville and idx_reg_g.size > 1: # need two things to merge!
                 nms = min(nms, idx_reg_g.size)
@@ -850,7 +867,7 @@ for j in xrange(nsamp):
 
                 for k in xrange(nms):
                     l = idx_move_g[k]
-                    invpairs[k], idx_kill[k] = neighbours(np.concatenate([x[0:n], xg[l:l+1]]), np.concatenate([y[0:n], yg[l:l+1]]), kickrange, n, generate=True)
+                    invpairs[k], idx_kill[k] = neighbours(np.concatenate([x[0:n], xg[l:l+1]]), np.concatenate([y[0:n], yg[l:l+1]]), kickrange_g, n, generate=True)
                     if invpairs[k] > 0:
                         invpairs[k] = 1./invpairs[k]
                     else:
@@ -873,31 +890,249 @@ for j in xrange(nsamp):
                 x0g = xg.take(idx_move_g)
                 y0g = yg.take(idx_move_g)
                 f0g = fg.take(idx_move_g)
-                rx0g=rxg.take(idx_move_g)
-                ry0g=ryg.take(idx_move_g)
-                rz0g=rzg.take(idx_move_g)
-                splitr2 = rx0g*rx0g + ry0g*ry0g + rz0g*rz0g
+                xx0g=xxg.take(idx_move_g)
+                xy0g=xyg.take(idx_move_g)
+                yy0g=yyg.take(idx_move_g)
                 xk = x.take(idx_kill)
                 yk = y.take(idx_kill)
                 fk = f.take(idx_kill)
                 sum_f = f0g + fk
                 frac = f0g / sum_f
+                dx = x0g - xk
+                dy = y0g - yk
+                pxxg = frac*xx0g + frac*(1-frac)*dx*dx
+                pxyg = frac*xy0g + frac*(1-frac)*dx*dy
+                pyyg = frac*yy0g + frac*(1-frac)*dy*dy
+                inbounds = (pxxg > 0) * (pyyg > 0) * (pxxg*pyyg > pxyg*pxyg) # make sure ellipse is legal TODO min galaxy radius
+                x0g = x0g.compress(inbounds)
+                y0g = y0g.compress(inbounds)
+                f0g = f0g.compress(inbounds)
+                xx0g=xx0g.compress(inbounds)
+                xy0g=xy0g.compress(inbounds)
+                yy0g=yy0g.compress(inbounds)
+                xk =   xk.compress(inbounds)
+                yk =   yk.compress(inbounds)
+                fk =   fk.compress(inbounds)
+                sum_f=sum_f.compress(inbounds)
+                frac=frac.compress(inbounds)
+                pxxg=pxxg.compress(inbounds)
+                pxyg=pxyg.compress(inbounds)
+                pyyg=pyyg.compress(inbounds)
+                goodmove = np.logical_and(goodmove, inbounds.any())
+
                 pxg = frac*x0g + (1-frac)*xk
                 pyg = frac*y0g + (1-frac)*yk
                 pfg = f0g + fk
-                prxg=rx0g / np.sqrt(frac)
-                pryg=ry0g / np.sqrt(frac)
-                przg=rz0g / np.sqrt(frac)
-                merger2 = prxg*prxg + pryg*pryg + przg*przg
                 # this proposal makes a galaxy that is bright enough to split
                 bright_n = bright_n + 1
             if goodmove:
-                factor = np.log(truealpha-1) - (truealpha-1)*np.log(sum_f/trueminf) - truealpha_g*np.log(frac) - truealpha*np.log(1-frac) + np.log(2*np.pi*kickrange*kickrange) - np.log(imsz[0]*imsz[1]) + np.log(1. - (trueminf+trueminf_g)/sum_f) + np.log(bright_n/float(ng)) + np.log((n+1.-splitsville)*invpairs) + 1.5*np.log(frac) + (merger2-splitr2)/(2.*truer_g*truer_g)
+                factor = np.log(truealpha-1) - (truealpha-1)*np.log(sum_f/trueminf) - truealpha_g*np.log(frac) - truealpha*np.log(1-frac) + np.log(2*np.pi*kickrange_g*kickrange_g) - np.log(imsz[0]*imsz[1]) + np.log(1. - (trueminf+trueminf_g)/sum_f) + np.log(bright_n/float(ng)) + np.log((n+1.-splitsville)*invpairs) - 2*np.log(frac)
                 if not splitsville:
                     factor *= -1
                     factor += penalty
                 else:
                     factor -= penalty
+                factor += log_prior_moments(pxxg, pxyg, pyyg) - log_prior_moments(xx0g, xy0g, yy0g) # galaxy prior
+        # galaxy merges and splits
+        elif rtype == 9:
+            splitsville = np.random.randint(2)
+            idx_reg = idx_parity(xg, yg, ng, offsetx, offsety, parity_x, parity_y, regsize)
+            sum_f = 0
+            low_n = 0
+            idx_bright = idx_reg.take(np.flatnonzero(fg.take(idx_reg) > 2*trueminf_g)) # in region!
+            bright_n = idx_bright.size
+
+            nms = (nregx * nregy) / 4
+            # split
+            if splitsville and ng > 0 and ng < ngalx and bright_n > 0: # need something to split, but don't exceed nstar
+                nms = min(nms, bright_n, ngalx-ng) # need bright source AND room for split source
+                dx = (np.random.normal(size=nms)*kickrange_g).astype(np.float32)
+                dy = (np.random.normal(size=nms)*kickrange_g).astype(np.float32)
+                idx_move_g = np.random.choice(idx_bright, size=nms, replace=False)
+                x0g = xg.take(idx_move_g)
+                y0g = yg.take(idx_move_g)
+                f0g = fg.take(idx_move_g)
+                xx0g=xxg.take(idx_move_g)
+                xy0g=xyg.take(idx_move_g)
+                yy0g=yyg.take(idx_move_g)
+                fminratio = f0g / trueminf_g
+                frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
+                frac_xx = np.random.uniform(size=nms).astype(np.float32)
+                frac_xy = np.random.uniform(size=nms).astype(np.float32)
+                frac_yy = np.random.uniform(size=nms).astype(np.float32)
+                xx_p = xx0g - frac*(1-frac)*dx*dx# moments of just galaxy pair
+                xy_p = xy0g - frac*(1-frac)*dx*dy
+                yy_p = yy0g - frac*(1-frac)*dy*dy
+                pxg = x0g + ((1-frac)*dx)
+                pyg = y0g + ((1-frac)*dy)
+                pfg = f0g * frac
+                pxxg = xx_p * frac_xx / frac
+                pxyg = xy_p * frac_xy / frac
+                pyyg = yy_p * frac_yy / frac
+                do_birth_g = True
+                bxg = x0g - frac*dx
+                byg = y0g - frac*dy
+                bfg = f0g * (1-frac)
+                bxxg = xx_p * (1-frac_xx) / (1-frac) # FIXME is this right?
+                bxyg = xy_p * (1-frac_xy) / (1-frac)
+                byyg = yy_p * (1-frac_yy) / (1-frac)
+                # don't want to think about how to bounce split-merge
+                # don't need to check if above fmin, because of how frac is decided
+                inbounds = (pxg > 0) * (pxg < imsz[0] - 1) * (pyg > 0) * (pyg < imsz[1] - 1) * \
+                           (bxg > 0) * (bxg < imsz[0] - 1) * (byg > 0) * (byg < imsz[1] - 1) * \
+                           (pxxg > 0) * (pyyg > 0) * (pxxg*pyyg > pxyg*pxyg) * \
+                           (bxxg > 0) * (byyg > 0) * (bxxg*byyg > bxyg*bxyg) # TODO min galaxy rad
+                idx_in = np.flatnonzero(inbounds)
+                x0g = x0g.take(idx_in)
+                y0g = y0g.take(idx_in)
+                f0g = f0g.take(idx_in)
+                xx0g=xx0g.take(idx_in)
+                xy0g=xy0g.take(idx_in)
+                yy0g=yy0g.take(idx_in)
+                pxg = pxg.take(idx_in)
+                pyg = pyg.take(idx_in)
+                pfg = pfg.take(idx_in)
+                pxxg=pxxg.take(idx_in)
+                pxyg=pxyg.take(idx_in)
+                pyyg=pyyg.take(idx_in)
+                bxg = bxg.take(idx_in)
+                byg = byg.take(idx_in)
+                bfg = bfg.take(idx_in)
+                bxxg=bxxg.take(idx_in)
+                bxyg=bxyg.take(idx_in)
+                byyg=byyg.take(idx_in)
+                idx_move_g = idx_move_g.take(idx_in)
+                fminratio = fminratio.take(idx_in)
+                frac = frac.take(idx_in)
+                xx_p = xx_p.take(idx_in)
+                xy_p = xy_p.take(idx_in)
+                yy_p = yy_p.take(idx_in)
+                goodmove = idx_in.size > 0
+
+                # need to calculate factor
+                sum_f = f0g
+                nms = idx_in.size
+                nw = nms
+                invpairs = np.zeros(nms)
+                for k in xrange(nms):
+                    xtemp = xg[0:ng].copy()
+                    ytemp = yg[0:ng].copy()
+                    xtemp[idx_move_g[k]] = pxg[k]
+                    ytemp[idx_move_g[k]] = pyg[k]
+                    xtemp = np.concatenate([xtemp, bxg[k:k+1]])
+                    ytemp = np.concatenate([ytemp, byg[k:k+1]])
+
+                    invpairs[k] =  1./neighbours(xtemp, ytemp, kickrange_g, idx_move_g[k])
+                    invpairs[k] += 1./neighbours(xtemp, ytemp, kickrange_g, ng)
+                invpairs *= 0.5
+            # merge
+            elif not splitsville and idx_reg.size > 1: # need two things to merge!
+                nms = min(nms, idx_reg.size/2)
+                idx_move_g = np.zeros(nms, dtype=np.int)
+                idx_kill_g = np.zeros(nms, dtype=np.int)
+                choosable = np.zeros(ngalx, dtype=np.bool)
+                choosable[idx_reg] = True
+                nchoosable = float(np.count_nonzero(choosable))
+                invpairs = np.zeros(nms)
+
+                for k in xrange(nms):
+                    idx_move_g[k] = np.random.choice(ngalx, p=choosable/nchoosable)
+                    invpairs[k], idx_kill_g[k] = neighbours(xg[0:ng], yg[0:ng], kickrange_g, idx_move_g[k], generate=True)
+                    if invpairs[k] > 0:
+                        invpairs[k] = 1./invpairs[k]
+                    # prevent sources from being involved in multiple proposals
+                    if not choosable[idx_kill_g[k]]:
+                        idx_kill_g[k] = -1
+                    if idx_kill_g[k] != -1:
+                        invpairs[k] += 1./neighbours(xg[0:ng], yg[0:ng], kickrange_g, idx_kill_g[k])
+                        choosable[idx_move_g[k]] = False
+                        choosable[idx_kill_g[k]] = False
+                        nchoosable -= 2
+                invpairs *= 0.5
+
+                inbounds = (idx_kill_g != -1)
+                idx_in = np.flatnonzero(inbounds)
+                nms = idx_in.size
+                nw = nms
+                idx_move_g = idx_move_g.take(idx_in)
+                idx_kill_g = idx_kill_g.take(idx_in)
+                invpairs = invpairs.take(idx_in)
+                goodmove = idx_in.size > 0
+
+                x0g = xg.take(idx_move_g)
+                y0g = yg.take(idx_move_g)
+                f0g = fg.take(idx_move_g)
+                xx0g=xxg.take(idx_move_g)
+                xy0g=xyg.take(idx_move_g)
+                yy0g=yyg.take(idx_move_g)
+                xkg = xg.take(idx_kill_g)
+                ykg = yg.take(idx_kill_g)
+                fkg = fg.take(idx_kill_g)
+                xxkg=xxg.take(idx_kill_g)
+                xykg=xyg.take(idx_kill_g)
+                yykg=yyg.take(idx_kill_g)
+                sum_f = f0g + fkg
+                fminratio = sum_f / trueminf_g
+                frac = f0g / sum_f
+
+                pxg = frac*x0g + (1-frac)*xkg
+                pyg = frac*y0g + (1-frac)*ykg
+                pfg = f0g + fkg
+                dx = x0g - xkg
+                dy = y0g - ykg
+                xx_p = frac*xx0g + (1-frac)*xxkg
+                xy_p = frac*xy0g + (1-frac)*xykg
+                yy_p = frac*yy0g + (1-frac)*yykg
+                pxxg = xx_p + frac*(1-frac)*dx*dx
+                pxyg = xy_p + frac*(1-frac)*dx*dy
+                pyyg = yy_p + frac*(1-frac)*dy*dy
+
+                idx_in = np.flatnonzero((pxxg > 0) * (pyyg > 0) * (pxxg*pyyg > pxyg*pxyg)) # ellipse legal TODO minimum radius
+                x0g = x0g.take(idx_in)
+                y0g = y0g.take(idx_in)
+                f0g = f0g.take(idx_in)
+                xx0g=xx0g.take(idx_in)
+                xy0g=xy0g.take(idx_in)
+                yy0g=yy0g.take(idx_in)
+                xkg = xkg.take(idx_in)
+                ykg = ykg.take(idx_in)
+                fkg = fkg.take(idx_in)
+                xxkg=xxkg.take(idx_in)
+                xykg=xykg.take(idx_in)
+                yykg=yykg.take(idx_in)
+                pxg = pxg.take(idx_in)
+                pyg = pyg.take(idx_in)
+                pfg = pfg.take(idx_in)
+                pxxg=pxxg.take(idx_in)
+                pxyg=pxyg.take(idx_in)
+                pyyg=pyyg.take(idx_in)
+                
+                idx_move_g = idx_move_g.take(idx_in)
+                idx_kill_g = idx_kill_g.take(idx_in)
+                invpairs = invpairs.take(idx_in)
+                sum_f = sum_f.take(idx_in)
+                fminratio = fminratio.take(idx_in)
+                frac = frac.take(idx_in)
+                xx_p = xx_p.take(idx_in)
+                xy_p = xy_p.take(idx_in)
+                yy_p = yy_p.take(idx_in)
+                
+                nms = idx_in.size
+                nw = nms
+                goodmove = nms > 0
+                # turn bright_n into an array
+                bright_n = bright_n - (f0g > 2*trueminf_g) - (fkg > 2*trueminf_g) + (pfg > 2*trueminf_g)
+            if goodmove:
+                factor = np.log(truealpha_g-1) + (truealpha_g-1)*np.log(trueminf) - truealpha_g*np.log(frac*(1-frac)*sum_f) + \
+                    np.log(2*np.pi*kickrange_g*kickrange_g) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) + np.log(bright_n) + np.log(invpairs) + \
+                    np.log(sum_f) + np.log(xx_p) + np.log(np.abs(xy_p)) + np.log(yy_p) - 3*np.log(frac) - 3*np.log(1-frac) # last line is Jacobian #TODO galaxy prior
+                if not splitsville:
+                    factor *= -1
+                    factor += penalty_g
+                    factor += log_prior_moments(pxxg, pxyg, pyyg) - log_prior_moments(xx0g, xy0g, yy0g) - log_prior_moments(xxkg, xykg, yykg)
+                else:
+                    factor -= penalty_g
+                    factor += log_prior_moments(pxxg, pxyg, pyyg) + log_prior_moments(bxxg, bxyg, byyg) - log_prior_moments(xx0g, xy0g, yy0g)
         # endif rtype   
         nmov[i] = nw
         dt1[i] = time.clock() - t1
@@ -913,7 +1148,7 @@ for j in xrange(nsamp):
                 ftemp.extend([-f0, pf])
             if idx_move_g is not None:
                 xposphon, yposphon, fluxphon = retr_tranphon(gridphon, amplphon, np.concatenate([x0g, pxg]), np.concatenate([y0g, pyg]), np.concatenate([-f0g, pfg]), \
-                    np.concatenate([rx0g, prxg]), np.concatenate([ry0g, pryg]), np.concatenate([rz0g, przg]))
+                    np.concatenate([xx0g, pxxg]), np.concatenate([xy0g, pxyg]), np.concatenate([yy0g, pyyg]))
                 xtemp.append(xposphon)
                 ytemp.append(yposphon)
                 ftemp.append(fluxphon)
@@ -926,12 +1161,12 @@ for j in xrange(nsamp):
                 ytemp.append(yk.flatten())
                 ftemp.append(-fk.flatten())
             if do_birth_g:
-                xposphon, yposphon, fluxphon = retr_tranphon(gridphon, amplphon, bxg, byg, bfg, brxg, bryg, brzg)
+                xposphon, yposphon, fluxphon = retr_tranphon(gridphon, amplphon, bxg, byg, bfg, bxxg, bxyg, byyg)
                 xtemp.append(xposphon)
                 ytemp.append(yposphon)
                 ftemp.append(fluxphon)
             if idx_kill_g is not None:
-                xposphon, yposphon, fluxphon = retr_tranphon(gridphon, amplphon, xkg, ykg, -fkg, rxkg, rykg, rzkg)
+                xposphon, yposphon, fluxphon = retr_tranphon(gridphon, amplphon, xkg, ykg, -fkg, xxkg, xykg, yykg)
                 xtemp.append(xposphon)
                 ytemp.append(yposphon)
                 ftemp.append(fluxphon)
@@ -939,16 +1174,6 @@ for j in xrange(nsamp):
             dmodel, diff2 = image_model_eval(np.concatenate(xtemp), np.concatenate(ytemp), np.concatenate(ftemp), dback, imsz, nc, cf, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=offsetx, offsety=offsety)
             plogL = -0.5*diff2
             dt2[i] = time.clock() - t2
-
-            '''if j % 100 == 0 and rtype == 4:
-                 titles = ['perturb *', '', 'birth-death *', 'merge-split *', 'perturb g', 'birth-death g', '* <-> g']
-                 plt.figure(2)
-                 plt.clf()
-                 vmax = np.max(np.abs(dmodel))
-                 plt.imshow(dmodel, origin='lower', interpolation='none', cmap='bwr', vmin=-vmax, vmax=vmax)
-                 plt.title(titles[rtype])
-                 plt.draw()
-                 plt.pause(1)'''
 
             t3 = time.clock()
             nregx = imsz[0] / regsize + 1
@@ -962,16 +1187,16 @@ for j in xrange(nsamp):
                 if idx_move_g is not None:
                     refx = x0g
                     refy = y0g
-                if do_birth:
+                elif do_birth:
                     refx = bx if bx.ndim == 1 else bx[:,0]
                     refy = by if by.ndim == 1 else by[:,0]
-                if idx_kill is not None:
+                elif idx_kill is not None:
                     refx = xk if xk.ndim == 1 else xk[:,0]
                     refy = yk if yk.ndim == 1 else yk[:,0]
-                if do_birth_g:
+                elif do_birth_g:
                     refx = bxg
                     refy = byg
-                if idx_kill_g is not None:
+                elif idx_kill_g is not None:
                     refx = xkg
                     refy = ykg
             regionx = get_region(refx, offsetx, regsize)
@@ -1008,16 +1233,16 @@ for j in xrange(nsamp):
                 pxg_a = pxg.compress(acceptprop)
                 pyg_a = pyg.compress(acceptprop)
                 pfg_a = pfg.compress(acceptprop)
-                prxg_a=prxg.compress(acceptprop)
-                pryg_a=pryg.compress(acceptprop)
-                przg_a=przg.compress(acceptprop)
+                pxxg_a=pxxg.compress(acceptprop)
+                pxyg_a=pxyg.compress(acceptprop)
+                pyyg_a=pyyg.compress(acceptprop)
                 idx_move_a = idx_move_g.compress(acceptprop)
                 xg[idx_move_a] = pxg_a
                 yg[idx_move_a] = pyg_a
                 fg[idx_move_a] = pfg_a
-                rxg[idx_move_a]=prxg_a
-                ryg[idx_move_a]=pryg_a
-                rzg[idx_move_a]=przg_a
+                xxg[idx_move_a]=pxxg_a
+                xyg[idx_move_a]=pxyg_a
+                yyg[idx_move_a]=pyyg_a
             if do_birth:
                 bx_a = bx.compress(acceptprop, axis=0).flatten()
                 by_a = by.compress(acceptprop, axis=0).flatten()
@@ -1031,16 +1256,16 @@ for j in xrange(nsamp):
                 bxg_a = bxg.compress(acceptprop)
                 byg_a = byg.compress(acceptprop)
                 bfg_a = bfg.compress(acceptprop)
-                brxg_a=brxg.compress(acceptprop)
-                bryg_a=bryg.compress(acceptprop)
-                brzg_a=brzg.compress(acceptprop)
+                bxxg_a=bxxg.compress(acceptprop)
+                bxyg_a=bxyg.compress(acceptprop)
+                byyg_a=byyg.compress(acceptprop)
                 num_born = np.count_nonzero(acceptprop)
                 xg[ng:ng+num_born] = bxg_a
                 yg[ng:ng+num_born] = byg_a
                 fg[ng:ng+num_born] = bfg_a
-                rxg[ng:ng+num_born]=brxg_a
-                ryg[ng:ng+num_born]=bryg_a
-                rzg[ng:ng+num_born]=brzg_a
+                xxg[ng:ng+num_born]=bxxg_a
+                xyg[ng:ng+num_born]=bxyg_a
+                yyg[ng:ng+num_born]=byyg_a
                 ng += num_born
             if idx_kill is not None:
                 idx_kill_a = idx_kill.compress(acceptprop, axis=0).flatten()
@@ -1060,15 +1285,15 @@ for j in xrange(nsamp):
                 xg[0:ngalx-num_kill] = np.delete(xg, idx_kill_a)
                 yg[0:ngalx-num_kill] = np.delete(yg, idx_kill_a)
                 fg[0:ngalx-num_kill] = np.delete(fg, idx_kill_a)
-                rxg[0:ngalx-num_kill]=np.delete(rxg, idx_kill_a)
-                ryg[0:ngalx-num_kill]=np.delete(ryg, idx_kill_a)
-                rzg[0:ngalx-num_kill]=np.delete(rzg, idx_kill_a)
+                xxg[0:ngalx-num_kill]=np.delete(xxg, idx_kill_a)
+                xyg[0:ngalx-num_kill]=np.delete(xyg, idx_kill_a)
+                yyg[0:ngalx-num_kill]=np.delete(yyg, idx_kill_a)
                 xg[ngalx-num_kill:] = 0
                 yg[ngalx-num_kill:] = 0
                 fg[ngalx-num_kill:] = 0
-                rxg[ngalx-num_kill:]= 0
-                ryg[ngalx-num_kill:]= 0
-                rzg[ngalx-num_kill:]= 0
+                xxg[ngalx-num_kill:]= 0
+                xyg[ngalx-num_kill:]= 0
+                yyg[ngalx-num_kill:]= 0
                 ng -= num_kill
             dt3[i] = time.clock() - t3
 
@@ -1099,11 +1324,10 @@ for j in xrange(nsamp):
                 if strgmode == 'stargalx':
                     plt.scatter(dictglob['truexposstar'], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
             plt.scatter(x[0:n], y[0:n], marker='x', s=f[0:n]/sizefac, color='r')
-            #for k in xrange(n):
-            #    plt.text(x[k], y[k], k, color='r')
             if strgmode == 'galx':
                 plt.scatter(xg[0:ng], yg[0:ng], marker='2', s=fg[0:ng]/sizefac, color='r')
-                plt.scatter(xg[0:ng], yg[0:ng], marker='o', s=(rxg[0:ng]**2+ryg[0:ng]**2+rzg[0:ng]**2)*4, edgecolors='red', facecolors='none')
+                a, theta, phi = from_moments(xxg[0:ng], xyg[0:ng], yyg[0:ng])
+                plt.scatter(xg[0:ng], yg[0:ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
             plt.xlim(-0.5, imsz[0]-0.5)
             plt.ylim(-0.5, imsz[1]-0.5)
             plt.subplot(1,3,2)
@@ -1122,8 +1346,8 @@ for j in xrange(nsamp):
             plt.ylim((0.5, nstar))
             plt.draw()
             plt.pause(1e-5)
-
         #endfor nloop
+
     nsample[j] = n
     xsample[j,:] = x
     ysample[j,:] = y
@@ -1132,13 +1356,13 @@ for j in xrange(nsamp):
     xgsample[j,:] = xg
     ygsample[j,:] = yg
     fgsample[j,:] = fg
-    rxgsample[j,:] = rxg
-    rygsample[j,:] = ryg
-    rzgsample[j,:] = rzg
-    fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (2Sg) %0.3f (gSg) %0.3f'
-    print 'Loop', j, 'background', back, 'N_star', n, 'N_gal', ng, 'N_phon', n_phon
-    print 'Acceptance'+fmtstr % (np.mean(accept), np.mean(accept[movetype == 0]), np.mean(accept[movetype == 2]), np.mean(accept[movetype == 3]), np.mean(accept[movetype==4]), np.mean(accept[movetype==5]), np.mean(accept[movetype==6]), np.mean(accept[movetype==7]), np.mean(accept[movetype==8]))
-    print 'Out of bounds\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(outbounds), np.mean(outbounds[movetype == 0]), np.mean(outbounds[movetype == 2]), np.mean(outbounds[movetype == 3]))
+    xxgsample[j,:] = xxg
+    xygsample[j,:] = xyg
+    yygsample[j,:] = yyg
+    fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
+    print 'Loop', j, 'background', back, 'N_star', n, 'N_gal', ng, 'N_phon', n_phon, 'chi^2', np.sum(weight*(data-model)*(data-model))
+    print 'Acceptance'+fmtstr % (np.mean(accept), np.mean(accept[movetype == 0]), np.mean(accept[movetype == 2]), np.mean(accept[movetype == 3]), np.mean(accept[movetype==4]), np.mean(accept[movetype==5]), np.mean(accept[movetype==6]), np.mean(accept[movetype==8]), np.mean(accept[movetype==9]))
+    print 'Out of bounds'+fmtstr % (np.mean(outbounds), np.mean(outbounds[movetype == 0]), np.mean(outbounds[movetype == 2]), np.mean(outbounds[movetype == 3]), np.mean(outbounds[movetype==4]), np.mean(outbounds[movetype==5]), np.mean(outbounds[movetype==6]), np.mean(outbounds[movetype==8]), np.mean(outbounds[movetype==9]))
     print '# src pert\t(all) %0.1f (P) %0.1f (B-D) %0.1f (M-S) %0.1f' % (np.mean(nmov), np.mean(nmov[movetype == 0]), np.mean(nmov[movetype == 2]), np.mean(nmov[movetype == 3]))
     print '-'*16
     dt1 *= 1000
@@ -1150,4 +1374,4 @@ for j in xrange(nsamp):
     print '='*16
 
 print 'saving...'
-np.savez('chain.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, zg=zgsample, rxg=rxgsample, ryg=rygsample, rzg=rzsgample)
+np.savez('chain.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
