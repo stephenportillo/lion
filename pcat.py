@@ -118,7 +118,7 @@ bias, gain = [np.float32(i) for i in f.readline().split()]
 f.close()
 data = np.loadtxt('Data/'+dataname+'_cts.txt').astype(np.float32)
 data -= bias
-trueback = np.float32(179.)
+trueback = np.float32(445*250)#179.)
 variance = data / gain
 weight = 1. / variance # inverse variance
 
@@ -159,18 +159,30 @@ else:
 
 # number of stars to use in fit
 nstar = 100
-trueminf = np.float32(250.)
+trueminf = np.float32(250.*136)
 truealpha = np.float32(2.00)
-n = np.random.randint(nstar)+1
-x = (np.random.uniform(size=nstar)*(imsz[0]-1)).astype(np.float32)
-y = (np.random.uniform(size=nstar)*(imsz[1]-1)).astype(np.float32)
-f = trueminf * np.exp(np.random.exponential(scale=1./(truealpha-1.),size=nstar)).astype(np.float32)
-x[n:] = 0.
-y[n:] = 0.
-f[n:] = 0.
 back = trueback
+ntemps = 1
+temps = np.sqrt(2) ** np.arange(ntemps)
 
-def moments_from_prior(truermin_g, slope, ngalx):
+n_all = []
+x_all = []
+y_all = []
+f_all = []
+for i in xrange(ntemps):
+    n = np.random.randint(nstar)+1
+    x = (np.random.uniform(size=nstar)*(imsz[0]-1)).astype(np.float32)
+    y = (np.random.uniform(size=nstar)*(imsz[1]-1)).astype(np.float32)
+    f = trueminf * np.exp(np.random.exponential(scale=1./(truealpha-1.),size=nstar)).astype(np.float32)
+    x[n:] = 0.
+    y[n:] = 0.
+    f[n:] = 0.
+    n_all.append(n)
+    x_all.append(x)
+    y_all.append(y)
+    f_all.append(f)
+
+def moments_from_prior(truermin_g, ngalx, slope=np.float32(4)):
     rg = truermin_g*np.exp(np.random.exponential(scale=1./(slope-1.),size=ngalx)).astype(np.float32)
     ug = np.random.uniform(low=3e-4, high=1., size=ngalx).astype(np.float32) #3e-4 for numerics
     thetag = np.arccos(ug).astype(np.float32)
@@ -179,26 +191,42 @@ def moments_from_prior(truermin_g, slope, ngalx):
 
 
 def log_prior_moments(xx, xy, yy):
-    slope = 2.
+    slope = 4.
     a, theta, phi = from_moments(xx, xy, yy)
     u = np.cos(theta)
     return np.log(slope-1) + (slope-1)*np.log(truermin_g) - slope*np.log(a) - 5*np.log(a) - np.log(u*u) - np.log(1-u*u)
 
 ngalx = 100
-ng = np.random.randint(ngalx)+1
-trueminf_g = np.float32(250.)
+trueminf_g = np.float32(250.*136)
 truealpha_g = np.float32(2.00)
-xg = (np.random.uniform(size=ngalx)*(imsz[0]-1)).astype(np.float32)
-yg = (np.random.uniform(size=ngalx)*(imsz[1]-1)).astype(np.float32)
-fg = trueminf_g * np.exp(np.random.exponential(scale=1./(truealpha_g-1.),size=ngalx)).astype(np.float32)
-truermin_g = np.float32(1.00)
-xxg, xyg, yyg = moments_from_prior(truermin_g, truealpha_g, ngalx)
-xg[ng:] = 0
-yg[ng:] = 0
-fg[ng:] = 0
-xxg[ng:]= 0
-xyg[ng:]= 0
-yyg[ng:]= 0
+ng_all = []
+xg_all = []
+yg_all = []
+fg_all = []
+xxg_all= []
+xyg_all= []
+yyg_all= []
+
+for i in xrange(ntemps):
+    ng = np.random.randint(ngalx)+1
+    xg = (np.random.uniform(size=ngalx)*(imsz[0]-1)).astype(np.float32)
+    yg = (np.random.uniform(size=ngalx)*(imsz[1]-1)).astype(np.float32)
+    fg = trueminf_g * np.exp(np.random.exponential(scale=1./(truealpha_g-1.),size=ngalx)).astype(np.float32)
+    truermin_g = np.float32(1.00)
+    xxg, xyg, yyg = moments_from_prior(truermin_g, ngalx)
+    xg[ng:] = 0
+    yg[ng:] = 0
+    fg[ng:] = 0
+    xxg[ng:]= 0
+    xyg[ng:]= 0
+    yyg[ng:]= 0
+    ng_all.append(ng)
+    xg_all.append(xg)
+    yg_all.append(yg)
+    fg_all.append(fg)
+    xxg_all.append(xxg)
+    xyg_all.append(xyg)
+    yyg_all.append(yyg)
 
 gridphon, amplphon = retr_sers(sersindx=2.)
 
@@ -225,10 +253,8 @@ assert imsz[1] % regsize == 0
 margin = 10
 kickrange = 1.
 kickrange_g = 1.
-if visual:
-    plt.ion()
-    plt.figure(figsize=(15,5))
-for j in xrange(nsamp):
+
+def run_sampler(x, y, f, n, xg, yg, fg, xxg, xyg, yyg, ng, temperature, nloop=1000, visual=False):
     t0 = time.clock()
     nmov = np.zeros(nloop)
     movetype = np.zeros(nloop)
@@ -291,7 +317,7 @@ for j in xrange(nsamp):
             nw = idx_move.size
             f0 = f.take(idx_move)
 
-            lindf = np.float32(60./np.sqrt(25.))
+            lindf = np.float32(60.*134/np.sqrt(25.))
             logdf = np.float32(0.01/np.sqrt(25.))
             ff = np.log(logdf*logdf*f0 + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0*f0)) / logdf
             ffmin = np.log(logdf*logdf*trueminf + logdf*np.sqrt(lindf*lindf + logdf*logdf*trueminf*trueminf)) / logdf
@@ -305,7 +331,7 @@ for j in xrange(nsamp):
             dlogf = np.log(pf/f0)
             factor = -truealpha*dlogf
 
-            dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0, pf))
+            dpos_rms = np.float32(60.*134/np.sqrt(25.))/(np.maximum(f0, pf))
             dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
             dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
             x0 = x.take(idx_move)
@@ -495,7 +521,7 @@ for j in xrange(nsamp):
             nw = idx_move_g.size
             f0g = fg.take(idx_move_g)
 
-            lindf = np.float32(60./np.sqrt(25.))
+            lindf = np.float32(60.*134/np.sqrt(25.))
             logdf = np.float32(0.01/np.sqrt(25.))
             ff = np.log(logdf*logdf*f0g + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0g*f0g)) / logdf
             ffmin = np.log(logdf*logdf*trueminf_g + logdf*np.sqrt(lindf*lindf + logdf*logdf*trueminf_g*trueminf_g)) / logdf
@@ -509,7 +535,7 @@ for j in xrange(nsamp):
             dlogfg = np.log(pfg/f0g)
             factor = -truealpha_g*dlogfg
 
-            dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0g, pfg))
+            dpos_rms = np.float32(60.*134/np.sqrt(25.))/(np.maximum(f0g, pfg))
             dxg = np.random.normal(size=nw).astype(np.float32)*dpos_rms
             dyg = np.random.normal(size=nw).astype(np.float32)*dpos_rms
             dxxg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
@@ -567,7 +593,7 @@ for j in xrange(nsamp):
                 byg = ((np.random.randint(mregy, size=nbd)*2 + parity_y + np.random.uniform(size=nbd))*regsize - offsety).astype(np.float32)
                 bfg = trueminf * np.exp(np.random.exponential(scale=1./(truealpha-1.),size=nbd)).astype(np.float32)
                 # put in function?
-                bxxg, bxyg, byyg = moments_from_prior(truermin_g, truealpha_g, nbd)
+                bxxg, bxyg, byyg = moments_from_prior(truermin_g, nbd)
 
                 # some sources might be generated outside image
                 inbounds = (bxg > 0) * (bxg < (imsz[0] - 1)) * (byg > 0) * (byg < (imsz[1] - 1))
@@ -620,7 +646,7 @@ for j in xrange(nsamp):
                         byg = yk.copy()
                         bfg = fk.copy()
 
-                        bxxg, bxyg, byyg = moments_from_prior(truermin_g, truealpha_g, nsg)
+                        bxxg, bxyg, byyg = moments_from_prior(truermin_g, nsg)
                         factor = np.full(nsg, penalty-penalty_g) # TODO factor if star and galaxy flux distributions different
                         goodmove = True
                     else:
@@ -1204,7 +1230,7 @@ for j in xrange(nsamp):
 
             plogL[(1-parity_y)::2,:] = float('-inf') # don't accept off-parity regions
             plogL[:,(1-parity_x)::2] = float('-inf')
-            dlogP = plogL - logL
+            dlogP = (plogL - logL) / temperature
             if factor is not None:
                 dlogP[regiony, regionx] += factor
             acceptreg = (np.log(np.random.uniform(size=(nregy, nregx))) < dlogP).astype(np.int32)
@@ -1305,13 +1331,28 @@ for j in xrange(nsamp):
                 accept[i] = 0
         else:
             outbounds[i] = 1
-    
-        if visual and i == 0:
+
+    chi2 = np.sum(weight*(data-model)*(data-model))
+    fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
+    print 'Temperature', temperature, 'background', back, 'N_star', n, 'N_gal', ng, 'N_phon', n_phon, 'chi^2', chi2
+    '''print 'Acceptance'+fmtstr % (np.mean(accept), np.mean(accept[movetype == 0]), np.mean(accept[movetype == 2]), np.mean(accept[movetype == 3]), np.mean(accept[movetype==4]), np.mean(accept[movetype==5]), np.mean(accept[movetype==6]), np.mean(accept[movetype==8]), np.mean(accept[movetype==9]))
+    print 'Out of bounds'+fmtstr % (np.mean(outbounds), np.mean(outbounds[movetype == 0]), np.mean(outbounds[movetype == 2]), np.mean(outbounds[movetype == 3]), np.mean(outbounds[movetype==4]), np.mean(outbounds[movetype==5]), np.mean(outbounds[movetype==6]), np.mean(outbounds[movetype==8]), np.mean(outbounds[movetype==9]))
+    print '# src pert\t(all) %0.1f (P) %0.1f (B-D) %0.1f (M-S) %0.1f' % (np.mean(nmov), np.mean(nmov[movetype == 0]), np.mean(nmov[movetype == 2]), np.mean(nmov[movetype == 3]))
+    print '-'*16
+    dt1 *= 1000
+    dt2 *= 1000
+    dt3 *= 1000
+    print 'Proposal (ms)\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt1), np.mean(dt1[movetype == 0]) , np.mean(dt1[movetype == 2]), np.mean(dt1[movetype == 3]))
+    print 'Likelihood (ms)\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt2), np.mean(dt2[movetype == 0]) , np.mean(dt2[movetype == 2]), np.mean(dt2[movetype == 3]))
+    print 'Implement (ms)\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt3), np.mean(dt3[movetype == 0]) , np.mean(dt3[movetype == 2]), np.mean(dt3[movetype == 3]))
+    print '='*16'''
+
+    if visual:
             plt.figure(1)
             plt.clf()
             plt.subplot(1,3,1)
             plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
-            sizefac = 10.
+            sizefac = 10.*136
             if datatype == 'mock':
                 if strgmode == 'star' or strgmode == 'galx':
                     mask = truef > 250 # will have to change this for other data sets
@@ -1346,32 +1387,61 @@ for j in xrange(nsamp):
             plt.ylim((0.5, nstar))
             plt.draw()
             plt.pause(1e-5)
-        #endfor nloop
 
-    nsample[j] = n
-    xsample[j,:] = x
-    ysample[j,:] = y
-    fsample[j,:] = f
-    ngsample[j] = ng
-    xgsample[j,:] = xg
-    ygsample[j,:] = yg
-    fgsample[j,:] = fg
-    xxgsample[j,:] = xxg
-    xygsample[j,:] = xyg
-    yygsample[j,:] = yyg
-    fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
-    print 'Loop', j, 'background', back, 'N_star', n, 'N_gal', ng, 'N_phon', n_phon, 'chi^2', np.sum(weight*(data-model)*(data-model))
-    print 'Acceptance'+fmtstr % (np.mean(accept), np.mean(accept[movetype == 0]), np.mean(accept[movetype == 2]), np.mean(accept[movetype == 3]), np.mean(accept[movetype==4]), np.mean(accept[movetype==5]), np.mean(accept[movetype==6]), np.mean(accept[movetype==8]), np.mean(accept[movetype==9]))
-    print 'Out of bounds'+fmtstr % (np.mean(outbounds), np.mean(outbounds[movetype == 0]), np.mean(outbounds[movetype == 2]), np.mean(outbounds[movetype == 3]), np.mean(outbounds[movetype==4]), np.mean(outbounds[movetype==5]), np.mean(outbounds[movetype==6]), np.mean(outbounds[movetype==8]), np.mean(outbounds[movetype==9]))
-    print '# src pert\t(all) %0.1f (P) %0.1f (B-D) %0.1f (M-S) %0.1f' % (np.mean(nmov), np.mean(nmov[movetype == 0]), np.mean(nmov[movetype == 2]), np.mean(nmov[movetype == 3]))
-    print '-'*16
-    dt1 *= 1000
-    dt2 *= 1000
-    dt3 *= 1000
-    print 'Proposal (ms)\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt1), np.mean(dt1[movetype == 0]) , np.mean(dt1[movetype == 2]), np.mean(dt1[movetype == 3]))
-    print 'Likelihood (ms)\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt2), np.mean(dt2[movetype == 0]) , np.mean(dt2[movetype == 2]), np.mean(dt2[movetype == 3]))
-    print 'Implement (ms)\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f' % (np.mean(dt3), np.mean(dt3[movetype == 0]) , np.mean(dt3[movetype == 2]), np.mean(dt3[movetype == 3]))
-    print '='*16
+
+    return n, ng, chi2
+
+'''def pool_task(k):
+    return run_sampler(x_all[k], y_all[k], f_all[k], n_all[k], \
+            xg_all[k], yg_all[k], fg_all[k], xxg_all[k], xyg_all[k], yyg_all[k], ng_all[k], temps[k])
+
+from multiprocessing import Pool
+pool = Pool(ntemps)'''
+
+if visual:
+    plt.ion()
+    plt.figure(figsize=(15,5))
+for j in xrange(nsamp):
+    chi2_all = np.zeros(ntemps)
+    print 'Loop', j
+    #results = pool.map(pool_task, range(ntemps))
+    #for k, r in enumerate(results):
+    #    n_all[k], ng_all[k], chi2_all[k] = r
+    #    print k, chi2_all[k]
+
+    temptemp = max(50 - 0.1*j, 1)
+    for k in xrange(ntemps):
+        n_all[k], ng_all[k], chi2_all[k] = run_sampler(x_all[k], y_all[k], f_all[k], n_all[k], \
+            xg_all[k], yg_all[k], fg_all[k], xxg_all[k], xyg_all[k], yyg_all[k], ng_all[k], temptemp, visual=(k==0)*visual)
+        #    xg_all[k], yg_all[k], fg_all[k], xxg_all[k], xyg_all[k], yyg_all[k], ng_all[k], temps[k], visual=(k==0))
+
+    for k in xrange(ntemps-1, 0, -1):
+        logfac = (chi2_all[k-1] - chi2_all[k]) * (1./temps[k-1] - 1./temps[k]) / 2.
+        if np.log(np.random.uniform()) < logfac:
+            print 'swapped', k-1, k
+            n_all[k-1], n_all[k] = n_all[k], n_all[k-1]
+            x_all[k-1], x_all[k] = x_all[k], x_all[k-1]
+            y_all[k-1], y_all[k] = y_all[k], y_all[k-1]
+            f_all[k-1], f_all[k] = f_all[k], f_all[k-1]
+            ng_all[k-1], ng_all[k] = ng_all[k], ng_all[k-1]
+            xg_all[k-1], xg_all[k] = xg_all[k], xg_all[k-1]
+            yg_all[k-1], yg_all[k] = yg_all[k], yg_all[k-1]
+            fg_all[k-1], fg_all[k] = fg_all[k], fg_all[k-1]
+            xxg_all[k-1], xxg_all[k] = xxg_all[k], xxg_all[k-1]
+            xyg_all[k-1], xyg_all[k] = xyg_all[k], xyg_all[k-1]
+            yyg_all[k-1], yyg_all[k] = yyg_all[k], yyg_all[k-1]
+
+    nsample[j] = n_all[0]
+    xsample[j,:] = x_all[0]
+    ysample[j,:] = y_all[0]
+    fsample[j,:] = f_all[0]
+    ngsample[j] = ng_all[0]
+    xgsample[j,:] = xg_all[0]
+    ygsample[j,:] = yg_all[0]
+    fgsample[j,:] = fg_all[0]
+    xxgsample[j,:] = xxg_all[0]
+    xygsample[j,:] = xyg_all[0]
+    yygsample[j,:] = yyg_all[0]
 
 print 'saving...'
 np.savez('chain.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
