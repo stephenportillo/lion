@@ -175,6 +175,7 @@ class Model:
     ngalx = 100
     trueminf_g = np.float32(250.*136)
     truealpha_g = np.float32(2.00)
+    truermin_g = np.float32(1.00)
 
     gridphon, amplphon = retr_sers(sersindx=2.)
 
@@ -183,26 +184,30 @@ class Model:
     kickrange = 1.
     kickrange_g = 1.
 
+    _X = 0
+    _Y = 1
+    _F = 2
+    _XX = 3
+    _XY = 4
+    _YY = 5
+
     def __init__(self):
         self.n = np.random.randint(self.nstar)+1
-        self.x = (np.random.uniform(size=self.nstar)*(imsz[0]-1)).astype(np.float32)
-        self.y = (np.random.uniform(size=self.nstar)*(imsz[1]-1)).astype(np.float32)
-        self.f = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=self.nstar)).astype(np.float32)
-        self.x[self.n:] = 0.
-        self.y[self.n:] = 0.
-        self.f[self.n:] = 0.
+        self.stars = np.zeros((3,self.nstar), dtype=np.float32)
+        self.stars[:,0:self.n] = np.random.uniform(size=(3,self.n))  # refactor into some sort of prior function?
+        self.stars[self._X,0:self.n] *= imsz[0]-1
+        self.stars[self._Y,0:self.n] *= imsz[1]-1
+        self.stars[self._F,0:self.n] **= -1./(self.truealpha - 1.)
+        self.stars[self._F,0:self.n] *= self.trueminf
+
         self.ng = np.random.randint(self.ngalx)+1
-        self.xg = (np.random.uniform(size=self.ngalx)*(imsz[0]-1)).astype(np.float32)
-        self.yg = (np.random.uniform(size=self.ngalx)*(imsz[1]-1)).astype(np.float32)
-        self.fg = self.trueminf_g * np.exp(np.random.exponential(scale=1./(self.truealpha_g-1.),size=self.ngalx)).astype(np.float32)
-        self.truermin_g = np.float32(1.00)
-        self.xxg, self.xyg, self.yyg = self.moments_from_prior(self.truermin_g, self.ngalx)
-        self.xg[self.ng:] = 0
-        self.yg[self.ng:] = 0
-        self.fg[self.ng:] = 0
-        self.xxg[self.ng:]= 0
-        self.xyg[self.ng:]= 0
-        self.yyg[self.ng:]= 0
+        self.galaxies = np.zeros((6,self.ngalx), dtype=np.float32)
+        self.galaxies[[self._X,self._Y,self._F],0:self.ng] = np.random.uniform(size=(3,self.ng))
+        self.galaxies[self._X,self.ng] *= imsz[0]-1
+        self.galaxies[self._Y,self.ng] *= imsz[1]-1
+        self.galaxies[self._F,0:self.ng] **= -1./(self.truealpha_g - 1.)
+        self.galaxies[self._F,0:self.ng] *= self.trueminf_g
+        self.galaxies[[self._XX,self._XY,self._YY],0:self.ng] = self.moments_from_prior(self.truermin_g, self.ng)
 
     # should offsetx/y, parity_x/y be instance variables?
 
@@ -236,15 +241,16 @@ class Model:
 
         resid = data.copy() # residual for zero image is data
         if strgmode == 'star':
-            evalx = self.x[0:self.n]
-            evaly = self.y[0:self.n]
-            evalf = self.f[0:self.n]
+            evalx = self.stars[self._X,0:self.n]
+            evaly = self.stars[self._Y,0:self.n]
+            evalf = self.stars[self._F,0:self.n]
         else:
-            xposphon, yposphon, specphon = retr_tranphon(self.gridphon, self.amplphon, self.xg[0:self.ng], self.yg[0:self.ng], self.fg[0:self.ng], \
-                self.xxg[0:self.ng], self.xyg[0:self.ng], self.yyg[0:self.ng])
-            evalx = np.concatenate([self.x[0:self.n], xposphon]).astype(np.float32)
-            evaly = np.concatenate([self.y[0:self.n], yposphon]).astype(np.float32)
-            evalf = np.concatenate([self.f[0:self.n], specphon]).astype(np.float32)
+            xposphon, yposphon, specphon = retr_tranphon(self.gridphon, self.amplphon, \
+                    self.galaxies[self._X,0:self.ng], self.galaxies[self._Y,0:self.ng], self.galaxies[self._F,0:self.ng], \
+                    self.galaxies[self._XX,0:self.ng], self.galaxies[self._XY,0:self.ng], self.galaxies[self._YY,0:self.ng])
+            evalx = np.concatenate([self.stars[self._X,0:self.n], xposphon]).astype(np.float32)
+            evaly = np.concatenate([self.stars[self._Y,0:self.n], yposphon]).astype(np.float32)
+            evalf = np.concatenate([self.stars[self._F,0:self.n], specphon]).astype(np.float32)
         n_phon = evalx.size
         model, diff2 = image_model_eval(evalx, evaly, evalf, self.back, imsz, nc, cf, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, \
             regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
@@ -387,9 +393,7 @@ class Model:
                     py_a = py.compress(acceptprop)
                     pf_a = pf.compress(acceptprop)
                     idx_move_a = idx_move.compress(acceptprop)
-                    self.x[idx_move_a] = px_a
-                    self.y[idx_move_a] = py_a
-                    self.f[idx_move_a] = pf_a
+                    self.stars[:, idx_move_a] = [px_a, py_a, pf_a]
                 if idx_move_g is not None:
                     pxg_a = pxg.compress(acceptprop)
                     pyg_a = pyg.compress(acceptprop)
@@ -398,20 +402,13 @@ class Model:
                     pxyg_a=pxyg.compress(acceptprop)
                     pyyg_a=pyyg.compress(acceptprop)
                     idx_move_a = idx_move_g.compress(acceptprop)
-                    self.xg[idx_move_a] = pxg_a
-                    self.yg[idx_move_a] = pyg_a
-                    self.fg[idx_move_a] = pfg_a
-                    self.xxg[idx_move_a]=pxxg_a
-                    self.xyg[idx_move_a]=pxyg_a
-                    self.yyg[idx_move_a]=pyyg_a
+                    self.galaxies[:, idx_move_a] = [pxg_a, pyg_a, pfg_a, pxxg_a, pxyg_a, pyyg_a]
                 if do_birth:
                     bx_a = bx.compress(acceptprop, axis=0).flatten()
                     by_a = by.compress(acceptprop, axis=0).flatten()
                     bf_a = bf.compress(acceptprop, axis=0).flatten()
                     num_born = bf_a.size # works for 1D or 2D
-                    self.x[self.n:self.n+num_born] = bx_a
-                    self.y[self.n:self.n+num_born] = by_a
-                    self.f[self.n:self.n+num_born] = bf_a
+                    self.stars[:, self.n:self.n+num_born] = [bx_a, by_a, bf_a]
                     self.n += num_born
                 if do_birth_g:
                     bxg_a = bxg.compress(acceptprop)
@@ -421,40 +418,21 @@ class Model:
                     bxyg_a=bxyg.compress(acceptprop)
                     byyg_a=byyg.compress(acceptprop)
                     num_born = np.count_nonzero(acceptprop)
-                    self.xg[self.ng:self.ng+num_born] = bxg_a
-                    self.yg[self.ng:self.ng+num_born] = byg_a
-                    self.fg[self.ng:self.ng+num_born] = bfg_a
-                    self.xxg[self.ng:self.ng+num_born]=bxxg_a
-                    self.xyg[self.ng:self.ng+num_born]=bxyg_a
-                    self.yyg[self.ng:self.ng+num_born]=byyg_a
+                    self.galaxies[:, self.ng:self.ng+num_born] = [bxg_a, byg_a, bfg_a, bxxg_a, bxyg_a, byyg_a]
                     self.ng += num_born
                 if idx_kill is not None:
                     idx_kill_a = idx_kill.compress(acceptprop, axis=0).flatten()
                     num_kill = idx_kill_a.size
                     # nstar is correct, not n, because x,y,f are full nstar arrays
-                    self.x[0:self.nstar-num_kill] = np.delete(self.x, idx_kill_a)
-                    self.y[0:self.nstar-num_kill] = np.delete(self.y, idx_kill_a)
-                    self.f[0:self.nstar-num_kill] = np.delete(self.f, idx_kill_a)
-                    self.x[self.nstar-num_kill:] = 0
-                    self.y[self.nstar-num_kill:] = 0
-                    self.f[self.nstar-num_kill:] = 0
+                    self.stars[:, 0:self.nstar-num_kill] = np.delete(self.stars, idx_kill_a, axis=1)
+                    self.stars[:, self.nstar-num_kill:] = 0
                     self.n -= num_kill
                 if idx_kill_g is not None:
                     idx_kill_a = idx_kill_g.compress(acceptprop)
                     num_kill = idx_kill_a.size
                     # like above, ngalx is correct
-                    self.xg[0:self.ngalx-num_kill] = np.delete(self.xg, idx_kill_a)
-                    self.yg[0:self.ngalx-num_kill] = np.delete(self.yg, idx_kill_a)
-                    self.fg[0:self.ngalx-num_kill] = np.delete(self.fg, idx_kill_a)
-                    self.xxg[0:self.ngalx-num_kill]= np.delete(self.xxg, idx_kill_a)
-                    self.xyg[0:self.ngalx-num_kill]= np.delete(self.xyg, idx_kill_a)
-                    self.yyg[0:self.ngalx-num_kill]= np.delete(self.yyg, idx_kill_a)
-                    self.xg[self.ngalx-num_kill:] = 0
-                    self.yg[self.ngalx-num_kill:] = 0
-                    self.fg[self.ngalx-num_kill:] = 0
-                    self.xxg[self.ngalx-num_kill:]= 0
-                    self.xyg[self.ngalx-num_kill:]= 0
-                    self.yyg[self.ngalx-num_kill:]= 0
+                    self.galaxies[:, 0:self.ngalx-num_kill] = np.delete(self.galaxies, idx_kill_a, axis=1)
+                    self.galaxies[:, self.ngalx-num_kill:] = 0
                     self.ng -= num_kill
                 dt3[i] = time.clock() - t3
 
@@ -499,11 +477,11 @@ class Model:
                         plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
                     if strgmode == 'stargalx':
                         plt.scatter(dictglob['truexposstar'], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
-                plt.scatter(self.x[0:self.n], self.y[0:self.n], marker='x', s=self.f[0:self.n]/sizefac, color='r')
+                plt.scatter(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], marker='x', s=self.stars[self._F, 0:self.n]/sizefac, color='r')
                 if strgmode == 'galx':
-                    plt.scatter(self.xg[0:self.ng], self.yg[0:self.ng], marker='2', s=self.fg[0:self.ng]/sizefac, color='r')
-                    a, theta, phi = from_moments(self.xxg[0:self.ng], self.xyg[0:self.ng], self.yyg[0:self.ng])
-                    plt.scatter(self.xg[0:self.ng], self.yg[0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
+                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=self.galaxies[self._F, 0:self.ng]/sizefac, color='r')
+                    a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
+                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
                 plt.xlim(-0.5, imsz[0]-0.5)
                 plt.ylim(-0.5, imsz[1]-0.5)
                 plt.subplot(1,3,2)
@@ -514,9 +492,9 @@ class Model:
 
                 if datatype == 'mock':
                     plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step')
-                    plt.hist(np.log10(self.f[0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='Chain', histtype='step')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='Chain', histtype='step')
                 else:
-                    plt.hist(np.log10(self.f[0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.f[0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.f[0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
                 plt.legend()
                 plt.xlabel('log10 flux')
                 plt.ylim((0.5, self.nstar))
@@ -527,9 +505,9 @@ class Model:
         return self.n, self.ng, chi2
 
     def move_stars(self): 
-        idx_move = idx_parity(self.x, self.y, self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+        idx_move = idx_parity(self.stars[self._X,:], self.stars[self._Y,:], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
         nw = idx_move.size
-        f0 = self.f.take(idx_move)
+        f0 = self.stars[self._F,:].take(idx_move)
 
         lindf = np.float32(60.*134/np.sqrt(25.))
         logdf = np.float32(0.01/np.sqrt(25.))
@@ -548,8 +526,8 @@ class Model:
         dpos_rms = np.float32(60.*134/np.sqrt(25.))/(np.maximum(f0, pf))
         dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
         dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
-        x0 = self.x.take(idx_move)
-        y0 = self.y.take(idx_move)
+        x0 = self.stars[self._X,:].take(idx_move)
+        y0 = self.stars[self._Y,:].take(idx_move)
         px = x0 + dx
         py = y0 + dy
         # bounce off of edges of image
@@ -594,27 +572,28 @@ class Model:
         # death
         # does region based death obey detailed balance?
         elif not lifeordeath and self.n > 0: # need something to kill
-            idx_reg = idx_parity(self.x, self.y, self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+            idx_reg = idx_parity(self.stars[self._X, :], self.stars[self._Y, :], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
 
             nbd = min(nbd, idx_reg.size) # kill nbd sources, or however many sources remain
             if nbd > 0:
                 idx_kill = np.random.choice(idx_reg, size=nbd, replace=False)
-                xk = self.x.take(idx_kill)
-                yk = self.y.take(idx_kill)
-                fk = self.f.take(idx_kill)
+                xk = self.stars[self._X, :].take(idx_kill)
+                yk = self.stars[self._Y, :].take(idx_kill)
+                fk = self.stars[self._F, :].take(idx_kill)
                 factor = np.full(nbd, self.penalty)
                 goodmove = True
                 return False, None, None, None, idx_kill, xk, yk, fk, goodmove, factor
             else:
                 goodmove = False
                 return False, None, None, None, None, None, None, None, False, 0
+        return False, None, None, None, None, None, None, None, False, 0
 
     def merge_split_stars(self):
         splitsville = np.random.randint(2)
-        idx_reg = idx_parity(self.x, self.y, self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+        idx_reg = idx_parity(self.stars[self._X, :], self.stars[self._Y, :], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
         sum_f = 0
         low_n = 0
-        idx_bright = idx_reg.take(np.flatnonzero(self.f.take(idx_reg) > 2*self.trueminf)) # in region!
+        idx_bright = idx_reg.take(np.flatnonzero(self.stars[self._F, :].take(idx_reg) > 2*self.trueminf)) # in region!
         bright_n = idx_bright.size
 
         nms = (self.nregx * self.nregy) / 4
@@ -625,9 +604,9 @@ class Model:
             dx = (np.random.normal(size=nms)*self.kickrange).astype(np.float32)
             dy = (np.random.normal(size=nms)*self.kickrange).astype(np.float32)
             idx_move = np.random.choice(idx_bright, size=nms, replace=False)
-            x0 = self.x.take(idx_move)
-            y0 = self.y.take(idx_move)
-            f0 = self.f.take(idx_move)
+            x0 = self.stars[self._X, :].take(idx_move)
+            y0 = self.stars[self._Y, :].take(idx_move)
+            f0 = self.stars[self._F, :].take(idx_move)
             fminratio = f0 / self.trueminf
             frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
             px = x0 + ((1-frac)*dx)
@@ -662,8 +641,8 @@ class Model:
             nms = idx_in.size
             invpairs = np.zeros(nms)
             for k in xrange(nms):
-                xtemp = self.x[0:self.n].copy()
-                ytemp = self.y[0:self.n].copy()
+                xtemp = self.stars[self._X, 0:self.n].copy()
+                ytemp = self.stars[self._Y, 0:self.n].copy()
                 xtemp[idx_move[k]] = px[k]
                 ytemp[idx_move[k]] = py[k]
                 xtemp = np.concatenate([xtemp, bx[k:k+1]])
@@ -684,14 +663,14 @@ class Model:
 
             for k in xrange(nms):
                 idx_move[k] = np.random.choice(self.nstar, p=choosable/nchoosable)
-                invpairs[k], idx_kill[k] = neighbours(self.x[0:self.n], self.y[0:self.n], self.kickrange, idx_move[k], generate=True)
+                invpairs[k], idx_kill[k] = neighbours(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.kickrange, idx_move[k], generate=True)
                 if invpairs[k] > 0:
                     invpairs[k] = 1./invpairs[k]
                 # prevent sources from being involved in multiple proposals
                 if not choosable[idx_kill[k]]:
                     idx_kill[k] = -1
                 if idx_kill[k] != -1:
-                    invpairs[k] += 1./neighbours(self.x[0:self.n], self.y[0:self.n], self.kickrange, idx_kill[k])
+                    invpairs[k] += 1./neighbours(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.kickrange, idx_kill[k])
                     choosable[idx_move[k]] = False
                     choosable[idx_kill[k]] = False
                     nchoosable -= 2
@@ -706,12 +685,12 @@ class Model:
             invpairs = invpairs.take(idx_in)
             goodmove = idx_in.size > 0
 
-            x0 = self.x.take(idx_move)
-            y0 = self.y.take(idx_move)
-            f0 = self.f.take(idx_move)
-            xk = self.x.take(idx_kill)
-            yk = self.y.take(idx_kill)
-            fk = self.f.take(idx_kill)
+            x0 = self.stars[self._X, :].take(idx_move)
+            y0 = self.stars[self._Y, :].take(idx_move)
+            f0 = self.stars[self._F, :].take(idx_move)
+            xk = self.stars[self._X, :].take(idx_kill)
+            yk = self.stars[self._Y, :].take(idx_kill)
+            fk = self.stars[self._F, :].take(idx_kill)
             sum_f = f0 + fk
             fminratio = sum_f / self.trueminf
             frac = f0 / sum_f
@@ -733,9 +712,9 @@ class Model:
             return None, None, None, None, None, None, None, False, None, None, None, None, None, None, None, goodmove, 0
 
     def move_galaxies(self):
-        idx_move_g = idx_parity(self.xg, self.yg, self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+        idx_move_g = idx_parity(self.galaxies[self._X, :], self.galaxies[self._Y, :], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
         nw = idx_move_g.size
-        f0g = self.fg.take(idx_move_g)
+        f0g = self.galaxies[self._F, :].take(idx_move_g)
 
         lindf = np.float32(60.*134/np.sqrt(25.))
         logdf = np.float32(0.01/np.sqrt(25.))
@@ -757,11 +736,11 @@ class Model:
         dxxg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
         dxyg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
         dyyg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
-        x0g = self.xg.take(idx_move_g)
-        y0g = self.yg.take(idx_move_g)
-        xx0g= self.xxg.take(idx_move_g)
-        xy0g= self.xyg.take(idx_move_g)
-        yy0g= self.yyg.take(idx_move_g)
+        x0g = self.galaxies[self._X, :].take(idx_move_g)
+        y0g = self.galaxies[self._Y, :].take(idx_move_g)
+        xx0g= self.galaxies[self._XX, :].take(idx_move_g)
+        xy0g= self.galaxies[self._XY, :].take(idx_move_g)
+        yy0g= self.galaxies[self._YY, :].take(idx_move_g)
         pxg = x0g + dxg
         pyg = y0g + dyg
         pxxg=xx0g + dxxg
@@ -830,38 +809,39 @@ class Model:
         # death
         # does region based death obey detailed balance?
         elif not lifeordeath and self.ng > 0: # need something to kill
-            idx_reg = idx_parity(self.xg, self.yg, self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+            idx_reg = idx_parity(self.galaxies[self._X, :], self.galaxies[self._Y, :], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
 
             nbd = min(nbd, idx_reg.size) # kill nbd sources, or however many sources remain
             nw = nbd
             if nbd > 0:
                 idx_kill_g = np.random.choice(idx_reg, size=nbd, replace=False)
-                xkg = self.xg.take(idx_kill_g)
-                ykg = self.yg.take(idx_kill_g)
-                fkg = self.fg.take(idx_kill_g)
-                xxkg= self.xxg.take(idx_kill_g)
-                xykg= self.xyg.take(idx_kill_g)
-                yykg= self.yyg.take(idx_kill_g)
+                xkg = self.galaxies[self._X, :].take(idx_kill_g)
+                ykg = self.galaxies[self._Y, :].take(idx_kill_g)
+                fkg = self.galaxies[self._F, :].take(idx_kill_g)
+                xxkg= self.galaxies[self._XX, :].take(idx_kill_g)
+                xykg= self.galaxies[self._XY, :].take(idx_kill_g)
+                yykg= self.galaxies[self._YY, :].take(idx_kill_g)
                 factor = np.full(nbd, self.penalty_g)
                 goodmove = True
                 return False, None, None, None, None, None, None, idx_kill_g, xkg, ykg, fkg, xxkg, xykg, yykg, goodmove, factor
             else:
                 goodmove = False
                 return False, None, None, None, None, None, None, None, None, None, None, None, None, None, goodmove, 0
+        return False, None, None, None, None, None, None, None, None, None, None, None, None, None, goodmove, 0
 
     def star_galaxy(self):
         starorgalx = np.random.randint(2)
         nsg = (self.nregx * self.nregy) / 4
         # star -> galaxy
         if starorgalx and self.n > 0 and self.ng < self.ngalx:
-            idx_reg = idx_parity(self.x, self.y, self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+            idx_reg = idx_parity(self.stars[self._X, :], self.stars[self._Y, :], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
             nsg = min(nsg, min(idx_reg.size, self.ngalx-self.ng))
             nw = nsg
             if nsg > 0:
                 idx_kill = np.random.choice(idx_reg, size=nsg, replace=False)
-                xk = self.x.take(idx_kill)
-                yk = self.y.take(idx_kill)
-                fk = self.f.take(idx_kill)
+                xk = self.stars[self._X, :].take(idx_kill)
+                yk = self.stars[self._Y, :].take(idx_kill)
+                fk = self.stars[self._F, :].take(idx_kill)
                 do_birth_g = True
                 bxg = xk.copy()
                 byg = yk.copy()
@@ -873,20 +853,20 @@ class Model:
                 return False, None, None, None, do_birth_g, bxg, byg, bfg, bxxg, bxyg, byyg, idx_kill, xk, yk, fk, None, None, None, None, None, None, None, goodmove, factor
             else:
                 goodmove = False
-                return False, None, None, None, False, None, None, None, None, None, None, False, None, None, None, None, None, None, None, None, None, None, goodmove, 0
+                return False, None, None, None, False, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, goodmove, 0
         # galaxy -> star
         elif not starorgalx and self.ng > 1 and self.n < self.nstar:
-            idx_reg = idx_parity(self.xg, self.yg, self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+            idx_reg = idx_parity(self.galaxies[self._X, :], self.galaxies[self._Y, :], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
             nsg = min(nsg, min(idx_reg.size, self.nstar-self.n))
             nw = nsg
             if nsg > 0:
                 idx_kill_g = np.random.choice(idx_reg, size=nsg, replace=False)
-                xkg = self.xg.take(idx_kill_g)
-                ykg = self.yg.take(idx_kill_g)
-                fkg = self.fg.take(idx_kill_g)
-                xxkg= self.xxg.take(idx_kill_g)
-                xykg= self.xyg.take(idx_kill_g)
-                yykg= self.yyg.take(idx_kill_g)
+                xkg = self.galaxies[self._X, :].take(idx_kill_g)
+                ykg = self.galaxies[self._Y, :].take(idx_kill_g)
+                fkg = self.galaxies[self._F, :].take(idx_kill_g)
+                xxkg= self.galaxies[self._XX, :].take(idx_kill_g)
+                xykg= self.galaxies[self._XY, :].take(idx_kill_g)
+                yykg= self.galaxies[self._YY, :].take(idx_kill_g)
                 do_birth = True
                 bx = xkg.copy()
                 by = ykg.copy()
@@ -897,15 +877,15 @@ class Model:
             else:
                 goodmove = False
                 return False, None, None, None, False, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, goodmove, 0
-
+        return False, None, None, None, False, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, goodmove, 0
 
     def twostars_galaxy(self):
         splitsville = np.random.randint(2)
-        idx_reg = idx_parity(self.x, self.y, self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize) # stars
-        idx_reg_g = idx_parity(self.xg, self.yg, self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize) # galaxies
+        idx_reg = idx_parity(self.stars[self._X, :], self.stars[self._Y, :], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize) # stars
+        idx_reg_g = idx_parity(self.galaxies[self._X, :], self.galaxies[self._Y, :], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize) # galaxies
         sum_f = 0
         low_n = 0
-        idx_bright = idx_reg_g.take(np.flatnonzero(self.fg.take(idx_reg_g) > 2*self.trueminf)) # in region and bright enough to make two stars
+        idx_bright = idx_reg_g.take(np.flatnonzero(self.galaxies[self._F, :].take(idx_reg_g) > 2*self.trueminf)) # in region and bright enough to make two stars
         bright_n = idx_bright.size # can only split bright galaxies
 
         nms = (self.nregx * self.nregy) / 4
@@ -914,12 +894,12 @@ class Model:
         if splitsville and self.ng > 0 and self.n < self.nstar-2 and bright_n > 0: # need something to split, but don't exceed nstar
             nms = min(nms, bright_n, (self.nstar-self.n)/2) # need bright galaxy AND room for split stars
             idx_kill_g = np.random.choice(idx_bright, size=nms, replace=False)
-            xkg = self.xg.take(idx_kill_g)
-            ykg = self.yg.take(idx_kill_g)
-            fkg = self.fg.take(idx_kill_g)
-            xxkg= self.xxg.take(idx_kill_g)
-            xykg= self.xyg.take(idx_kill_g)
-            yykg= self.yyg.take(idx_kill_g)
+            xkg = self.galaxies[self._X, :].take(idx_kill_g)
+            ykg = self.galaxies[self._Y, :].take(idx_kill_g)
+            fkg = self.galaxies[self._F, :].take(idx_kill_g)
+            xxkg= self.galaxies[self._XX, :].take(idx_kill_g)
+            xykg= self.galaxies[self._XY, :].take(idx_kill_g)
+            yykg= self.galaxies[self._YY, :].take(idx_kill_g)
             fminratio = fkg / self.trueminf # again, care about fmin for stars
             frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
             f1Mf = frac * (1. - frac) # frac(1 - frac)
@@ -960,8 +940,8 @@ class Model:
             nw = nms
             weightoverpairs = np.zeros(nms) # w (1/sum w_1 + 1/sum w_2) / 2
             for k in xrange(nms):
-                xtemp = self.x[0:self.n].copy()
-                ytemp = self.y[0:self.n].copy()
+                xtemp = self.stars[self._X, 0:self.n].copy()
+                ytemp = self.stars[self._Y, 0:self.n].copy()
                 xtemp = np.concatenate([xtemp, bx[k:k+1,0], bx[k:k+1,1]])
                 ytemp = np.concatenate([ytemp, by[k:k+1,0], by[k:k+1,1]])
 
@@ -984,13 +964,13 @@ class Model:
 
             for k in xrange(nms):
                 idx_kill[k,0] = np.random.choice(self.nstar, p=choosable/nchoosable)
-                invpairs[k], idx_kill[k,1] = neighbours(self.x[0:self.n], self.y[0:self.n], self.kickrange_g, idx_kill[k,0], generate=True)
+                invpairs[k], idx_kill[k,1] = neighbours(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.kickrange_g, idx_kill[k,0], generate=True)
                 # prevent sources from being involved in multiple proposals
                 if not choosable[idx_kill[k,1]]:
                     idx_kill[k,1] = -1
                 if idx_kill[k,1] != -1:
                     invpairs[k] = 1./invpairs[k]
-                    invpairs[k] += 1./neighbours(self.x[0:self.n], self.y[0:self.n], self.kickrange_g, idx_kill[k,1])
+                    invpairs[k] += 1./neighbours(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.kickrange_g, idx_kill[k,1])
                     choosable[idx_kill[k,:]] = False
                     nchoosable -= 2
             invpairs *= 0.5
@@ -1003,9 +983,9 @@ class Model:
             invpairs = invpairs.take(idx_in)
             goodmove = idx_in.size > 0
 
-            xk = self.x.take(idx_kill) # because idx_kill is 2D so are these
-            yk = self.y.take(idx_kill)
-            fk = self.f.take(idx_kill)
+            xk = self.stars[self._X, :].take(idx_kill) # because idx_kill is 2D so are these
+            yk = self.stars[self._Y, :].take(idx_kill)
+            fk = self.stars[self._F, :].take(idx_kill)
             dx = xk[:,1] - xk[:,0]
             dy = yk[:,1] - yk[:,0]
             dr2 = dx*dx + dy*dy
@@ -1046,10 +1026,10 @@ class Model:
 
     def stargalaxy_galaxy(self):
         splitsville = np.random.randint(2)
-        idx_reg_g = idx_parity(self.xg, self.yg, self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+        idx_reg_g = idx_parity(self.galaxies[self._X, :], self.galaxies[self._Y, :], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
         sum_f = 0
         low_n = 0
-        idx_bright = idx_reg_g.take(np.flatnonzero(self.fg.take(idx_reg_g) > self.trueminf + self.trueminf_g)) # in region and bright enough to make s+g
+        idx_bright = idx_reg_g.take(np.flatnonzero(self.galaxies[self._F, :].take(idx_reg_g) > self.trueminf + self.trueminf_g)) # in region and bright enough to make s+g
         bright_n = idx_bright.size
 
         nms = (self.nregx * self.nregy) / 4
@@ -1060,12 +1040,12 @@ class Model:
             dx = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
             dy = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
             idx_move_g = np.random.choice(idx_bright, size=nms, replace=False)
-            x0g = self.xg.take(idx_move_g)
-            y0g = self.yg.take(idx_move_g)
-            f0g = self.fg.take(idx_move_g)
-            xx0g = self.xxg.take(idx_move_g)
-            xy0g = self.xyg.take(idx_move_g)
-            yy0g = self.yyg.take(idx_move_g)
+            x0g = self.galaxies[self._X, :].take(idx_move_g)
+            y0g = self.galaxies[self._Y, :].take(idx_move_g)
+            f0g = self.galaxies[self._F, :].take(idx_move_g)
+            xx0g = self.galaxies[self._XX, :].take(idx_move_g)
+            xy0g = self.galaxies[self._XY, :].take(idx_move_g)
+            yy0g = self.galaxies[self._YY, :].take(idx_move_g)
             frac = (self.trueminf_g/f0g + np.random.uniform(size=nms)*(1. - (self.trueminf_g + self.trueminf)/f0g)).astype(np.float32)
             pxg = x0g + ((1-frac)*dx)
             pyg = y0g + ((1-frac)*dy)
@@ -1109,8 +1089,8 @@ class Model:
             nw = nms
             invpairs = np.zeros(nms)
             for k in xrange(nms):
-                xtemp = self.x[0:self.n].copy()
-                ytemp = self.y[0:self.n].copy()
+                xtemp = self.stars[self._X, 0:self.n].copy()
+                ytemp = self.stars[self._Y, 0:self.n].copy()
                 xtemp = np.concatenate([xtemp, pxg[k:k+1], bx[k:k+1]])
                 ytemp = np.concatenate([ytemp, pyg[k:k+1], by[k:k+1]])
 
@@ -1126,7 +1106,8 @@ class Model:
 
             for k in xrange(nms):
                 l = idx_move_g[k]
-                invpairs[k], idx_kill[k] = neighbours(np.concatenate([self.x[0:self.n], self.xg[l:l+1]]), np.concatenate([self.y[0:self.n], self.yg[l:l+1]]), self.kickrange_g, self.n, generate=True)
+                invpairs[k], idx_kill[k] = neighbours(np.concatenate([self.stars[self._X, 0:self.n], self.galaxies[self._X, l:l+1]]), \
+                        np.concatenate([self.stars[self._Y, 0:self.n], self.galaxies[self._Y, l:l+1]]), self.kickrange_g, self.n, generate=True)
                 if invpairs[k] > 0:
                     invpairs[k] = 1./invpairs[k]
                 else:
@@ -1146,15 +1127,15 @@ class Model:
             invpairs = invpairs.take(idx_in)
             goodmove = idx_in.size > 0
 
-            x0g = self.xg.take(idx_move_g)
-            y0g = self.yg.take(idx_move_g)
-            f0g = self.fg.take(idx_move_g)
-            xx0g= self.xxg.take(idx_move_g)
-            xy0g= self.xyg.take(idx_move_g)
-            yy0g= self.yyg.take(idx_move_g)
-            xk  = self.x.take(idx_kill)
-            yk  = self.y.take(idx_kill)
-            fk  = self.f.take(idx_kill)
+            x0g = self.galaxies[self._X, :].take(idx_move_g)
+            y0g = self.galaxies[self._Y, :].take(idx_move_g)
+            f0g = self.galaxies[self._F, :].take(idx_move_g)
+            xx0g= self.galaxies[self._XX, :].take(idx_move_g)
+            xy0g= self.galaxies[self._XY, :].take(idx_move_g)
+            yy0g= self.galaxies[self._YY, :].take(idx_move_g)
+            xk  = self.stars[self._X, :].take(idx_kill)
+            yk  = self.stars[self._Y, :].take(idx_kill)
+            fk  = self.stars[self._F, :].take(idx_kill)
             sum_f = f0g + fk
             frac = f0g / sum_f
             dx = x0g - xk
@@ -1185,7 +1166,9 @@ class Model:
             # this proposal makes a galaxy that is bright enough to split
             bright_n = bright_n + 1
         if goodmove:
-            factor = np.log(self.truealpha-1) - (self.truealpha-1)*np.log(sum_f/self.trueminf) - self.truealpha_g*np.log(frac) - self.truealpha*np.log(1-frac) + np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(imsz[0]*imsz[1]) + np.log(1. - (self.trueminf+self.trueminf_g)/sum_f) + np.log(bright_n/float(self.ng)) + np.log((self.n+1.-splitsville)*invpairs) - 2*np.log(frac)
+            factor = np.log(self.truealpha-1) - (self.truealpha-1)*np.log(sum_f/self.trueminf) - self.truealpha_g*np.log(frac) - self.truealpha*np.log(1-frac) + \
+                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(imsz[0]*imsz[1]) + np.log(1. - (self.trueminf+self.trueminf_g)/sum_f) + \
+                    np.log(bright_n/float(self.ng)) + np.log((self.n+1.-splitsville)*invpairs) - 2*np.log(frac)
             if not splitsville:
                 factor *= -1
             factor += self.log_prior_moments(pxxg, pxyg, pyyg) - self.log_prior_moments(xx0g, xy0g, yy0g) # galaxy prior
@@ -1200,10 +1183,10 @@ class Model:
 
     def merge_split_galaxies(self):
         splitsville = np.random.randint(2)
-        idx_reg = idx_parity(self.xg, self.yg, self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+        idx_reg = idx_parity(self.galaxies[self._X, :], self.galaxies[self._Y, :], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
         sum_f = 0
         low_n = 0
-        idx_bright = idx_reg.take(np.flatnonzero(self.fg.take(idx_reg) > 2*self.trueminf_g)) # in region!
+        idx_bright = idx_reg.take(np.flatnonzero(self.galaxies[self._F, :].take(idx_reg) > 2*self.trueminf_g)) # in region!
         bright_n = idx_bright.size
 
         nms = (self.nregx * self.nregy) / 4
@@ -1214,12 +1197,12 @@ class Model:
             dx = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
             dy = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
             idx_move_g = np.random.choice(idx_bright, size=nms, replace=False)
-            x0g = self.xg.take(idx_move_g)
-            y0g = self.yg.take(idx_move_g)
-            f0g = self.fg.take(idx_move_g)
-            xx0g= self.xxg.take(idx_move_g)
-            xy0g= self.xyg.take(idx_move_g)
-            yy0g= self.yyg.take(idx_move_g)
+            x0g = self.galaxies[self._X, :].take(idx_move_g)
+            y0g = self.galaxies[self._Y, :].take(idx_move_g)
+            f0g = self.galaxies[self._F, :].take(idx_move_g)
+            xx0g= self.galaxies[self._XX, :].take(idx_move_g)
+            xy0g= self.galaxies[self._XY, :].take(idx_move_g)
+            yy0g= self.galaxies[self._YY, :].take(idx_move_g)
             fminratio = f0g / self.trueminf_g
             frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
             frac_xx = np.random.uniform(size=nms).astype(np.float32)
@@ -1280,8 +1263,8 @@ class Model:
             nw = nms
             invpairs = np.zeros(nms)
             for k in xrange(nms):
-                xtemp = self.xg[0:self.ng].copy()
-                ytemp = self.yg[0:self.ng].copy()
+                xtemp = self.galaxies[self._X, 0:self.ng].copy()
+                ytemp = self.galaxies[self._Y, 0:self.ng].copy()
                 xtemp[idx_move_g[k]] = pxg[k]
                 ytemp[idx_move_g[k]] = pyg[k]
                 xtemp = np.concatenate([xtemp, bxg[k:k+1]])
@@ -1302,14 +1285,14 @@ class Model:
 
             for k in xrange(nms):
                 idx_move_g[k] = np.random.choice(self.ngalx, p=choosable/nchoosable)
-                invpairs[k], idx_kill_g[k] = neighbours(self.xg[0:self.ng], self.yg[0:self.ng], self.kickrange_g, idx_move_g[k], generate=True)
+                invpairs[k], idx_kill_g[k] = neighbours(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], self.kickrange_g, idx_move_g[k], generate=True)
                 if invpairs[k] > 0:
                     invpairs[k] = 1./invpairs[k]
                 # prevent sources from being involved in multiple proposals
                 if not choosable[idx_kill_g[k]]:
                     idx_kill_g[k] = -1
                 if idx_kill_g[k] != -1:
-                    invpairs[k] += 1./neighbours(self.xg[0:self.ng], self.yg[0:self.ng], self.kickrange_g, idx_kill_g[k])
+                    invpairs[k] += 1./neighbours(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], self.kickrange_g, idx_kill_g[k])
                     choosable[idx_move_g[k]] = False
                     choosable[idx_kill_g[k]] = False
                     nchoosable -= 2
@@ -1324,18 +1307,18 @@ class Model:
             invpairs = invpairs.take(idx_in)
             goodmove = idx_in.size > 0
 
-            x0g = self.xg.take(idx_move_g)
-            y0g = self.yg.take(idx_move_g)
-            f0g = self.fg.take(idx_move_g)
-            xx0g= self.xxg.take(idx_move_g)
-            xy0g= self.xyg.take(idx_move_g)
-            yy0g= self.yyg.take(idx_move_g)
-            xkg = self.xg.take(idx_kill_g)
-            ykg = self.yg.take(idx_kill_g)
-            fkg = self.fg.take(idx_kill_g)
-            xxkg= self.xxg.take(idx_kill_g)
-            xykg= self.xyg.take(idx_kill_g)
-            yykg= self.yyg.take(idx_kill_g)
+            x0g = self.galaxies[self._X, :].take(idx_move_g)
+            y0g = self.galaxies[self._Y, :].take(idx_move_g)
+            f0g = self.galaxies[self._F, :].take(idx_move_g)
+            xx0g= self.galaxies[self._XX, :].take(idx_move_g)
+            xy0g= self.galaxies[self._XY, :].take(idx_move_g)
+            yy0g= self.galaxies[self._YY, :].take(idx_move_g)
+            xkg = self.galaxies[self._X, :].take(idx_kill_g)
+            ykg = self.galaxies[self._Y, :].take(idx_kill_g)
+            fkg = self.galaxies[self._F, :].take(idx_kill_g)
+            xxkg= self.galaxies[self._XX, :].take(idx_kill_g)
+            xykg= self.galaxies[self._XY, :].take(idx_kill_g)
+            yykg= self.galaxies[self._YY, :].take(idx_kill_g)
             sum_f = f0g + fkg
             fminratio = sum_f / self.trueminf_g
             frac = f0g / sum_f
@@ -1438,16 +1421,16 @@ for j in xrange(nsamp):
             models[k-1], models[k] = models[k], models[k-1]
 
     nsample[j] = models[0].n
-    xsample[j,:] = models[0].x
-    ysample[j,:] = models[0].y
-    fsample[j,:] = models[0].f
+    xsample[j,:] = models[0].stars[Model._X, :]
+    ysample[j,:] = models[0].stars[Model._Y, :]
+    fsample[j,:] = models[0].stars[Model._F, :]
     ngsample[j] = models[0].ng
-    xgsample[j,:] = models[0].xg
-    ygsample[j,:] = models[0].yg
-    fgsample[j,:] = models[0].fg
-    xxgsample[j,:] = models[0].xxg
-    xygsample[j,:] = models[0].xyg
-    yygsample[j,:] = models[0].yyg
+    xgsample[j,:] = models[0].galaxies[Model._X, :]
+    ygsample[j,:] = models[0].galaxies[Model._Y, :]
+    fgsample[j,:] = models[0].galaxies[Model._F, :]
+    xxgsample[j,:] = models[0].galaxies[Model._XX, :]
+    xygsample[j,:] = models[0].galaxies[Model._XY, :]
+    yygsample[j,:] = models[0].galaxies[Model._YY, :]
 
 print 'saving...'
 np.savez('chain.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
