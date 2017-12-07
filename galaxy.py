@@ -60,7 +60,8 @@ def retr_sers(numbsidegrid=21, sersindx=4., factusam=101, factradigalx=2., pathp
 
     return gridphon, amplphon
 
-def retr_tranphon(gridphon, amplphon, xposgalx, yposgalx, fluxgalx, arg1, arg2, arg3, convert=True):
+def retr_tranphon(gridphon, amplphon, galaxypars, convert=True):
+    xposgalx, yposgalx, fluxgalx, arg1, arg2, arg3 = galaxypars
     if convert:
         radigalx, thetagalx, phigalx = from_moments(arg1, arg2, arg3)
         radigalx *= 1.33846609401 / np.sqrt(2) # only works for Sersic index 2, makes <x^2>=1
