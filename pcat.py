@@ -118,7 +118,7 @@ bias, gain = [np.float32(i) for i in f.readline().split()]
 f.close()
 data = np.loadtxt('Data/'+dataname+'_cts.txt').astype(np.float32)
 data -= bias
-trueback = np.float32(445*250)#179.)
+trueback = np.float32(179)#np.float32(445*250)#179.)
 variance = data / gain
 weight = 1. / variance # inverse variance
 
@@ -277,13 +277,13 @@ class Proposal:
 
 class Model:
     # should these be class or instance variables?
-    nstar = 100
-    trueminf = np.float32(250.*136)
+    nstar = 2000
+    trueminf = np.float32(250.)#*136)
     truealpha = np.float32(2.00)
     back = trueback
 
     ngalx = 100
-    trueminf_g = np.float32(250.*136)
+    trueminf_g = np.float32(250.)#*136)
     truealpha_g = np.float32(2.00)
     truermin_g = np.float32(1.00)
 
@@ -310,14 +310,16 @@ class Model:
         self.stars[self._F,0:self.n] **= -1./(self.truealpha - 1.)
         self.stars[self._F,0:self.n] *= self.trueminf
 
-        self.ng = np.random.randint(self.ngalx)+1
-        self.galaxies = np.zeros((6,self.ngalx), dtype=np.float32)
-        self.galaxies[[self._X,self._Y,self._F],0:self.ng] = np.random.uniform(size=(3,self.ng))
-        self.galaxies[self._X,0:self.ng] *= imsz[0]-1
-        self.galaxies[self._Y,0:self.ng] *= imsz[1]-1
-        self.galaxies[self._F,0:self.ng] **= -1./(self.truealpha_g - 1.)
-        self.galaxies[self._F,0:self.ng] *= self.trueminf_g
-        self.galaxies[[self._XX,self._XY,self._YY],0:self.ng] = self.moments_from_prior(self.truermin_g, self.ng)
+        self.ng = 0
+        if strgmode == 'galx':
+            self.ng = np.random.randint(self.ngalx)+1
+            self.galaxies = np.zeros((6,self.ngalx), dtype=np.float32)
+            self.galaxies[[self._X,self._Y,self._F],0:self.ng] = np.random.uniform(size=(3,self.ng))
+            self.galaxies[self._X,0:self.ng] *= imsz[0]-1
+            self.galaxies[self._Y,0:self.ng] *= imsz[1]-1
+            self.galaxies[self._F,0:self.ng] **= -1./(self.truealpha_g - 1.)
+            self.galaxies[self._F,0:self.ng] *= self.trueminf_g
+            self.galaxies[[self._XX,self._XY,self._YY],0:self.ng] = self.moments_from_prior(self.truermin_g, self.ng)
 
     # should offsetx/y, parity_x/y be instance variables?
 
@@ -400,6 +402,25 @@ class Model:
                 refx, refy = proposal.get_ref_xy()
                 regionx = get_region(refx, self.offsetx, regsize)
                 regiony = get_region(refy, self.offsety, regsize)
+
+                ###
+                '''
+                if i == 0:
+                    yy, xx = np.mgrid[0:100,0:100]
+                    rxx = get_region(xx, self.offsetx, regsize) % 2
+                    ryy = get_region(yy, self.offsety, regsize) % 2
+                    rrr = rxx*2 + ryy
+                    plt.figure(2)
+                    plt.imshow(rrr, interpolation='none', origin='lower', cmap='Accent')
+                    plt.savefig('region-'+str(int(time.clock()*10))+'.pdf')
+                    plt.show()
+                    plt.figure(3)
+                    vmax=np.max(np.abs(dmodel))
+                    plt.imshow(dmodel, interpolation='none', origin='lower', cmap='bwr', vmin=-vmax, vmax=vmax)
+                    plt.savefig('dmodel-'+str(int(time.clock()*10))+'.pdf')
+                    plt.show()
+                '''
+                ###
 
                 plogL[(1-self.parity_y)::2,:] = float('-inf') # don't accept off-parity regions
                 plogL[:,(1-self.parity_x)::2] = float('-inf')
@@ -515,7 +536,7 @@ class Model:
                     plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step')
                     plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label='Chain', histtype='step')
                 else:
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.f[0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
                 plt.legend()
                 plt.xlabel('log10 flux')
                 plt.ylim((0.5, self.nstar))
@@ -555,7 +576,7 @@ class Model:
         starsp = np.empty_like(stars0)
         f0 = stars0[self._F,:]
 
-        lindf = np.float32(60.*134/np.sqrt(25.))
+        lindf = np.float32(60./np.sqrt(25.))#134
         logdf = np.float32(0.01/np.sqrt(25.))
         ff = np.log(logdf*logdf*f0 + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0*f0)) / logdf
         ffmin = np.log(logdf*logdf*self.trueminf + logdf*np.sqrt(lindf*lindf + logdf*logdf*self.trueminf*self.trueminf)) / logdf
@@ -569,7 +590,8 @@ class Model:
         dlogf = np.log(pf/f0)
         factor = -self.truealpha*dlogf
 
-        dpos_rms = np.float32(60.*134/np.sqrt(25.))/(np.maximum(f0, pf))
+        dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0, pf))#134
+        dpos_rms[dpos_rms < 1e-3] = 1e-3
         dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
         dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
         starsp[self._X,:] = stars0[self._X,:] + dx
@@ -1326,7 +1348,8 @@ for j in xrange(nsamp):
     chi2_all = np.zeros(ntemps)
     print 'Loop', j
 
-    temptemp = max(50 - 0.1*j, 1)
+    #temptemp = max(50 - 0.1*j, 1)
+    temptemp = 1.
     for k in xrange(ntemps):
         _, _, chi2_all[k] = models[k].run_sampler(temptemp, visual=(k==0)*visual)
 
@@ -1340,13 +1363,15 @@ for j in xrange(nsamp):
     xsample[j,:] = models[0].stars[Model._X, :]
     ysample[j,:] = models[0].stars[Model._Y, :]
     fsample[j,:] = models[0].stars[Model._F, :]
-    ngsample[j] = models[0].ng
-    xgsample[j,:] = models[0].galaxies[Model._X, :]
-    ygsample[j,:] = models[0].galaxies[Model._Y, :]
-    fgsample[j,:] = models[0].galaxies[Model._F, :]
-    xxgsample[j,:] = models[0].galaxies[Model._XX, :]
-    xygsample[j,:] = models[0].galaxies[Model._XY, :]
-    yygsample[j,:] = models[0].galaxies[Model._YY, :]
+    if strgmode == 'galx':
+        ngsample[j] = models[0].ng
+        xgsample[j,:] = models[0].galaxies[Model._X, :]
+        ygsample[j,:] = models[0].galaxies[Model._Y, :]
+        fgsample[j,:] = models[0].galaxies[Model._F, :]
+        xxgsample[j,:] = models[0].galaxies[Model._XX, :]
+        xygsample[j,:] = models[0].galaxies[Model._XY, :]
+        yygsample[j,:] = models[0].galaxies[Model._YY, :]
 
 print 'saving...'
-np.savez('chain.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
+np.savez('chain-'+dataname+'.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
+
