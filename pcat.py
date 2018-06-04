@@ -73,6 +73,10 @@ def idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize):
     match_y = (get_region(y[0:n], offsety, regsize) % 2) == parity_y
     return np.flatnonzero(np.logical_and(match_x, match_y))
 
+# check arguments
+if len(sys.argv) != 6:
+    raise Exception('Lion requires 5 inputs: dataname (e.g., sdss.0921), visual (0 or 1), testpsfn (0 or 1), strgmode (e.g., star), and datatype (e.g., mock). ')
+
 # script arguments
 dataname = sys.argv[1]
 visual = int(sys.argv[2]) > 0
@@ -82,7 +86,6 @@ testpsfn = int(sys.argv[3]) > 0
 strgmode = sys.argv[4]
 # 'mock' for simulated
 datatype = sys.argv[5]
-
 
 f = open('Data/'+dataname+'_psf.txt')
 nc, nbin = [np.int32(i) for i in f.readline().split()]
