@@ -68,34 +68,46 @@ def neighbours(x,y,neigh,i,generate=False):
 def get_region(x, offsetx, regsize):
     return np.floor(x + offsetx).astype(np.int) / regsize
 
+
 def idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize):
     match_x = (get_region(x[0:n], offsetx, regsize) % 2) == parity_x
     match_y = (get_region(y[0:n], offsety, regsize) % 2) == parity_y
     return np.flatnonzero(np.logical_and(match_x, match_y))
 
-# check arguments
+
+def retr_numbdoff(numbstar, numbgalx):
+    
+    numbdoff = (2 + numbener) * numbstar + (5 + numbener) * numbgalx
+
+    return numbdoff
+
+
+# check if source has been changed after compilation
+if os.path.getmtime('pcat-lion.c') > os.path.getmtime('pcat-lion.so'):
+    warnings.warn('pcat-lion.c modified after compiled pcat-lion.so', Warning)
+
+# arguments
+## check arguments
 if len(sys.argv) != 6:
     raise Exception('Lion requires 5 inputs: dataname (e.g., sdss.0921), visual (0 or 1), testpsfn (0 or 1), strgmode (e.g., star), and datatype (e.g., mock). ')
 
-# script arguments
+## parse arguments
 dataname = sys.argv[1]
 visual = int(sys.argv[2]) > 0
-# 1 to test, 0 not to test
+### 1 to test, 0 not to test
 testpsfn = int(sys.argv[3]) > 0
-# 'star' for star only, 'stargalx' for star and galaxy
+### 'star' for star only, 'stargalx' for star and galaxy
 strgmode = sys.argv[4]
-# 'mock' for simulated
+### 'mock' for simulated
 datatype = sys.argv[5]
 
+# read PSF
 f = open('Data/'+dataname+'_psf.txt')
 nc, nbin = [np.int32(i) for i in f.readline().split()]
 f.close()
 psf = np.loadtxt('Data/'+dataname+'_psf.txt', skiprows=1).astype(np.float32)
 cf = psf_poly_fit(psf, nbin=nbin)
 npar = cf.shape[0]
-
-if os.path.getmtime('pcat-lion.c') > os.path.getmtime('pcat-lion.so'):
-    warnings.warn('pcat-lion.c modified after compiled pcat-lion.so', Warning)
 
 array_2d_float = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
 array_1d_int = npct.ndpointer(dtype=np.int32, ndim=1, flags="C_CONTIGUOUS")
@@ -125,6 +137,9 @@ trueback = np.float32(179)#np.float32(445*250)#179.)
 variance = data / gain
 weight = 1. / variance # inverse variance
 
+numbpixl = w * h
+
+print 'Image width and height: %d %d pixels' % (w, h)
 print 'Lion mode:', strgmode
 print 'datatype:', datatype
 
@@ -488,9 +503,11 @@ class Model:
             else:
                 outbounds[i] = 1
 
+        numbdoff = retr_numbdoff(self.n, self.ng)
         chi2 = np.sum(weight*(data-model)*(data-model))
+        chi2doff = chi2 / (numbpixl - numbdoff)
         fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
-        print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', n_phon, 'chi^2', chi2
+        print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', n_phon, 'chi^2', chi2, 'chi2dof', chi2doff)
         dt1 *= 1000
         dt2 *= 1000
         dt3 *= 1000
