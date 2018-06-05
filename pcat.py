@@ -1,7 +1,7 @@
 import numpy as np
 import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
-import h5py
+import h5py, datetime
 # in order for visual=True to work, interactive backend should be loaded before importing pyplot
 import matplotlib
 matplotlib.use('TkAgg')
@@ -90,6 +90,9 @@ if os.path.getmtime('pcat-lion.c') > os.path.getmtime('pcat-lion.so'):
 ## check arguments
 if len(sys.argv) != 6:
     raise Exception('Lion requires 5 inputs: dataname (e.g., sdss.0921), visual (0 or 1), testpsfn (0 or 1), strgmode (e.g., star), and datatype (e.g., mock). ')
+
+# number of bands (i.e., energy bins)
+numbener = 1
 
 ## parse arguments
 dataname = sys.argv[1]
@@ -412,7 +415,8 @@ class Model:
 
             if proposal.goodmove:
                 t2 = time.clock()
-                dmodel, diff2 = image_model_eval(proposal.xphon, proposal.yphon, proposal.fphon, dback, imsz, nc, cf, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
+                dmodel, diff2 = image_model_eval(proposal.xphon, proposal.yphon, proposal.fphon, dback, imsz, nc, cf, \
+                            weights=weight, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
                 plogL = -0.5*diff2
                 dt2[i] = time.clock() - t2
 
@@ -507,7 +511,7 @@ class Model:
         chi2 = np.sum(weight*(data-model)*(data-model))
         chi2doff = chi2 / (numbpixl - numbdoff)
         fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
-        print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', n_phon, 'chi^2', chi2, 'chi2dof', chi2doff)
+        print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', n_phon, 'chi^2', chi2, 'numbdoff', numbdoff, 'chi2dof', chi2doff
         dt1 *= 1000
         dt2 *= 1000
         dt3 *= 1000
@@ -1344,7 +1348,7 @@ class Model:
             proposal.set_factor(factor)
         return proposal
 
-nsamp = 1000
+nsamp = 10
 nloop = 1000
 nstar = Model.nstar
 nsample = np.zeros(nsamp, dtype=np.int32)
@@ -1360,6 +1364,18 @@ xygsample = np.zeros((nsamp, nstar), dtype=np.float32)
 yygsample = np.zeros((nsamp, nstar), dtype=np.float32)
 
 models = [Model() for k in xrange(ntemps)]
+
+# time stamp string
+strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+
+# write the chain
+## h5 file path
+pathh5py = 'chain_' + strgtimestmp + '_' + dataname + '.h5'
+## numpy object file path
+pathnump = 'chain_' + strgtimestmp + '_' + dataname + '.npz'
+
+filearry = h5py.File(pathh5py, 'w')
+print 'Will write the chain to %s...' % pathh5py
 
 if visual:
     plt.ion()
@@ -1383,6 +1399,7 @@ for j in xrange(nsamp):
     xsample[j,:] = models[0].stars[Model._X, :]
     ysample[j,:] = models[0].stars[Model._Y, :]
     fsample[j,:] = models[0].stars[Model._F, :]
+
     if strgmode == 'galx':
         ngsample[j] = models[0].ng
         xgsample[j,:] = models[0].galaxies[Model._X, :]
@@ -1392,6 +1409,13 @@ for j in xrange(nsamp):
         xygsample[j,:] = models[0].galaxies[Model._XY, :]
         yygsample[j,:] = models[0].galaxies[Model._YY, :]
 
-print 'saving...'
-np.savez('chain-'+dataname+'.npz', n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
+filearry.create_dataset('x', data=xsample)
+filearry.create_dataset('y', data=ysample)
+filearry.create_dataset('f', data=fsample)
+
+print 'Saving the numpy object to %s...' % pathnump
+np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
+
+filearry.close()
+
 
