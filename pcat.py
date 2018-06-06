@@ -210,6 +210,12 @@ class Proposal:
 def main( \
          # string characterizing the type of data (experiment that collected it and its PSF, etc.)
          strgdata='sdss.0921', \
+    
+         # number of samples
+         nsamp=100, \
+    
+         # number of loops
+         nloop=1000, \
          
          # string indicating whether the data is simulated or input by the user
          # 'mock' for mock data, 'inpt' for input data
@@ -232,10 +238,23 @@ def main( \
     # check if source has been changed after compilation
     if os.path.getmtime('pcat-lion.c') > os.path.getmtime('pcat-lion.so'):
         warnings.warn('pcat-lion.c modified after compiled pcat-lion.so', Warning)
-    
-    # number of bands (i.e., energy bins)
+   
+    # time stamp string
+    strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+   
+    print 'Lion initialized at %s' % strgtimestmp
+
+    # show critical inputs
+    print 'strgdata: ', strgdata
+    print 'Model type:', strgmodl
+    print 'Data type:', datatype
+
+    # constants
+    ## number of bands (i.e., energy bins)
     numbener = 1
     
+    boolplot = boolplotshow or boolplotsave
+
     # read PSF
     f = open('Data/'+strgdata+'_psf.txt')
     nc, nbin = [np.int32(i) for i in f.readline().split()]
@@ -244,6 +263,7 @@ def main( \
     cf = psf_poly_fit(psf, nbin=nbin)
     npar = cf.shape[0]
     
+    # construct C library
     array_2d_float = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
     array_1d_int = npct.ndpointer(dtype=np.int32, ndim=1, flags="C_CONTIGUOUS")
     array_2d_double = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
@@ -254,13 +274,14 @@ def main( \
     array_2d_int = npct.ndpointer(dtype=np.int32, ndim=2, flags="C_CONTIGUOUS")
     libmmult.pcat_imag_acpt.restype = None
     libmmult.pcat_imag_acpt.argtypes = [c_int, c_int, array_2d_float, array_2d_float, array_2d_int, c_int, c_int, c_int, c_int]
-    #
     libmmult.pcat_like_eval.restype = None
     libmmult.pcat_like_eval.argtypes = [c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_2d_double, c_int, c_int, c_int, c_int]
     
-    if boolplotshow and testpsfn:
+    # test PSF
+    if boolplot and testpsfn:
         testpsf(nc, cf, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
     
+    # read data
     f = open('Data/'+strgdata+'_pix.txt')
     w, h, nband = [np.int32(i) for i in f.readline().split()]
     imsz = (w, h)
@@ -272,14 +293,10 @@ def main( \
     trueback = np.float32(179)#np.float32(445*250)#179.)
     variance = data / gain
     weight = 1. / variance # inverse variance
-    
     numbpixl = w * h
     
     print 'Image width and height: %d %d pixels' % (w, h)
-    print 'Model type:', strgmodl
-    print 'Data type:', datatype
     
-
     class Model:
         # should these be class or instance variables?
         nstar = 2000
@@ -345,7 +362,7 @@ def main( \
             return np.log(slope-1) + (slope-1)*np.log(self.truermin_g) - slope*np.log(a) - 5*np.log(a) - np.log(u*u) - np.log(1-u*u)
     
         
-        def run_sampler(self, temperature, nloop=1000, boolplotshow=False):
+        def run_sampler(self, temperature, jj, nloop=1000, boolplotshow=False):
             t0 = time.clock()
             nmov = np.zeros(nloop)
             movetype = np.zeros(nloop)
@@ -513,49 +530,50 @@ def main( \
                     print '-'*16
             print '='*16
     
-            if boolplotshow:
-                    plt.figure(1)
-                    plt.clf()
-                    plt.subplot(1,3,1)
-                    plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
-                    sizefac = 10.*136
-                    if datatype == 'mock':
-                        if strgmodl == 'star' or strgmodl == 'galx':
-                            mask = truef > 250 # will have to change this for other data sets
-                            plt.scatter(truex[mask], truey[mask], marker='+', s=truef[mask] / sizefac, color='lime')
-                            mask = np.logical_not(mask)
-                            plt.scatter(truex[mask], truey[mask], marker='+', s=truef[mask] / sizefac, color='g')
-                        if strgmodl == 'galx':
-                            plt.scatter(truexg, trueyg, marker='1', s=truefg / sizefac, color='lime')
-                            plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
-                        if strgmodl == 'stargalx':
-                            plt.scatter(dictglob['truexposstar'], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
-                    plt.scatter(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], marker='x', s=self.stars[self._F, 0:self.n]/sizefac, color='r')
+            if boolplotshow or boolplotsave:
+                plt.figure(1)
+                plt.clf()
+                plt.subplot(1,3,1)
+                plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+                sizefac = 10.*136
+                if datatype == 'mock':
+                    if strgmodl == 'star' or strgmodl == 'galx':
+                        mask = truef > 250 # will have to change this for other data sets
+                        plt.scatter(truex[mask], truey[mask], marker='+', s=truef[mask] / sizefac, color='lime')
+                        mask = np.logical_not(mask)
+                        plt.scatter(truex[mask], truey[mask], marker='+', s=truef[mask] / sizefac, color='g')
                     if strgmodl == 'galx':
-                        plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=self.galaxies[self._F, 0:self.ng]/sizefac, color='r')
-                        a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
-                        plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
-                    plt.xlim(-0.5, imsz[0]-0.5)
-                    plt.ylim(-0.5, imsz[1]-0.5)
-                    plt.subplot(1,3,2)
-                    plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', cmap='bwr', vmin=-5, vmax=5)
-                    if j == 0:
-                        plt.tight_layout()
-                    plt.subplot(1,3,3)
+                        plt.scatter(truexg, trueyg, marker='1', s=truefg / sizefac, color='lime')
+                        plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
+                    if strgmodl == 'stargalx':
+                        plt.scatter(dictglob['truexposstar'], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
+                plt.scatter(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], marker='x', s=self.stars[self._F, 0:self.n]/sizefac, color='r')
+                if strgmodl == 'galx':
+                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=self.galaxies[self._F, 0:self.ng]/sizefac, color='r')
+                    a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
+                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
+                plt.xlim(-0.5, imsz[0]-0.5)
+                plt.ylim(-0.5, imsz[1]-0.5)
+                plt.subplot(1,3,2)
+                plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', cmap='bwr', vmin=-5, vmax=5)
+                if j == 0:
+                    plt.tight_layout()
+                plt.subplot(1,3,3)
     
-                    if datatype == 'mock':
-                        plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step')
-                        plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), \
-                                                                                                            log=True, alpha=0.5, label='Chain', histtype='step')
-                    else:
-                        plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), \
-                                                            np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
-                    plt.legend()
-                    plt.xlabel('log10 flux')
-                    plt.ylim((0.5, self.nstar))
-                    plt.draw()
-                    plt.pause(1e-5)
-    
+                if datatype == 'mock':
+                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), \
+                                                                                                        log=True, alpha=0.5, label='Chain', histtype='step')
+                else:
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), \
+                                                        np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
+                plt.legend()
+                plt.xlabel('log10 flux')
+                plt.ylim((0.5, self.nstar))
+                plt.draw()
+                plt.pause(1e-5)
+                if boolplotsave:
+                    plt.savefig('Data/%s_fram%04d.pdf' % (strgtimestmp, jj))
     
             return self.n, self.ng, chi2
     
@@ -1392,9 +1410,6 @@ def main( \
     assert imsz[1] % regsize == 0
     margin = 10
     
-    
-    nsamp = 100
-    nloop = 1000
     nstar = Model.nstar
     nsample = np.zeros(nsamp, dtype=np.int32)
     xsample = np.zeros((nsamp, nstar), dtype=np.float32)
@@ -1408,10 +1423,8 @@ def main( \
     xygsample = np.zeros((nsamp, nstar), dtype=np.float32)
     yygsample = np.zeros((nsamp, nstar), dtype=np.float32)
     
+    # construct model for each temperature
     models = [Model() for k in xrange(ntemps)]
-    
-    # time stamp string
-    strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     
     # write the chain
     ## h5 file path
@@ -1424,15 +1437,18 @@ def main( \
     
     if boolplotshow:
         plt.ion()
+    
+    if boolplot:
         plt.figure(figsize=(15,5))
+    
     for j in xrange(nsamp):
         chi2_all = np.zeros(ntemps)
-        print 'Loop', j
+        print 'Sample number', j
     
         #temptemp = max(50 - 0.1*j, 1)
         temptemp = 1.
         for k in xrange(ntemps):
-            _, _, chi2_all[k] = models[k].run_sampler(temptemp, boolplotshow=(k==0)*boolplotshow)
+            _, _, chi2_all[k] = models[k].run_sampler(temptemp, j, boolplotshow=(k==0)*boolplotshow)
     
         for k in xrange(ntemps-1, 0, -1):
             logfac = (chi2_all[k-1] - chi2_all[k]) * (1./temps[k-1] - 1./temps[k]) / 2.
@@ -1458,17 +1474,23 @@ def main( \
     filearry.create_dataset('y', data=ysample)
     filearry.create_dataset('f', data=fsample)
     
+    os.system('convert -delay 20 Data/%s_fram*.pdf Data/%s.gif')
     print 'Saving the numpy object to %s...' % pathnump
     np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
     filearry.close()
 
 
+# configurations
+
+def cnfg_tess():
+
+    main( \
+         nsamp=4, \
+        )
 
 
 if __name__ == "__main__":
-    #globals().get(sys.argv[1])(*sys.argv[2:])
-    main(*sys.argv[1:])
-
+    globals().get(sys.argv[1])()
 
 
