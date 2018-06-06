@@ -3,7 +3,9 @@ import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
 import h5py, datetime
 # in order for visual=True to work, interactive backend should be loaded before importing pyplot
-import matplotlib
+import matplotlib 
+#import seaborn as sns
+#sns.set(context='poster', style='ticks', color_codes=True)
 
 import time
 import astropy.wcs
@@ -254,7 +256,9 @@ def main( \
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
    
-    pathlion = os.environ['LION_PATH']
+    pathlion = os.environ['LION_PATH'] + '/'
+    pathliondata = os.environ["LION_PATH"] + '/Data/'
+    pathdata = os.environ['LION_DATA_PATH'] + '/'
 
     # constants
     ## number of bands (i.e., energy bins)
@@ -263,10 +267,10 @@ def main( \
     boolplot = boolplotshow or boolplotsave
 
     # read PSF
-    f = open('Data/'+strgdata+'_psf.txt')
+    f = open(pathliondata + strgdata+'_psf.txt')
     nc, nbin = [np.int32(i) for i in f.readline().split()]
     f.close()
-    psf = np.loadtxt('Data/'+strgdata+'_psf.txt', skiprows=1).astype(np.float32)
+    psf = np.loadtxt(pathliondata + strgdata+'_psf.txt', skiprows=1).astype(np.float32)
     cf = psf_poly_fit(psf, nbin=nbin)
     npar = cf.shape[0]
     
@@ -289,13 +293,13 @@ def main( \
         testpsf(nc, cf, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
     
     # read data
-    f = open('Data/'+strgdata+'_pix.txt')
+    f = open(pathliondata + strgdata+'_pix.txt')
     w, h, nband = [np.int32(i) for i in f.readline().split()]
     imsz = (w, h)
     assert nband == 1
     bias, gain = [np.float32(i) for i in f.readline().split()]
     f.close()
-    data = np.loadtxt('Data/'+strgdata+'_cts.txt').astype(np.float32)
+    data = np.loadtxt(pathliondata + strgdata+'_cts.txt').astype(np.float32)
     data -= bias
     trueback = np.float32(179)#np.float32(445*250)#179.)
     variance = data / gain
@@ -568,8 +572,8 @@ def main( \
                 plt.subplot(1,3,3)
     
                 if datatype == 'mock':
-                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step')
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), \
+                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step', color='b')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), color='g', \
                                                                                                         log=True, alpha=0.5, label='Chain', histtype='step')
                 else:
                     plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), \
@@ -580,7 +584,7 @@ def main( \
                 plt.draw()
                 plt.pause(1e-5)
                 if boolplotsave:
-                    plt.savefig('Data/%s_fram%04d.pdf' % (strgtimestmp, jj))
+                    plt.savefig(pathdata + '%s_fram%04d.pdf' % (strgtimestmp, jj))
     
             return self.n, self.ng, chi2
     
@@ -1379,16 +1383,16 @@ def main( \
 
     if datatype == 'mock':
         if strgmodl == 'star':
-            truth = np.loadtxt('Data/'+strgdata+'_tru.txt')
+            truth = np.loadtxt(pathliondata + strgdata+'_tru.txt')
             truex = truth[:,0]
             truey = truth[:,1]
             truef = truth[:,2]
         if strgmodl == 'galx':
-            truth_s = np.loadtxt('Data/'+strgdata+'_str.txt')
+            truth_s = np.loadtxt(pathliondata + strgdata+'_str.txt')
             truex = truth_s[:,0]
             truey = truth_s[:,1]
             truef = truth_s[:,2]
-            truth_g = np.loadtxt('Data/'+strgdata+'_gal.txt')
+            truth_g = np.loadtxt(pathliondata + strgdata+'_gal.txt')
             truexg = truth_g[:,0]
             trueyg = truth_g[:,1]
             truefg = truth_g[:,2]
@@ -1397,7 +1401,6 @@ def main( \
             trueyyg= truth_g[:,5]
             truerng, theta, phi = from_moments(truexxg, truexyg, trueyyg)
         if strgmodl == 'stargalx':
-            pathliondata = os.environ["LION_DATA_PATH"] + '/data/'
             truth = np.loadtxt(pathliondata + 'truecnts.txt')
             filetrue = h5py.File(pathliondata + 'true.h5', 'r')
             dictglob = dict()
@@ -1436,9 +1439,9 @@ def main( \
     # write the chain
     ## h5 file path
     
-    pathh5py = strgtimestmp + '_chan.h5'
+    pathh5py = pathlion + strgtimestmp + '_chan.h5'
     ## numpy object file path
-    pathnump = strgtimestmp + '_chan.npz'
+    pathnump = pathlion + strgtimestmp + '_chan.npz'
     
     filearry = h5py.File(pathh5py, 'w')
     print 'Will write the chain to %s...' % pathh5py
@@ -1479,7 +1482,7 @@ def main( \
     filearry.create_dataset('y', data=ysample)
     filearry.create_dataset('f', data=fsample)
     
-    os.system('convert -delay 20 %s/Data/%s_fram*.pdf Data/%s_anim.gif' % (pathlion, strgtimestmp, strgtimestmp))
+    os.system('convert -delay 20 %s/%s_fram*.pdf %s_anim.gif' % (pathdata, strgtimestmp, strgtimestmp))
     print 'Saving the numpy object to %s...' % pathnump
     np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
