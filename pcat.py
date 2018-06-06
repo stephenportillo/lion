@@ -4,8 +4,6 @@ from ctypes import c_int, c_double
 import h5py, datetime
 # in order for visual=True to work, interactive backend should be loaded before importing pyplot
 import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 
 import time
 import astropy.wcs
@@ -248,6 +246,15 @@ def main( \
     print 'strgdata: ', strgdata
     print 'Model type:', strgmodl
     print 'Data type:', datatype
+
+    if boolplotshow:
+        matplotlib.use('TkAgg')
+        plt.ion()
+    else:
+        matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+   
+    pathlion = os.environ['LION_PATH']
 
     # constants
     ## number of bands (i.e., energy bins)
@@ -1428,15 +1435,13 @@ def main( \
     
     # write the chain
     ## h5 file path
-    pathh5py = 'chain_' + strgtimestmp + '_' + strgdata + '.h5'
+    
+    pathh5py = strgtimestmp + '_chan.h5'
     ## numpy object file path
-    pathnump = 'chain_' + strgtimestmp + '_' + strgdata + '.npz'
+    pathnump = strgtimestmp + '_chan.npz'
     
     filearry = h5py.File(pathh5py, 'w')
     print 'Will write the chain to %s...' % pathh5py
-    
-    if boolplotshow:
-        plt.ion()
     
     if boolplot:
         plt.figure(figsize=(15,5))
@@ -1474,7 +1479,7 @@ def main( \
     filearry.create_dataset('y', data=ysample)
     filearry.create_dataset('f', data=fsample)
     
-    os.system('convert -delay 20 Data/%s_fram*.pdf Data/%s.gif')
+    os.system('convert -delay 20 %s/Data/%s_fram*.pdf Data/%s_anim.gif' % (pathlion, strgtimestmp, strgtimestmp))
     print 'Saving the numpy object to %s...' % pathnump
     np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
@@ -1491,6 +1496,9 @@ def cnfg_tess():
 
 
 if __name__ == "__main__":
-    globals().get(sys.argv[1])()
+    if len(sys.argv) == 1:
+        main()
+    else:
+        globals().get(sys.argv[1])()
 
 
