@@ -279,9 +279,15 @@ def main( \
     
     if colrstyl == 'pcat':
         sizemrkr = 10.
+        linewdth = 3
         cmapresi = make_cmapdivg('Red', 'Orange')
+        histtype = 'bar'
+        colrbrgt = 'green'
     else:
+        linewdth = None
         sizemrkr = 1.
+        histtype = 'step'
+        colrbrgt = 'lime'
 
     if boolplotshow:
         matplotlib.use('TkAgg')
@@ -584,7 +590,7 @@ def main( \
                 if datatype == 'mock':
                     if strgmodl == 'star' or strgmodl == 'galx':
                         mask = truef > 250 # will have to change this for other data sets
-                        plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color='lime')
+                        plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color=colrbrgt)
                         mask = np.logical_not(mask)
                         plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color='g')
                     if strgmodl == 'galx':
@@ -618,20 +624,21 @@ def main( \
                         colr = 'g'
                     else:
                         colr = None
-                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step', color=colr)
+                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
+                                                                                                             color=colr, facecolor=colr, edgecolor=colr)
                     if colrstyl == 'pcat':
                         colr = 'b'
                     else:
                         colr = None
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), color=colr, \
-                                                                                                        log=True, alpha=0.5, label='Sample', histtype='step')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), color=colr, facecolor=colr, lw=linewdth, \
+                                                                                                      log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
                 else:
                     if colrstyl == 'pcat':
                         colr = 'b'
                     else:
                         colr = None
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), \
-                                                                                                            color=colr, log=True, alpha=0.5, label='Sample', histtype='step')
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), lw=linewdth, \
+                                                                                facecolor=colr, color=colr, log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
                 plt.legend()
                 plt.xlabel('log10 flux')
                 plt.ylim((0.5, self.nstar))
@@ -1493,15 +1500,15 @@ def main( \
     # write the chain
     ## h5 file path
     
-    pathh5py = pathdatalion + strgtimestmp + '_chan.h5'
+    pathh5py = pathliondata + strgtimestmp + '_chan.h5'
     ## numpy object file path
-    pathnump = pathdatalion + strgtimestmp + '_chan.npz'
+    pathnump = pathliondata + strgtimestmp + '_chan.npz'
     
     filearry = h5py.File(pathh5py, 'w')
     print 'Will write the chain to %s...' % pathh5py
     
     if boolplot:
-        plt.figure(figsize=(15,5))
+        plt.figure(figsize=(21, 7))
     
     for j in xrange(nsamp):
         chi2_all = np.zeros(ntemps)
@@ -1536,7 +1543,10 @@ def main( \
     filearry.create_dataset('y', data=ysample)
     filearry.create_dataset('f', data=fsample)
     
-    os.system('convert -delay 20 -density 200x200 %s/%s_fram*.pdf %s/%s_anim.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp))
+    if boolplotsave:
+        print 'Making the animation...'
+        os.system('convert -delay 20 -density 200x200 %s/%s_fram*.pdf %s/%s_anim.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp))
+    
     print 'Saving the numpy object to %s...' % pathnump
     np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
