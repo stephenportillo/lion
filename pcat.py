@@ -4,8 +4,8 @@ from ctypes import c_int, c_double
 import h5py, datetime
 # in order for visual=True to work, interactive backend should be loaded before importing pyplot
 import matplotlib 
-#import seaborn as sns
-#sns.set(context='poster', style='ticks', color_codes=True)
+import seaborn as sns
+sns.set(context='poster', style='ticks', color_codes=True)
 
 import time
 import astropy.wcs
@@ -82,6 +82,31 @@ def retr_numbdoff(numbstar, numbgalx, numbener):
 
     return numbdoff
 
+
+def make_cmapdivg(strgcolrloww, strgcolrhigh):
+
+    funccolr = matplotlib.colors.ColorConverter().to_rgb
+   
+    colrloww = funccolr(strgcolrloww)
+    colrhigh = funccolr(strgcolrhigh)
+   
+    cmap = make_cmap([colrloww, funccolr('white'), 0.5, funccolr('white'), colrhigh])
+
+    return cmap
+
+
+def make_cmap(seq):
+    sequ = [(None,) * 3, 0.] + list(seq) + [1.0, (None,) * 3]
+    colrdict = {'red': [], 'green': [], 'blue': []}
+    for i, item in enumerate(sequ):
+        if isinstance(item, float):
+            red1, gre1, blu1 = sequ[i - 1]
+            red2, gre2, blu2 = sequ[i + 1]
+            colrdict['red'].append([item, red1, red2])
+            colrdict['green'].append([item, gre1, gre2])
+            colrdict['blue'].append([item, blu1, blu2])
+   
+    return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
 
 
 class Proposal:
@@ -226,7 +251,10 @@ def main( \
          
          # boolean flag whether to save the image and catalog samples to disc
          boolplotsave=True, \
-         
+        
+         # color style
+         colrstyl='lion', \
+
          # boolean flag whether to test the PSF
          testpsfn=False, \
          
@@ -248,6 +276,12 @@ def main( \
     print 'strgdata: ', strgdata
     print 'Model type:', strgmodl
     print 'Data type:', datatype
+    
+    if colrstyl == 'pcat':
+        sizemrkr = 10.
+        cmapresi = make_cmapdivg('Red', 'Orange')
+    else:
+        sizemrkr = 1.
 
     if boolplotshow:
         matplotlib.use('TkAgg')
@@ -550,15 +584,19 @@ def main( \
                 if datatype == 'mock':
                     if strgmodl == 'star' or strgmodl == 'galx':
                         mask = truef > 250 # will have to change this for other data sets
-                        plt.scatter(truex[mask], truey[mask], marker='+', s=truef[mask] / sizefac, color='lime')
+                        plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color='lime')
                         mask = np.logical_not(mask)
-                        plt.scatter(truex[mask], truey[mask], marker='+', s=truef[mask] / sizefac, color='g')
+                        plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color='g')
                     if strgmodl == 'galx':
                         plt.scatter(truexg, trueyg, marker='1', s=truefg / sizefac, color='lime')
                         plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
                     if strgmodl == 'stargalx':
                         plt.scatter(dictglob['truexposstar'], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
-                plt.scatter(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], marker='x', s=self.stars[self._F, 0:self.n]/sizefac, color='r')
+                if colrstyl == 'pcat':
+                    colr = 'b'
+                else:
+                    colr = 'r'
+                plt.scatter(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], marker='x', s=sizemrkr*self.stars[self._F, 0:self.n]/sizefac, color=colr)
                 if strgmodl == 'galx':
                     plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=self.galaxies[self._F, 0:self.ng]/sizefac, color='r')
                     a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
@@ -566,18 +604,34 @@ def main( \
                 plt.xlim(-0.5, imsz[0]-0.5)
                 plt.ylim(-0.5, imsz[1]-0.5)
                 plt.subplot(1,3,2)
-                plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', cmap='bwr', vmin=-5, vmax=5)
+                if colrstyl == 'pcat':
+                    cmap = cmapresi
+                else:
+                    cmap = 'bwr'
+                plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmap)
                 if j == 0:
                     plt.tight_layout()
                 plt.subplot(1,3,3)
     
                 if datatype == 'mock':
-                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step', color='b')
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), color='g', \
-                                                                                                        log=True, alpha=0.5, label='Chain', histtype='step')
+                    if colrstyl == 'pcat':
+                        colr = 'g'
+                    else:
+                        colr = None
+                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype='step', color=colr)
+                    if colrstyl == 'pcat':
+                        colr = 'b'
+                    else:
+                        colr = None
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), color=colr, \
+                                                                                                        log=True, alpha=0.5, label='Sample', histtype='step')
                 else:
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), \
-                                                        np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), log=True, alpha=0.5, label='Chain', histtype='step')
+                    if colrstyl == 'pcat':
+                        colr = 'b'
+                    else:
+                        colr = None
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), \
+                                                                                                            color=colr, log=True, alpha=0.5, label='Sample', histtype='step')
                 plt.legend()
                 plt.xlabel('log10 flux')
                 plt.ylim((0.5, self.nstar))
@@ -1439,9 +1493,9 @@ def main( \
     # write the chain
     ## h5 file path
     
-    pathh5py = pathlion + strgtimestmp + '_chan.h5'
+    pathh5py = pathdatalion + strgtimestmp + '_chan.h5'
     ## numpy object file path
-    pathnump = pathlion + strgtimestmp + '_chan.npz'
+    pathnump = pathdatalion + strgtimestmp + '_chan.npz'
     
     filearry = h5py.File(pathh5py, 'w')
     print 'Will write the chain to %s...' % pathh5py
@@ -1482,7 +1536,7 @@ def main( \
     filearry.create_dataset('y', data=ysample)
     filearry.create_dataset('f', data=fsample)
     
-    os.system('convert -delay 20 %s/%s_fram*.pdf %s_anim.gif' % (pathdata, strgtimestmp, strgtimestmp))
+    os.system('convert -delay 20 -density 200x200 %s/%s_fram*.pdf %s/%s_anim.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp))
     print 'Saving the numpy object to %s...' % pathnump
     np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
@@ -1494,7 +1548,8 @@ def main( \
 def cnfg_tess():
 
     main( \
-         nsamp=4, \
+         nsamp=100, \
+         colrstyl='pcat', \
         )
 
 
