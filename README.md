@@ -6,9 +6,9 @@ $LION_PATH should be set to the path in which Lion is installed.
 
 ## Example usage
 
+```
 def cnfg_tess():
-
     main( \
-         nsamp=100, \
+        nsamp=100, \
         )
-        
+ ```     
