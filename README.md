@@ -8,10 +8,9 @@ $LION_PATH should be set to the path in which Lion is installed.
 
 ```
 import pcat
-def myfunc():
 
-    pcat.main( \
-              # number of samples
-              nsamp=100, \
-             )
+pcat.main( \
+          # number of samples
+          nsamp=100, \
+         )
  ```     
