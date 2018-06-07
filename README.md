@@ -6,9 +6,11 @@ $LION_PATH should be set to the path in which Lion is installed.
 
 ## Example usage
 
-def cnfg_tess():
+```
+import pcat
 
-    main( \
-         nsamp=100, \
-        )
-        
+pcat.main( \
+          # number of samples
+          nsamp=100, \
+         )
+ ```     
