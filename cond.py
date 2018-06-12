@@ -44,8 +44,8 @@ def retr_cond(catlseed):
         for i in range(0, len(posterior_sample)):
 
             #for specific catalog, find indices of start and end within large tree
-            cat_lo_ndx = np.sum(posterior_n_vals[:i])
-            cat_hi_ndx = np.sum(posterior_n_vals[:i+1])
+            cat_lo_ndx = np.sum(catlnumb[:i])
+            cat_hi_ndx = np.sum(catlnumb[:i+1])
 
             #want in the form of a numpy array so we can use array slicing/masking  
             matches = np.array(matches)
@@ -68,44 +68,36 @@ def retr_cond(catlseed):
                     mask[match] += 1
 
                     #find x, y, flux of match
-                    x = PCx[i][match-cat_lo_ndx]
-                    y = PCy[i][match-cat_lo_ndx]
-                    f = PCf[i][match-cat_lo_ndx]
+                    x = catlsortxpos[i][match-cat_lo_ndx]
+                    y = catlsortypos[i][match-cat_lo_ndx]
+                    f = catlsortflux[i][match-cat_lo_ndx]
 
                     #add information to cluster array
                     clusters[i][ct] = x
                     clusters[i][len(catlseed)+ct] = y
                     clusters[i][2*len(catlseed)+ct] = f
 
-
-    #making sure that I recover the seed catalog exactly (good check)
-    ##ONLY VALID ON 1st ITERATION!!!!
-    #print np.sum(clusters[cat_num][0:len(catlseed)] - PCx[cat_num][:len(catlseed)])
-    #print np.sum(clusters[cat_num][len(catlseed):2*len(catlseed)] - PCy[cat_num][:len(catlseed)])
-    #print np.sum(clusters[cat_num][2*len(catlseed):] - PCf[cat_num][:len(catlseed)])
-
     # generate condensed catalog from clusters
-
-    cat_len = len(catlseed)
+    numbsourseed = len(catlseed)
 
     #arrays to store 'classical' catalog parameters
-    mean_x = np.zeros(cat_len)
-    mean_y = np.zeros(cat_len)
-    mean_f = np.zeros(cat_len)
-    mean_mag = np.zeros(cat_len)
-    err_x = np.zeros(cat_len)
-    err_y = np.zeros(cat_len)
-    err_f = np.zeros(cat_len)
-    err_mag = np.zeros(cat_len)
-    confidence = np.zeros(cat_len)
+    mean_x = np.zeros(numbsourseed)
+    mean_y = np.zeros(numbsourseed)
+    mean_f = np.zeros(numbsourseed)
+    mean_mag = np.zeros(numbsourseed)
+    err_x = np.zeros(numbsourseed)
+    err_y = np.zeros(numbsourseed)
+    err_f = np.zeros(numbsourseed)
+    err_mag = np.zeros(numbsourseed)
+    confidence = np.zeros(numbsourseed)
     
     #confidence interval defined for err_(x,y,f)
     hi = 84
     lo = 16
     for i in range(0, len(catlseed)):
         x = clusters[:,i][np.nonzero(clusters[:,i])]
-        y = clusters[:,i+cat_len][np.nonzero(clusters[:,i+cat_len])]
-        f = clusters[:,i+2*cat_len][np.nonzero(clusters[:,i+2*cat_len])]
+        y = clusters[:,i+numbsourseed][np.nonzero(clusters[:,i+numbsourseed])]
+        f = clusters[:,i+2*numbsourseed][np.nonzero(clusters[:,i+2*numbsourseed])]
         assert x.size == y.size
         assert x.size == f.size
         confidence[i] = x.size/300.0
@@ -119,7 +111,7 @@ def retr_cond(catlseed):
             err_f[i] = np.percentile(f, hi) - np.percentile(f, lo)
             err_mag[i] = np.absolute((22.5 - 2.5 * np.log10(np.percentile(f, hi) * gain)) - (22.5 - 2.5 * np.log10(np.percentile(f, lo) * gain)))
         pass
-    classical_catalog = np.zeros((cat_len, 9))
+    classical_catalog = np.zeros((numbsourseed, 9))
     classical_catalog[:,0] = mean_x
     classical_catalog[:,1] = err_x
     classical_catalog[:,2] = mean_y
@@ -147,8 +139,6 @@ pathliondata = os.environ["LION_PATH"] + '/Data/'
 pathdata = os.environ['LION_DATA_PATH'] + '/'
 pathcond = pathliondata + 'cond.txt'
 
-start_time = time.clock()
-
 # search radius
 radisrch = 0.75
 
@@ -162,68 +152,65 @@ gain = 0.00546689
 print 'Reading the chain...'    
 pathchan = pathliondata + strgtimestmp + '_chan.h5'
 filechan = h5py.File(pathchan, 'r')
-posterior_x_vals = filechan['x'][()] 
-posterior_y_vals = filechan['y'][()]
-posterior_r_flux_vals = filechan['f'][()]
+catlxpos = filechan['x'][()] 
+catlypos = filechan['y'][()]
+catlflux = filechan['f'][()]
 
-numbsamp = len(posterior_x_vals)
-posterior_n_vals = np.zeros(numbsamp, dtype=int)
+numbsamp = len(catlxpos)
+catlnumb = np.zeros(numbsamp, dtype=int)
 indxsamp = np.arange(numbsamp)
 for k in indxsamp:
-    posterior_n_vals[k] = len(posterior_x_vals[k])
+    catlnumb[k] = len(catlxpos[k])
 filechan.close()
 
-maxmnumbsour = posterior_x_vals.shape[1]
+maxmnumbsour = catlxpos.shape[1]
 
-# sort
-sorted_posterior_sample = np.zeros((numbsamp, maxmnumbsour, 3))
-
-start_time = time.clock()
-
-# sort each sample in decreasing order of brightness
+# sort the catalog in decreasing flux
+catlsort = np.zeros((numbsamp, maxmnumbsour, 3))
 for i in range(0, numbsamp):
-    cat = np.zeros((maxmnumbsour, 3))
-    cat[:,0] = posterior_x_vals[i]
-    cat[:,1] = posterior_y_vals[i]
-    cat[:,2] = posterior_r_flux_vals[i] 
-    cat = np.flipud( cat[cat[:,2].argsort()] )
-    sorted_posterior_sample[i] = cat
+    catl = np.zeros((maxmnumbsour, 3))
+    catl[:,0] = catlxpos[i]
+    catl[:,1] = catlypos[i]
+    catl[:,2] = catlflux[i] 
+    catl = np.flipud(catl[catl[:,2].argsort()])
+    catlsort[i] = catl
+catlsortxpos = catlsort[:,:,0]
+catlsortypos = catlsort[:,:,1]
+catlsortflux = catlsort[:,:,2]
 
-print "time, sorting: " + str(time.clock() - start_time)
-
-posterior_n_vals = posterior_n_vals
-PCx = sorted_posterior_sample[:,:,0]
-PCy = sorted_posterior_sample[:,:,1]
-PCf = sorted_posterior_sample[:,:,2]
-
-print "Stacking catalogues..."
+print "Stacking catalogs..."
 
 # create array for KD tree creation
-PCc_stack = np.zeros((np.sum(posterior_n_vals), 2))
+PCc_stack = np.zeros((np.sum(catlnumb), 2))
 j = 0
+for i in xrange(catlnumb.size):
+    n = catlnumb[i]
+    PCc_stack[j:j+n, 0] = catlsortxpos[i, 0:n]
+    PCc_stack[j:j+n, 1] = catlsortypos[i, 0:n]
+    j += n
 
-for i in xrange(posterior_n_vals.size):
-        n = posterior_n_vals[i]
-        PCc_stack[j:j+n, 0] = PCx[i, 0:n]
-        PCc_stack[j:j+n, 1] = PCy[i, 0:n]
-        j += n
+# seed catalog
+## load the catalog
+data = np.loadtxt(pathliondata + strgtimestmp + '_seed.txt')
 
-# load in the seed catalog
-dat = np.loadtxt(pathliondata + strgtimestmp + '_seed.txt')
+## perform confidence cut
+seedxpos = data[:,0][data[:,2] > cut*300]
+seedypos = data[:,1][data[:,2] > cut*300]
+seednumb = data[:,2][data[:,2] > cut*300]
 
-# perform confidence cut
-x = dat[:,0][dat[:,2] > cut*300]
-y = dat[:,1][dat[:,2] > cut*300]
-n = dat[:,2][dat[:,2] > cut*300]
+assert seedxpos.size == seedypos.size
+assert seedxpos.size == seednumb.size
 
-assert x.size == y.size
-assert x.size == n.size
+catlseed = np.zeros((seedxpos.size, 2))
+catlseed[:,0] = seedxpos
+catlseed[:,1] = seedypos
+numbsourseed = seedxpos.size
 
-catlseed = np.zeros((x.size, 2))
-catlseed[:,0] = x
-catlseed[:,1] = y
-cat_len = x.size
+print 'catlseed'
+print catlseed
+print catlseed.shape
 
+# get the condensed catalog
 cond = retr_cond(catlseed)
 print 'cond'
 print cond
