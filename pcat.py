@@ -7,18 +7,21 @@ import matplotlib
 import seaborn as sns
 sns.set(context='poster', style='ticks', color_codes=True)
 
+import scipy.spatial
+import networkx as nx
+
 import time
 import astropy.wcs
 import astropy.io.fits
-import sys
-import os
-import warnings
+
+import sys, os, warnings
 
 from image_eval import psf_poly_fit, image_model_eval
 from galaxy import to_moments, from_moments, retr_sers, retr_tranphon
 
 # ix, iy = 0. to 3.999
 def testpsf(nc, cf, psf, ix, iy, lib=None):
+    
     psf0 = image_model_eval(np.array([12.-ix/5.], dtype=np.float32), np.array([12.-iy/5.], dtype=np.float32), np.array([1.], dtype=np.float32), 0., (25,25), nc, cf, lib=lib)
     plt.subplot(2,2,1)
     plt.imshow(psf0, interpolation='none', origin='lower')
@@ -237,10 +240,10 @@ def main( \
          strgdata='sdss.0921', \
     
          # number of samples
-         nsamp=100, \
+         numbsamp=100, \
     
          # number of loops
-         nloop=1000, \
+         numbloop=1000, \
          
          # string indicating whether the data is simulated or input by the user
          # 'mock' for mock data, 'inpt' for input data
@@ -252,6 +255,9 @@ def main( \
          # boolean flag whether to save the image and catalog samples to disc
          boolplotsave=True, \
         
+         # a string extension to the run tag
+         rtagextn=None, \
+
          # color style
          colrstyl='lion', \
 
@@ -270,6 +276,11 @@ def main( \
     # time stamp string
     strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
    
+    # run tag
+    rtag = strgtimestmp 
+    if rtagextn != None:
+        rtag += '_' + rtagextn
+
     print 'Lion initialized at %s' % strgtimestmp
 
     # show critical inputs
@@ -278,14 +289,14 @@ def main( \
     print 'Data type:', datatype
     
     if colrstyl == 'pcat':
-        sizemrkr = 10.
+        sizemrkr = 1e-2
         linewdth = 3
         cmapresi = make_cmapdivg('Red', 'Orange')
         histtype = 'bar'
         colrbrgt = 'green'
     else:
         linewdth = None
-        sizemrkr = 1.
+        sizemrkr = 1. / 1360.
         histtype = 'step'
         colrbrgt = 'lime'
 
@@ -345,8 +356,22 @@ def main( \
     variance = data / gain
     weight = 1. / variance # inverse variance
     numbpixl = w * h
-    
+
     print 'Image width and height: %d %d pixels' % (w, h)
+    
+    def supr_catl(axis, xpos, ypos, flux, xpostrue=None, ypostrue=None, fluxtrue=None):
+        
+        if datatype == 'mock':
+            if strgmodl == 'star' or strgmodl == 'galx':
+                mask = fluxtrue > 250
+                axis.scatter(xpostrue[mask], ypostrue[mask], marker='+', s=sizemrkr*fluxtrue[mask], color=colrbrgt)
+                mask = np.logical_not(mask)
+                axis.scatter(xpostrue[mask], ypostrue[mask], marker='+', s=sizemrkr*fluxtrue[mask], color='g')
+        if colrstyl == 'pcat':
+            colr = 'b'
+        else:
+            colr = 'r'
+        axis.scatter(xpos, ypos, marker='x', s=sizemrkr*flux, color=colr)
     
     class Model:
         # should these be class or instance variables?
@@ -413,15 +438,15 @@ def main( \
             return np.log(slope-1) + (slope-1)*np.log(self.truermin_g) - slope*np.log(a) - 5*np.log(a) - np.log(u*u) - np.log(1-u*u)
     
         
-        def run_sampler(self, temperature, jj, nloop=1000, boolplotshow=False):
+        def run_sampler(self, temperature, jj, numbloop=1000, boolplotshow=False):
             t0 = time.clock()
-            nmov = np.zeros(nloop)
-            movetype = np.zeros(nloop)
-            accept = np.zeros(nloop)
-            outbounds = np.zeros(nloop)
-            dt1 = np.zeros(nloop)
-            dt2 = np.zeros(nloop)
-            dt3 = np.zeros(nloop)
+            nmov = np.zeros(numbloop)
+            movetype = np.zeros(numbloop)
+            accept = np.zeros(numbloop)
+            outbounds = np.zeros(numbloop)
+            dt1 = np.zeros(numbloop)
+            dt2 = np.zeros(numbloop)
+            dt3 = np.zeros(numbloop)
     
             self.offsetx = np.random.randint(regsize)
             self.offsety = np.random.randint(regsize)
@@ -449,7 +474,7 @@ def main( \
                 moveweights = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
             moveweights /= np.sum(moveweights)
     
-            for i in xrange(nloop):
+            for i in xrange(numbloop):
                 t1 = time.clock()
                 rtype = np.random.choice(moveweights.size, p=moveweights)
                 movetype[i] = rtype
@@ -583,33 +608,31 @@ def main( \
     
             if boolplotshow or boolplotsave:
                 plt.figure(1)
-                plt.clf()
-                plt.subplot(1,3,1)
+                if not boolplotsave:
+                    plt.clf()
+                plt.subplot(1, 3, 1)
                 plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
-                sizefac = 10.*136
+                
+                # overplot point sources
                 if datatype == 'mock':
-                    if strgmodl == 'star' or strgmodl == 'galx':
-                        mask = truef > 250 # will have to change this for other data sets
-                        plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color=colrbrgt)
-                        mask = np.logical_not(mask)
-                        plt.scatter(truex[mask], truey[mask], marker='+', s=sizemrkr*truef[mask] / sizefac, color='g')
                     if strgmodl == 'galx':
-                        plt.scatter(truexg, trueyg, marker='1', s=truefg / sizefac, color='lime')
+                        plt.scatter(truexg, trueyg, marker='1', s=sizemrkr*truefg, color='lime')
                         plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
                     if strgmodl == 'stargalx':
-                        plt.scatter(dictglob['truexposstar'], truey[mask], marker='+', s=np.sqrt(truef[mask]), color='g')
-                if colrstyl == 'pcat':
-                    colr = 'b'
-                else:
-                    colr = 'r'
-                plt.scatter(self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], marker='x', s=sizemrkr*self.stars[self._F, 0:self.n]/sizefac, color=colr)
+                        plt.scatter(dictglob['truexposstar'], ypostrue[mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
                 if strgmodl == 'galx':
-                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=self.galaxies[self._F, 0:self.ng]/sizefac, color='r')
+                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=sizemrkr*self.galaxies[self._F, 0:self.ng], color='r')
                     a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
                     plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
+                
+                supr_catl(plt.gca(), self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.stars[self._F, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                
                 plt.xlim(-0.5, imsz[0]-0.5)
                 plt.ylim(-0.5, imsz[1]-0.5)
-                plt.subplot(1,3,2)
+                
+                plt.subplot(1, 3, 2)
+                
+                ## residual plot
                 if colrstyl == 'pcat':
                     cmap = cmapresi
                 else:
@@ -617,20 +640,23 @@ def main( \
                 plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmap)
                 if j == 0:
                     plt.tight_layout()
+                
+                
                 plt.subplot(1,3,3)
     
+                ## flux histogram
                 if datatype == 'mock':
                     if colrstyl == 'pcat':
                         colr = 'g'
                     else:
                         colr = None
-                    plt.hist(np.log10(truef), range=(np.log10(self.trueminf), np.log10(np.max(truef))), log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
+                    plt.hist(np.log10(fluxtrue), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
                                                                                                              color=colr, facecolor=colr, edgecolor=colr)
                     if colrstyl == 'pcat':
                         colr = 'b'
                     else:
                         colr = None
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(truef))), color=colr, facecolor=colr, lw=linewdth, \
+                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), color=colr, facecolor=colr, lw=linewdth, \
                                                                                                       log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
                 else:
                     if colrstyl == 'pcat':
@@ -642,11 +668,13 @@ def main( \
                 plt.legend()
                 plt.xlabel('log10 flux')
                 plt.ylim((0.5, self.nstar))
-                plt.draw()
-                plt.pause(1e-5)
-                if boolplotsave:
+                
+                if not boolplotsave:
+                    plt.draw()
+                    plt.pause(1e-5)
+                else:
                     plt.savefig(pathdata + '%s_fram%04d.pdf' % (strgtimestmp, jj))
-    
+            
             return self.n, self.ng, chi2
     
         
@@ -1419,7 +1447,6 @@ def main( \
                 xy_p = xy_p.compress(inbounds)
                 yy_p = yy_p.compress(inbounds)
     
-                
                 nms = idx_move_g.size
                 goodmove = nms > 0
                 if goodmove:
@@ -1445,14 +1472,14 @@ def main( \
     if datatype == 'mock':
         if strgmodl == 'star':
             truth = np.loadtxt(pathliondata + strgdata+'_tru.txt')
-            truex = truth[:,0]
-            truey = truth[:,1]
-            truef = truth[:,2]
+            xpostrue = truth[:,0]
+            ypostrue = truth[:,1]
+            fluxtrue = truth[:,2]
         if strgmodl == 'galx':
             truth_s = np.loadtxt(pathliondata + strgdata+'_str.txt')
-            truex = truth_s[:,0]
-            truey = truth_s[:,1]
-            truef = truth_s[:,2]
+            xpostrue = truth_s[:,0]
+            ypostrue = truth_s[:,1]
+            fluxtrue = truth_s[:,2]
             truth_g = np.loadtxt(pathliondata + strgdata+'_gal.txt')
             truexg = truth_g[:,0]
             trueyg = truth_g[:,1]
@@ -1482,24 +1509,23 @@ def main( \
     margin = 10
     
     nstar = Model.nstar
-    nsample = np.zeros(nsamp, dtype=np.int32)
-    xsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    ysample = np.zeros((nsamp, nstar), dtype=np.float32)
-    fsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    ngsample = np.zeros(nsamp, dtype=np.int32)
-    xgsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    ygsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    fgsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    xxgsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    xygsample = np.zeros((nsamp, nstar), dtype=np.float32)
-    yygsample = np.zeros((nsamp, nstar), dtype=np.float32)
+    nstrsamp = np.zeros(numbsamp, dtype=np.int32)
+    xpossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
+    ypossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
+    fluxsamp = np.zeros((numbsamp, nstar), dtype=np.float32)
+    ngsample = np.zeros(numbsamp, dtype=np.int32)
+    xgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
+    ygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
+    fgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
+    xxgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
+    xygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
+    yygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
     
     # construct model for each temperature
     models = [Model() for k in xrange(ntemps)]
     
     # write the chain
     ## h5 file path
-    
     pathh5py = pathliondata + strgtimestmp + '_chan.h5'
     ## numpy object file path
     pathnump = pathliondata + strgtimestmp + '_chan.npz'
@@ -1510,7 +1536,7 @@ def main( \
     if boolplot:
         plt.figure(figsize=(21, 7))
     
-    for j in xrange(nsamp):
+    for j in xrange(numbsamp):
         chi2_all = np.zeros(ntemps)
         print 'Sample number', j
     
@@ -1525,10 +1551,10 @@ def main( \
                 print 'swapped', k-1, k
                 models[k-1], models[k] = models[k], models[k-1]
     
-        nsample[j] = models[0].n
-        xsample[j,:] = models[0].stars[Model._X, :]
-        ysample[j,:] = models[0].stars[Model._Y, :]
-        fsample[j,:] = models[0].stars[Model._F, :]
+        nstrsamp[j] = models[0].n
+        xpossamp[j,:] = models[0].stars[Model._X, :]
+        ypossamp[j,:] = models[0].stars[Model._Y, :]
+        fluxsamp[j,:] = models[0].stars[Model._F, :]
     
         if strgmodl == 'galx':
             ngsample[j] = models[0].ng
@@ -1539,26 +1565,320 @@ def main( \
             xygsample[j,:] = models[0].galaxies[Model._XY, :]
             yygsample[j,:] = models[0].galaxies[Model._YY, :]
     
-    filearry.create_dataset('x', data=xsample)
-    filearry.create_dataset('y', data=ysample)
-    filearry.create_dataset('f', data=fsample)
+    filearry.create_dataset('x', data=xpossamp)
+    filearry.create_dataset('y', data=ypossamp)
+    filearry.create_dataset('f', data=fluxsamp)
+    filearry.close()
     
     if boolplotsave:
         print 'Making the animation...'
         os.system('convert -delay 20 -density 200x200 %s/%s_fram*.pdf %s/%s_anim.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp))
     
     print 'Saving the numpy object to %s...' % pathnump
-    np.savez(pathnump, n=nsample, x=xsample, y=ysample, f=fsample, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
+    np.savez(pathnump, n=nstrsamp, x=xpossamp, y=ypossamp, f=fluxsamp, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
-    filearry.close()
+    # calculate the condensed catalog
+    catlcond = retr_catlcond(rtag)
+    
+    if boolplot:
+        
+        # plot the condensed catalog
+        if boolplotsave:
+            figr, axis = plt.subplots()
+            axis.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+            supr_catl(axis, catlcond[:, 0], catlcond[:, 2], catlcond[:, 4], xpostrue, ypostrue, fluxtrue)
+            plt.savefig(pathdata + '%s_condcatl.pdf' % strgtimestmp)
+
+
+def retr_catlseed(rtag):
+    
+    strgtimestmp = rtag[:15]
+    
+    pathlion = os.environ['LION_PATH'] + '/'
+    pathliondata = os.environ["LION_PATH"] + '/Data/'
+    pathdata = os.environ['LION_DATA_PATH'] + '/'
+        
+    catlprob = np.load(pathliondata + rtag + '_chan.npz')
+   
+    # maximum number of sources
+    maxmnumbsour = 2000
+    
+    # number of samples used in the seed catalog determination
+    numbsampseed = 10
+    xpossamp = catlprob['x'][:numbsampseed,:]
+    ypossamp = catlprob['y'][:numbsampseed,:]
+    fluxsamp = catlprob['f'][:numbsampseed,:]
+    PCi, junk = np.mgrid[:numbsampseed, :maxmnumbsour]
+    
+    mask = fluxsamp > 0
+    PCc_all = np.zeros((np.sum(mask), 2))
+    PCc_all[:, 0] = xpossamp[mask].flatten()
+    PCc_all[:, 1] = ypossamp[mask].flatten()
+    PCi = PCi[mask].flatten()
+    
+    #pos = {}
+    #weight = {}
+    #for i in xrange(np.sum(mask)):
+    # pos[i] = (PCc_all[i, 0], PCc_all[i,1])
+    # weight[i] = 0.5
+    
+    #print pos[0]
+    #print PCc_all[0, :]
+    #print "graph..."
+    #G = nx.read_gpickle('graph')
+    #G = nx.geographical_threshold_graph(np.sum(mask), 1./0.75, alpha=1., dim=2., pos=pos, weight=weight)
+    
+    kdtree = scipy.spatial.KDTree(PCc_all)
+    matches = kdtree.query_ball_tree(kdtree, 0.75)
+    
+    G = nx.Graph()
+    G.add_nodes_from(xrange(0, PCc_all.shape[0]))
+    
+    for i in xrange(PCc_all.shape[0]):
+     for j in matches[i]:
+      if PCi[i] != PCi[j]:
+       G.add_edge(i, j)
+    
+    current_catalogue = 0
+    for i in xrange(PCc_all.shape[0]):
+        matches[i].sort()
+        bincount = np.bincount(PCi[matches[i]]).astype(np.int)
+        ending = np.cumsum(bincount).astype(np.int)
+        starting = np.zeros(bincount.size).astype(np.int)
+        starting[1:bincount.size] = ending[0:bincount.size-1]
+        for j in xrange(bincount.size):
+            if j == PCi[i]: # do not match to same catalogue
+                continue
+            if bincount[j] == 0: # no match to catalogue j
+                continue
+            if bincount[j] == 1: # exactly one match to catalogue j
+                continue
+            if bincount[j] > 1:
+                dist2 = 0.75**2
+                l = -1
+                for k in xrange(starting[j], ending[j]):
+                    m = matches[i][k]
+                    newdist2 = np.sum((PCc_all[i,:] - PCc_all[m,:])**2)
+                    if newdist2 < dist2:
+                        l = m
+                        dist2 = newdist2
+                if l == -1:
+                    print "didn't find edge even though mutiple matches from this catalogue?"
+                for k in xrange(starting[j], ending[j]):
+                    m = matches[i][k]
+                    if m != l:
+                        if G.has_edge(i, m):
+                            G.remove_edge(i, m)
+                            print "killed", i, m
+    
+    catlseed = []
+    
+    while nx.number_of_nodes(G) > 0:
+       deg = nx.degree(G)
+       i = max(deg, key=deg.get)
+       neighbors = nx.all_neighbors(G, i)
+       catlseed.append([PCc_all[i, 0], PCc_all[i, 1], deg[i]])
+       G.remove_node(i)
+       G.remove_nodes_from(neighbors)
+    
+    catlseed = np.array(catlseed)
+
+    np.savetxt(pathliondata + strgtimestmp + '_seed.txt', catlseed)
+
+
+def retr_catlcond(rtag):
+
+    strgtimestmp = rtag[:15]
+    
+    # paths
+    pathlion = os.environ['LION_PATH'] + '/'
+    pathliondata = os.environ["LION_PATH"] + '/Data/'
+    pathdata = os.environ['LION_DATA_PATH'] + '/'
+    pathcatlcond = pathliondata + 'catlcond.txt'
+    
+    # search radius
+    radisrch = 0.75
+    
+    # confidence cut
+    cut = 0. 
+    
+    # gain
+    gain = 0.00546689
+    
+    # read the chain
+    print 'Reading the chain...'    
+    pathchan = pathliondata + strgtimestmp + '_chan.h5'
+    filechan = h5py.File(pathchan, 'r')
+    catlxpos = filechan['x'][()] 
+    catlypos = filechan['y'][()]
+    catlflux = filechan['f'][()]
+    
+    numbsamp = len(catlxpos)
+    catlnumb = np.zeros(numbsamp, dtype=int)
+    indxsamp = np.arange(numbsamp)
+    for k in indxsamp:
+        catlnumb[k] = len(catlxpos[k])
+    filechan.close()
+    
+    maxmnumbsour = catlxpos.shape[1]
+    
+    # sort the catalog in decreasing flux
+    catlsort = np.zeros((numbsamp, maxmnumbsour, 3))
+    for i in range(0, numbsamp):
+        catl = np.zeros((maxmnumbsour, 3))
+        catl[:,0] = catlxpos[i]
+        catl[:,1] = catlypos[i]
+        catl[:,2] = catlflux[i] 
+        catl = np.flipud(catl[catl[:,2].argsort()])
+        catlsort[i] = catl
+    catlsortxpos = catlsort[:,:,0]
+    catlsortypos = catlsort[:,:,1]
+    catlsortflux = catlsort[:,:,2]
+    
+    print "Stacking catalogs..."
+    
+    # create array for KD tree creation
+    PCc_stack = np.zeros((np.sum(catlnumb), 2))
+    j = 0
+    for i in xrange(catlnumb.size):
+        n = catlnumb[i]
+        PCc_stack[j:j+n, 0] = catlsortxpos[i, 0:n]
+        PCc_stack[j:j+n, 1] = catlsortypos[i, 0:n]
+        j += n
+
+    retr_catlseed(rtag)
+    
+    # seed catalog
+    ## load the catalog
+    data = np.loadtxt(pathliondata + strgtimestmp + '_seed.txt')
+    
+    ## perform confidence cut
+    seedxpos = data[:,0][data[:,2] >= cut*300]
+    seedypos = data[:,1][data[:,2] >= cut*300]
+    seednumb = data[:,2][data[:,2] >= cut*300]
+    
+    assert seedxpos.size == seedypos.size
+    assert seedxpos.size == seednumb.size
+    
+    catlseed = np.zeros((seedxpos.size, 2))
+    catlseed[:,0] = seedxpos
+    catlseed[:,1] = seedypos
+    numbsourseed = seedxpos.size
+    
+    #creates tree, where tree is Pcc_stack
+    tree = scipy.spatial.KDTree(PCc_stack)
+    
+    #keeps track of the clusters
+    clusters = np.zeros((numbsamp, len(catlseed)*3))
+    
+    #numpy mask for sources that have been matched
+    mask = np.zeros(len(PCc_stack))
+    
+    #first, we iterate over all sources in the seed catalog:
+    for ct in range(0, len(catlseed)):
+    
+        #print "time elapsed, before tree " + str(ct) + ": " + str(time.clock() - start_time)
+    
+        #query ball point at seed catalog
+        matches = tree.query_ball_point(catlseed[ct], radisrch)
+    
+        #print "time elapsed, after tree " + str(ct) + ": " + str(time.clock() - start_time)
+    
+        #in each catalog, find first instance of match w/ desired source (-- first instance okay b/c every catalog is sorted brightest to faintest)
+        ##this for loop should naturally populate original seed catalog as well! (b/c all distances 0)
+        for i in range(numbsamp):
+    
+            #for specific catalog, find indices of start and end within large tree
+            cat_lo_ndx = np.sum(catlnumb[:i])
+            cat_hi_ndx = np.sum(catlnumb[:i+1])
+    
+            #want in the form of a numpy array so we can use array slicing/masking  
+            matches = np.array(matches)
+    
+            #find the locations of matches to ct within specific catalog i
+            culled_matches =  matches[np.logical_and(matches >= cat_lo_ndx, matches < cat_hi_ndx)] 
+    
+            if culled_matches.size > 0:
+    
+                #cut according to mask
+                culled_matches = culled_matches[mask[culled_matches] == 0]
+        
+                #if there are matches remaining, we then find the brightest and update
+                if culled_matches.size > 0:
+    
+                    #find brightest
+                    match = np.min(culled_matches)
+    
+                    #flag it in the mask
+                    mask[match] += 1
+    
+                    #find x, y, flux of match
+                    x = catlsortxpos[i][match-cat_lo_ndx]
+                    y = catlsortypos[i][match-cat_lo_ndx]
+                    f = catlsortflux[i][match-cat_lo_ndx]
+    
+                    #add information to cluster array
+                    clusters[i][ct] = x
+                    clusters[i][len(catlseed)+ct] = y
+                    clusters[i][2*len(catlseed)+ct] = f
+    
+    # generate condensed catalog from clusters
+    numbsourseed = len(catlseed)
+    
+    #arrays to store 'classical' catalog parameters
+    xposmean = np.zeros(numbsourseed)
+    yposmean = np.zeros(numbsourseed)
+    fluxmean = np.zeros(numbsourseed)
+    magtmean = np.zeros(numbsourseed)
+    stdvxpos = np.zeros(numbsourseed)
+    stdvypos = np.zeros(numbsourseed)
+    stdvflux = np.zeros(numbsourseed)
+    stdvmagt = np.zeros(numbsourseed)
+    conf = np.zeros(numbsourseed)
+    
+    # confidence interval defined for err_(x,y,f)
+    hi = 84
+    lo = 16
+    for i in range(0, len(catlseed)):
+        x = clusters[:,i][np.nonzero(clusters[:,i])]
+        y = clusters[:,i+numbsourseed][np.nonzero(clusters[:,i+numbsourseed])]
+        f = clusters[:,i+2*numbsourseed][np.nonzero(clusters[:,i+2*numbsourseed])]
+        assert x.size == y.size
+        assert x.size == f.size
+        conf[i] = x.size/300.0
+        xposmean[i] = np.mean(x)
+        yposmean[i] = np.mean(y)
+        fluxmean[i] = np.mean(f)
+        magtmean[i] = 22.5 - 2.5*np.log10(np.mean(f)*gain)
+        if x.size > 1:
+            stdvxpos[i] = np.percentile(x, hi) - np.percentile(x, lo)
+            stdvypos[i] = np.percentile(y, hi) - np.percentile(y, lo)
+            stdvflux[i] = np.percentile(f, hi) - np.percentile(f, lo)
+            stdvmagt[i] = np.absolute((22.5 - 2.5 * np.log10(np.percentile(f, hi) * gain)) - (22.5 - 2.5 * np.log10(np.percentile(f, lo) * gain)))
+        pass
+    catlcond = np.zeros((numbsourseed, 9))
+    catlcond[:, 0] = xposmean
+    catlcond[:, 1] = stdvxpos
+    catlcond[:, 2] = yposmean
+    catlcond[:, 3] = stdvypos
+    catlcond[:, 4] = fluxmean
+    catlcond[:, 5] = stdvflux
+    catlcond[:, 6] = magtmean
+    catlcond[:, 7] = stdvmagt
+    catlcond[:, 8] = conf
+    
+    # save catalog
+    np.savetxt(pathcatlcond, catlcond)
+    
+    return catlcond
 
 
 # configurations
 
-def cnfg_tess():
+def cnfg_test():
 
     main( \
-         nsamp=100, \
+         numbsamp=1, \
          colrstyl='pcat', \
         )
 
@@ -1568,5 +1888,8 @@ if __name__ == "__main__":
         main()
     else:
         globals().get(sys.argv[1])()
+
+
+
 
 
