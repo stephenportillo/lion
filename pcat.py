@@ -112,129 +112,6 @@ def make_cmap(seq):
     return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
 
 
-class Proposal:
-    gridphon, amplphon = retr_sers(sersindx=2.)
-    _X = 0
-    _Y = 1
-    _F = 2
-    _XX = 3
-    _XY = 4
-    _YY = 5
-
-    
-    def __init__(self):
-        self.idx_move = None
-        self.idx_move_g = None
-        self.do_birth = False
-        self.do_birth_g = False
-        self.idx_kill = None
-        self.idx_kill_g = None
-        self.factor = None
-        self.goodmove = False
-
-        self.xphon = np.array([], dtype=np.float32)
-        self.yphon = np.array([], dtype=np.float32)
-        self.fphon = np.array([], dtype=np.float32)
-
-    
-    def set_factor(self, factor):
-        self.factor = factor
-
-    
-    def assert_types(self):
-        assert self.xphon.dtype == np.float32
-        assert self.yphon.dtype == np.float32
-        assert self.fphon.dtype == np.float32
-
-    
-    def __add_phonions_stars(self, stars, remove=False):
-        fluxmult = -1 if remove else 1
-        self.xphon = np.append(self.xphon, stars[self._X,:])
-        self.yphon = np.append(self.yphon, stars[self._Y,:])
-        self.fphon = np.append(self.fphon, fluxmult*stars[self._F,:])
-        self.assert_types()
-
-    
-    def __add_phonions_galaxies(self, galaxies, remove=False):
-        fluxmult = -1 if remove else 1
-        xtemp, ytemp, ftemp = retr_tranphon(self.gridphon, self.amplphon, galaxies)
-        self.xphon = np.append(self.xphon, xtemp)
-        self.yphon = np.append(self.yphon, ytemp)
-        self.fphon = np.append(self.fphon, fluxmult*ftemp)
-        self.assert_types()
-
-    
-    def add_move_stars(self, idx_move, stars0, starsp):
-        self.idx_move = idx_move
-        self.stars0 = stars0
-        self.starsp = starsp
-        self.goodmove = True
-        self.__add_phonions_stars(stars0, remove=True)
-        self.__add_phonions_stars(starsp)
-
-    
-    def add_birth_stars(self, starsb):
-        self.do_birth = True
-        self.starsb = starsb
-        self.goodmove = True
-        if starsb.ndim == 3:
-            starsb = starsb.reshape((starsb.shape[0], starsb.shape[1]*starsb.shape[2]))
-        self.__add_phonions_stars(starsb)
-
-    
-    def add_death_stars(self, idx_kill, starsk):
-        self.idx_kill = idx_kill
-        self.starsk = starsk
-        self.goodmove = True
-        if starsk.ndim == 3:
-            starsk = starsk.reshape((starsk.shape[0], starsk.shape[1]*starsk.shape[2]))
-        self.__add_phonions_stars(starsk, remove=True)
-
-    
-    def add_move_galaxies(self, idx_move_g, galaxies0, galaxiesp):
-        self.idx_move_g = idx_move_g
-        self.galaxies0 = galaxies0
-        self.galaxiesp = galaxiesp
-        self.goodmove = True
-        self.__add_phonions_galaxies(galaxies0, remove=True)
-        self.__add_phonions_galaxies(galaxiesp)
-
-    
-    def add_birth_galaxies(self, galaxiesb):
-        self.do_birth_g = True
-        self.galaxiesb = galaxiesb
-        self.goodmove = True
-        self.__add_phonions_galaxies(galaxiesb)
-
-    
-    def add_death_galaxies(self, idx_kill_g, galaxiesk):
-        self.idx_kill_g = idx_kill_g
-        self.galaxiesk = galaxiesk
-        self.goodmove = True
-        self.__add_phonions_galaxies(galaxiesk, remove=True)
-
-    
-    def get_ref_xy(self):
-        if self.idx_move is not None:
-            return self.stars0[self._X,:], self.stars0[self._Y,:]
-        elif self.idx_move_g is not None:
-            return self.galaxies0[self._X,:], self.galaxies0[self._Y,:]
-        elif self.do_birth:
-            bx, by = self.starsb[[self._X,self._Y],:]
-            refx = bx if bx.ndim == 1 else bx[:,0]
-            refy = by if by.ndim == 1 else by[:,0]
-            return refx, refy
-        elif self.do_birth_g:
-            return self.galaxiesb[self._X,:], self.galaxiesb[self._Y,:]
-        elif self.idx_kill is not None:
-            xk, yk = self.starsk[[self._X,self._Y],:]
-            refx = xk if xk.ndim == 1 else xk[:,0]
-            refy = yk if yk.ndim == 1 else yk[:,0]
-            return refx, refy
-        elif self.idx_kill_g is not None:
-            return self.galaxiesk[self._X,:], self.galaxiesk[self._Y,:]
-
-
 def summgene(varb):
 
     print np.amin(varb)
@@ -365,21 +242,151 @@ def main( \
     data = np.loadtxt(pathliondata + strgdata+'_cts.txt').astype(np.float32)
     data -= bias
     trueback = np.float32(179)#np.float32(445*250)#179.)
-    variance = data / gain
-    weight = 1. / variance # inverse variance
     numbpixl = w * h
 
     if booltimebins:
         numbtime = 10
-        data = np.tile(data, (numbtime, w, h))
+        numblcpr = numbtime - 1
+        data = np.tile(data, (numbtime, 1, 1))
         indxtime = np.arange(numbtime)
         print 'data'
         summgene(data)
         for k in indxtime:
-            data[k, :, :] = randn(w * h).reshape((w, h))
+            data[k, :, :] += np.random.randn(w * h).reshape((w, h))
         
     print 'Image width and height: %d %d pixels' % (w, h)
+    
+    variance = data / gain
+    weight = 1. / variance # inverse variance
    
+    _X = 0
+    _Y = 1
+    _F = 2
+    numbparastar = 3
+    if booltimebins:
+        _L = np.arange(3, 3 + numblcpr)
+        numbparastar += numblcpr
+    if 'galx' in strgmodl:
+        _XX = 3
+        _XY = 4
+        _YY = 5
+            
+    class Proposal:
+    
+        gridphon, amplphon = retr_sers(sersindx=2.)
+        
+        def __init__(self):
+            self.idx_move = None
+            self.idx_move_g = None
+            self.do_birth = False
+            self.do_birth_g = False
+            self.idx_kill = None
+            self.idx_kill_g = None
+            self.factor = None
+            self.goodmove = False
+    
+            self.xphon = np.array([], dtype=np.float32)
+            self.yphon = np.array([], dtype=np.float32)
+            self.fphon = np.array([], dtype=np.float32)
+    
+        
+        def set_factor(self, factor):
+            self.factor = factor
+    
+        
+        def assert_types(self):
+            assert self.xphon.dtype == np.float32
+            assert self.yphon.dtype == np.float32
+            assert self.fphon.dtype == np.float32
+    
+        
+        def __add_phonions_stars(self, stars, remove=False):
+            fluxmult = -1 if remove else 1
+            self.xphon = np.append(self.xphon, stars[self._X,:])
+            self.yphon = np.append(self.yphon, stars[self._Y,:])
+            self.fphon = np.append(self.fphon, fluxmult*stars[self._F,:])
+            self.assert_types()
+    
+        
+        def __add_phonions_galaxies(self, galaxies, remove=False):
+            fluxmult = -1 if remove else 1
+            xtemp, ytemp, ftemp = retr_tranphon(self.gridphon, self.amplphon, galaxies)
+            self.xphon = np.append(self.xphon, xtemp)
+            self.yphon = np.append(self.yphon, ytemp)
+            self.fphon = np.append(self.fphon, fluxmult*ftemp)
+            self.assert_types()
+    
+        
+        def add_move_stars(self, idx_move, stars0, starsp):
+            self.idx_move = idx_move
+            self.stars0 = stars0
+            self.starsp = starsp
+            self.goodmove = True
+            self.__add_phonions_stars(stars0, remove=True)
+            self.__add_phonions_stars(starsp)
+    
+        
+        def add_birth_stars(self, starsb):
+            self.do_birth = True
+            self.starsb = starsb
+            self.goodmove = True
+            if starsb.ndim == 3:
+                starsb = starsb.reshape((starsb.shape[0], starsb.shape[1]*starsb.shape[2]))
+            self.__add_phonions_stars(starsb)
+    
+        
+        def add_death_stars(self, idx_kill, starsk):
+            self.idx_kill = idx_kill
+            self.starsk = starsk
+            self.goodmove = True
+            if starsk.ndim == 3:
+                starsk = starsk.reshape((starsk.shape[0], starsk.shape[1]*starsk.shape[2]))
+            self.__add_phonions_stars(starsk, remove=True)
+    
+        
+        def add_move_galaxies(self, idx_move_g, galaxies0, galaxiesp):
+            self.idx_move_g = idx_move_g
+            self.galaxies0 = galaxies0
+            self.galaxiesp = galaxiesp
+            self.goodmove = True
+            self.__add_phonions_galaxies(galaxies0, remove=True)
+            self.__add_phonions_galaxies(galaxiesp)
+    
+        
+        def add_birth_galaxies(self, galaxiesb):
+            self.do_birth_g = True
+            self.galaxiesb = galaxiesb
+            self.goodmove = True
+            self.__add_phonions_galaxies(galaxiesb)
+    
+        
+        def add_death_galaxies(self, idx_kill_g, galaxiesk):
+            self.idx_kill_g = idx_kill_g
+            self.galaxiesk = galaxiesk
+            self.goodmove = True
+            self.__add_phonions_galaxies(galaxiesk, remove=True)
+    
+        
+        def get_ref_xy(self):
+            if self.idx_move is not None:
+                return self.stars0[self._X,:], self.stars0[self._Y,:]
+            elif self.idx_move_g is not None:
+                return self.galaxies0[self._X,:], self.galaxies0[self._Y,:]
+            elif self.do_birth:
+                bx, by = self.starsb[[self._X,self._Y],:]
+                refx = bx if bx.ndim == 1 else bx[:,0]
+                refy = by if by.ndim == 1 else by[:,0]
+                return refx, refy
+            elif self.do_birth_g:
+                return self.galaxiesb[self._X,:], self.galaxiesb[self._Y,:]
+            elif self.idx_kill is not None:
+                xk, yk = self.starsk[[self._X,self._Y],:]
+                refx = xk if xk.ndim == 1 else xk[:,0]
+                refy = yk if yk.ndim == 1 else yk[:,0]
+                return refx, refy
+            elif self.idx_kill_g is not None:
+                return self.galaxiesk[self._X,:], self.galaxiesk[self._Y,:]
+
     # visualization-related functions
     def setp_imaglimt(axis):
         
@@ -419,19 +426,24 @@ def main( \
         penalty_g = 3.0
         kickrange = 1.
         kickrange_g = 1.
-    
+        
         _X = 0
         _Y = 1
         _F = 2
-        _XX = 3
-        _XY = 4
-        _YY = 5
-    
+        numbparastar = 3
+        if booltimebins:
+            _L = np.arange(3, 3 + numblcpr)
+            numbparastar += numblcpr
+        if 'galx' in strgmodl:
+            _XX = 3
+            _XY = 4
+            _YY = 5
         
+
         def __init__(self):
             self.n = np.random.randint(self.nstar)+1
-            self.stars = np.zeros((3,self.nstar), dtype=np.float32)
-            self.stars[:,0:self.n] = np.random.uniform(size=(3,self.n))  # refactor into some sort of prior function?
+            self.stars = np.zeros((numbparastar, self.nstar), dtype=np.float32)
+            self.stars[:, :self.n] = np.random.uniform(size=(numbparastar, self.n))  # refactor into some sort of prior function?
             self.stars[self._X,0:self.n] *= imsz[0]-1
             self.stars[self._Y,0:self.n] *= imsz[1]-1
             self.stars[self._F,0:self.n] **= -1./(self.truealpha - 1.)
@@ -467,6 +479,10 @@ def main( \
     
         
         def run_sampler(self, temperature, jj, numbloop=1000, boolplotshow=False):
+            
+            
+            
+            
             t0 = time.clock()
             nmov = np.zeros(numbloop)
             movetype = np.zeros(numbloop)
@@ -482,18 +498,21 @@ def main( \
             self.nregy = imsz[1] / regsize + 1
     
             resid = data.copy() # residual for zero image is data
+            lcpreval = None
             if strgmodl == 'star':
-                evalx = self.stars[self._X,0:self.n]
-                evaly = self.stars[self._Y,0:self.n]
-                evalf = self.stars[self._F,0:self.n]
+                xposeval = self.stars[self._X,0:self.n]
+                yposeval = self.stars[self._Y,0:self.n]
+                fluxeval = self.stars[self._F,0:self.n]
+                if booltimebins:
+                    lcpreval = self.stars[self._L, :self.n]
             else:
                 xposphon, yposphon, specphon = retr_tranphon(self.gridphon, self.amplphon, self.galaxies[:,0:self.ng])
-                evalx = np.concatenate([self.stars[self._X,0:self.n], xposphon]).astype(np.float32)
-                evaly = np.concatenate([self.stars[self._Y,0:self.n], yposphon]).astype(np.float32)
-                evalf = np.concatenate([self.stars[self._F,0:self.n], specphon]).astype(np.float32)
-            n_phon = evalx.size
-            model, diff2 = image_model_eval(evalx, evaly, evalf, self.back, imsz, nc, cf, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, \
-                regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
+                xposeval = np.concatenate([self.stars[self._X,0:self.n], xposphon]).astype(np.float32)
+                yposeval = np.concatenate([self.stars[self._Y,0:self.n], yposphon]).astype(np.float32)
+                fluxeval = np.concatenate([self.stars[self._F,0:self.n], specphon]).astype(np.float32)
+            numbphon = xposeval.size
+            model, diff2 = image_model_eval(xposeval, yposeval, fluxeval, self.back, imsz, nc, cf, lcpreval=lcpreval, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, \
+                                                                                                regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
             logL = -0.5*diff2
             resid -= model
     
@@ -619,7 +638,8 @@ def main( \
             chi2 = np.sum(weight*(data-model)*(data-model))
             chi2doff = chi2 / (numbpixl - numbdoff)
             fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
-            print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', n_phon, 'chi^2', chi2, 'numbdoff', numbdoff, 'chi2dof', chi2doff
+            print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', numbphon, \
+                                                                                            'chi^2', chi2, 'numbdoff', numbdoff, 'chi2dof', chi2doff
             dt1 *= 1000
             dt2 *= 1000
             dt3 *= 1000
@@ -1573,6 +1593,9 @@ def main( \
     xpossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
     ypossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
     fluxsamp = np.zeros((numbsamp, nstar), dtype=np.float32)
+    
+    if booltimebins:
+        lcprsamp = np.zeros((numbsamp, numblcpr, nstar), dtype=np.float32)
     ngsample = np.zeros(numbsamp, dtype=np.int32)
     xgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
     ygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
@@ -1615,6 +1638,9 @@ def main( \
         xpossamp[j,:] = models[0].stars[Model._X, :]
         ypossamp[j,:] = models[0].stars[Model._Y, :]
         fluxsamp[j,:] = models[0].stars[Model._F, :]
+    
+        if booltimebins:
+            lcprsamp[j, :, :] = models[0].stars[Model._L, :, :]
     
         if strgmodl == 'galx':
             ngsample[j] = models[0].ng
@@ -1956,6 +1982,7 @@ def cnfg_test():
     main( \
          numbsamp=50, \
          colrstyl='pcat', \
+         boolplotsave=False, \
          booltimebins=True, \
         )
 
