@@ -30,7 +30,7 @@ def psf_poly_fit(psf0, nbin):
 
         return cf.reshape(cf.shape[0], cf.shape[1]*cf.shape[2])
 
-def image_model_eval(x, y, f, back, imsz, nc, cf, regsize=None, margin=0, offsetx=0, offsety=0, weights=None, ref=None, lib=None):
+def image_model_eval(x, y, f, back, imsz, nc, cf, lcpreval=None, regsize=None, margin=0, offsetx=0, offsety=0, weights=None, ref=None, lib=None):
     assert x.dtype == np.float32
     assert y.dtype == np.float32
     assert f.dtype == np.float32
@@ -90,6 +90,14 @@ def image_model_eval(x, y, f, back, imsz, nc, cf, regsize=None, margin=0, offset
         if ref is None:
                 reftemp = np.zeros((imsz[1], imsz[0]), dtype=np.float32)
         diff2 = np.zeros((nregy, nregx), dtype=np.float64)
+        
+        if True:#False:
+            print 'weights'
+            print weights.shape
+            print 'reftemp'
+            print reftemp.shape
+            print 'diff2'
+            print diff2.shape
         lib(imsz[0], imsz[1], nstar, nc, cf.shape[0], dd, cf, recon, ix, iy, image, reftemp, weights, diff2, regsize, margin, offsetx, offsety)
 
     if ref is not None:
