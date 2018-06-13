@@ -235,10 +235,21 @@ class Proposal:
             return self.galaxiesk[self._X,:], self.galaxiesk[self._Y,:]
 
 
+def summgene(varb):
+
+    print np.amin(varb)
+    print np.amax(varb)
+    print np.mean(varb)
+    print varb.shape
+
+
 def main( \
          # string characterizing the type of data (experiment that collected it and its PSF, etc.)
          strgdata='sdss.0921', \
-    
+        
+         # a Boolean flag indicating whether the data is time-binned
+         booltimebins=False, \
+
          # number of samples
          numbsamp=100, \
     
@@ -299,13 +310,14 @@ def main( \
         sizemrkr = 1. / 1360.
         histtype = 'step'
         colrbrgt = 'lime'
-
+    
     if boolplotshow:
         matplotlib.use('TkAgg')
-        plt.ion()
     else:
         matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+    if boolplotshow:
+        plt.ion()
    
     pathlion = os.environ['LION_PATH'] + '/'
     pathliondata = os.environ["LION_PATH"] + '/Data/'
@@ -357,7 +369,23 @@ def main( \
     weight = 1. / variance # inverse variance
     numbpixl = w * h
 
+    if booltimebins:
+        numbtime = 10
+        data = np.tile(data, (numbtime, w, h))
+        indxtime = np.arange(numbtime)
+        print 'data'
+        summgene(data)
+        for k in indxtime:
+            data[k, :, :] = randn(w * h).reshape((w, h))
+        
     print 'Image width and height: %d %d pixels' % (w, h)
+   
+    # visualization-related functions
+    def setp_imaglimt(axis):
+        
+        axis.set_xlim(-0.5, imsz[0] - 0.5)
+        axis.set_ylim(-0.5, imsz[1] - 0.5)
+                    
     
     def supr_catl(axis, xpos, ypos, flux, xpostrue=None, ypostrue=None, fluxtrue=None):
         
@@ -607,74 +635,106 @@ def main( \
             print '='*16
     
             if boolplotshow or boolplotsave:
-                plt.figure(1)
-                if not boolplotsave:
+                
+                if boolplotshow:
+                    plt.figure(1)
                     plt.clf()
-                plt.subplot(1, 3, 1)
-                plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
-                
-                # overplot point sources
-                if datatype == 'mock':
+                    plt.subplot(1, 3, 1)
+                    plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+                    
+                    # overplot point sources
+                    if datatype == 'mock':
+                        if strgmodl == 'galx':
+                            plt.scatter(truexg, trueyg, marker='1', s=sizemrkr*truefg, color='lime')
+                            plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
+                        if strgmodl == 'stargalx':
+                            plt.scatter(dictglob['truexposstar'], ypostrue[mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
                     if strgmodl == 'galx':
-                        plt.scatter(truexg, trueyg, marker='1', s=sizemrkr*truefg, color='lime')
-                        plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
-                    if strgmodl == 'stargalx':
-                        plt.scatter(dictglob['truexposstar'], ypostrue[mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
-                if strgmodl == 'galx':
-                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=sizemrkr*self.galaxies[self._F, 0:self.ng], color='r')
-                    a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
-                    plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
-                
-                supr_catl(plt.gca(), self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.stars[self._F, 0:self.n], xpostrue, ypostrue, fluxtrue)
-                
-                plt.xlim(-0.5, imsz[0]-0.5)
-                plt.ylim(-0.5, imsz[1]-0.5)
-                
-                plt.subplot(1, 3, 2)
-                
-                ## residual plot
-                if colrstyl == 'pcat':
-                    cmap = cmapresi
-                else:
-                    cmap = 'bwr'
-                plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmap)
-                if j == 0:
-                    plt.tight_layout()
-                
-                
-                plt.subplot(1,3,3)
+                        plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=sizemrkr*self.galaxies[self._F, 0:self.ng], color='r')
+                        a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
+                        plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
+                    
+                    supr_catl(plt.gca(), self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.stars[self._F, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                    
+                    plt.subplot(1, 3, 2)
+                    
+                    ## residual plot
+                    if colrstyl == 'pcat':
+                        cmap = cmapresi
+                    else:
+                        cmap = 'bwr'
+                    plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmap)
+                    if j == 0:
+                        plt.tight_layout()
+                    
+                    
+                    plt.subplot(1,3,3)
     
-                ## flux histogram
-                if datatype == 'mock':
-                    if colrstyl == 'pcat':
-                        colr = 'g'
+                    ## flux histogram
+                    if datatype == 'mock':
+                        if colrstyl == 'pcat':
+                            colr = 'g'
+                        else:
+                            colr = None
+                        plt.hist(np.log10(fluxtrue), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), \
+                                                                                        log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
+                                                                                        color=colr, facecolor=colr, edgecolor=colr)
+                        if colrstyl == 'pcat':
+                            colr = 'b'
+                        else:
+                            colr = None
+                        plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), \
+                                                                                        np.log10(np.max(fluxtrue))), color=colr, facecolor=colr, lw=linewdth, \
+                                                                                        log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
                     else:
-                        colr = None
-                    plt.hist(np.log10(fluxtrue), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
-                                                                                                             color=colr, facecolor=colr, edgecolor=colr)
-                    if colrstyl == 'pcat':
-                        colr = 'b'
-                    else:
-                        colr = None
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), color=colr, facecolor=colr, lw=linewdth, \
-                                                                                                      log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
-                else:
-                    if colrstyl == 'pcat':
-                        colr = 'b'
-                    else:
-                        colr = None
-                    plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), lw=linewdth, \
-                                                                                facecolor=colr, color=colr, log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
-                plt.legend()
-                plt.xlabel('log10 flux')
-                plt.ylim((0.5, self.nstar))
-                
-                if not boolplotsave:
+                        if colrstyl == 'pcat':
+                            colr = 'b'
+                        else:
+                            colr = None
+                        plt.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), \
+                                                                             np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), lw=linewdth, \
+                                                                             facecolor=colr, color=colr, log=True, alpha=0.5, label='Sample', histtype=histtype, edgecolor=colr)
+                    plt.legend()
+                    plt.xlabel('log10 flux')
+                    plt.ylim((0.5, self.nstar))
+                    
                     plt.draw()
                     plt.pause(1e-5)
+                    
                 else:
-                    plt.savefig(pathdata + '%s_fram%04d.pdf' % (strgtimestmp, jj))
-            
+                    # count map
+                    figr, axis = plt.subplots()
+                    axis.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+                    ## overplot point sources
+                    supr_catl(axis, self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.stars[self._F, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                    ## limits
+                    setp_imaglimt(axis)
+                    plt.savefig(pathdata + '%s_cntpdata%04d.pdf' % (strgtimestmp, jj))
+                    
+                    # residual map
+                    figr, axis = plt.subplots()
+                    axis.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmapresi)
+                    ## overplot point sources
+                    supr_catl(axis, self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.stars[self._F, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                    setp_imaglimt(axis)
+                    plt.savefig(pathdata + '%s_cntpresi%04d.pdf' % (strgtimestmp, jj))
+                    
+                    ## flux histogram
+                    figr, axis = plt.subplots()
+                    if datatype == 'mock':
+                        axis.hist(np.log10(fluxtrue), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), \
+                                                                                            log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
+                                                                                            facecolor='g', edgecolor='g')
+                        axis.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), \
+                                                                                            edgecolor='b', facecolor='b', lw=linewdth, \
+                                                                                            log=True, alpha=0.5, label='Sample', histtype=histtype)
+                    else:
+                        colr = 'b'
+                        axis.hist(np.log10(self.stars[self._F, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[self._F, 0:self.n])))), \
+                                                                                             lw=linewdth, facecolor='b', edgecolor='b', log=True, alpha=0.5, \
+                                                                                             label='Sample', histtype=histtype)
+                    plt.savefig(pathdata + '%s_histflux%04d.pdf' % (strgtimestmp, jj))
+
             return self.n, self.ng, chi2
     
         
@@ -1572,7 +1632,12 @@ def main( \
     
     if boolplotsave:
         print 'Making the animation...'
-        os.system('convert -delay 20 -density 200x200 %s/%s_fram*.pdf %s/%s_anim.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp))
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdata*.pdf %s/%s_cntpdata.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp)
+        print cmnd
+        os.system(cmnd)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpresi*.pdf %s/%s_cntpresi.gif' % (pathdata, strgtimestmp, pathdata, strgtimestmp)
+        print cmnd
+        os.system(cmnd)
     
     print 'Saving the numpy object to %s...' % pathnump
     np.savez(pathnump, n=nstrsamp, x=xpossamp, y=ypossamp, f=fluxsamp, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
@@ -1669,7 +1734,7 @@ def retr_catlseed(rtag):
                     if m != l:
                         if G.has_edge(i, m):
                             G.remove_edge(i, m)
-                            print "killed", i, m
+                            #print "killed", i, m
     
     catlseed = []
     
@@ -1875,11 +1940,23 @@ def retr_catlcond(rtag):
 
 # configurations
 
+def cnfg_oldd():
+
+    main( \
+         numbsamp=50, \
+         colrstyl='lion', \
+         boolplotshow=True, \
+         boolplotsave=False, \
+         #booltimebins=True, \
+        )
+
+
 def cnfg_test():
 
     main( \
-         numbsamp=1, \
+         numbsamp=50, \
          colrstyl='pcat', \
+         booltimebins=True, \
         )
 
 
