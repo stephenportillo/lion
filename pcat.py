@@ -19,10 +19,16 @@ import sys, os, warnings
 from image_eval import psf_poly_fit, image_model_eval
 from galaxy import to_moments, from_moments, retr_sers, retr_tranphon
 
+from __init__ import *
+
 # ix, iy = 0. to 3.999
 def testpsf(nc, cf, psf, ix, iy, lib=None):
     
-    psf0 = image_model_eval(np.array([12.-ix/5.], dtype=np.float32), np.array([12.-iy/5.], dtype=np.float32), np.array([1.], dtype=np.float32), 0., (25,25), nc, cf, lib=lib)
+    numbtime = 1
+    booltimebins = 0
+    lcpreval = array([0.])
+    psf0 = image_model_eval(np.array([12.-ix/5.], dtype=np.float32), np.array([12.-iy/5.], dtype=np.float32), np.array([1.], dtype=np.float32), 0., (25,25), nc, cf, \
+                                                                                    numbtime, booltimebins, lcpreval, lib=lib)
     plt.subplot(2,2,1)
     plt.imshow(psf0, interpolation='none', origin='lower')
     plt.title('matrix multiply PSF')
@@ -112,12 +118,22 @@ def make_cmap(seq):
     return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
 
 
-def summgene(varb):
+class gdatstrt(object):
 
-    print np.amin(varb)
-    print np.amax(varb)
-    print np.mean(varb)
-    print varb.shape
+    def __init__(self):
+        self.boollockmodi = False
+        pass
+    
+    def __setattr__(self, attr, valu):
+        super(gdatstrt, self).__setattr__(attr, valu)
+
+
+#def summgene(varb):
+#
+#    print np.amin(varb)
+#    print np.amax(varb)
+#    print np.mean(varb)
+#    print varb.shape
 
 
 def main( \
@@ -209,24 +225,59 @@ def main( \
     # read PSF
     f = open(pathliondata + strgdata+'_psf.txt')
     nc, nbin = [np.int32(i) for i in f.readline().split()]
+    print 'nc'
+    print nc
+    print 'nbin'
+    print nbin
     f.close()
     psf = np.loadtxt(pathliondata + strgdata+'_psf.txt', skiprows=1).astype(np.float32)
-    cf = psf_poly_fit(psf, nbin=nbin)
+    cf = psf_poly_fit(psf, nbin)
     npar = cf.shape[0]
     
     # construct C library
     array_2d_float = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
+    array_3d_float = npct.ndpointer(dtype=np.float32, ndim=3, flags="C_CONTIGUOUS")
     array_1d_int = npct.ndpointer(dtype=np.int32, ndim=1, flags="C_CONTIGUOUS")
+    array_1d_float = npct.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
     array_2d_double = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
+    array_2d_int = npct.ndpointer(dtype=np.int32, ndim=2, flags="C_CONTIGUOUS")
     libmmult = npct.load_library('pcat-lion', '.')
     libmmult.pcat_model_eval.restype = None
-    libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int, array_2d_float, array_2d_float, array_2d_float, \
-                                         array_1d_int, array_1d_int, array_2d_float, array_2d_float, array_2d_float, array_2d_double, c_int, c_int, c_int, c_int]
-    array_2d_int = npct.ndpointer(dtype=np.int32, ndim=2, flags="C_CONTIGUOUS")
+    
+    #void pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* B, float* C, int* x,
+	#int* y, float* image, float* ref, float* weig, double* diff2, int regsize, int margin, int offsetx, int offsety)
+    
+    #lib(imsz[0], imsz[1], nstar, nc, cf.shape[0], dd, cf, recon, ix, iy, image, reftemp, weig, diff2, regsize, margin, offsetx, offsety)
+    
+    #libmmult.pcat_model_eval.argtypes = [c_int NX imsz[0], c_int NY imsz[1], c_int nstar, c_int nc, c_int k cf.shape[0]
+    
+    # array_2d_float A dd, array_2d_float B cf, array_2d_float C recon
+    # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double diff2, c_int regsize, 
+    # c_int margin, c_int offsetx, c_int offsety]
+    
     libmmult.pcat_imag_acpt.restype = None
-    libmmult.pcat_imag_acpt.argtypes = [c_int, c_int, array_2d_float, array_2d_float, array_2d_int, c_int, c_int, c_int, c_int]
     libmmult.pcat_like_eval.restype = None
-    libmmult.pcat_like_eval.argtypes = [c_int, c_int, array_2d_float, array_2d_float, array_2d_float, array_2d_double, c_int, c_int, c_int, c_int]
+    libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int]
+    libmmult.pcat_imag_acpt.argtypes = [c_int, c_int]
+    libmmult.pcat_like_eval.argtypes = [c_int, c_int]
+    
+    libmmult.pcat_model_eval.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    libmmult.pcat_imag_acpt.argtypes += [array_2d_float, array_2d_float]
+    libmmult.pcat_like_eval.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    
+    libmmult.pcat_model_eval.argtypes += [array_1d_int, array_1d_int]
+    
+    if booltimebins:
+        libmmult.pcat_model_eval.argtypes += [array_3d_float, array_3d_float, array_3d_float]
+    else:
+        libmmult.pcat_model_eval.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    
+    libmmult.pcat_model_eval.argtypes += [array_2d_double]
+    libmmult.pcat_like_eval.argtypes += [array_2d_double]
+    
+    libmmult.pcat_model_eval.argtypes += [c_int, c_int, c_int, c_int, c_int, c_int, array_2d_float]
+    libmmult.pcat_imag_acpt.argtypes += [array_2d_int, c_int, c_int, c_int, c_int]
+    libmmult.pcat_like_eval.argtypes += [c_int, c_int, c_int, c_int]
     
     # test PSF
     if boolplot and testpsfn:
@@ -243,21 +294,25 @@ def main( \
     data -= bias
     trueback = np.float32(179)#np.float32(445*250)#179.)
     numbpixl = w * h
-
+    
+    gdat = gdatstrt()
     if booltimebins:
-        numbtime = 10
-        numblcpr = numbtime - 1
-        data = np.tile(data, (numbtime, 1, 1))
-        indxtime = np.arange(numbtime)
+        gdat.numbtime = 10
+        numblcpr = gdat.numbtime - 1
+        data = np.tile(data, (gdat.numbtime, 1, 1))
+        indxtime = np.arange(gdat.numbtime)
         print 'data'
         summgene(data)
         for k in indxtime:
-            data[k, :, :] += np.random.randn(w * h).reshape((w, h))
-        
+            data[k, :, :] += (4 * np.random.randn(w * h).reshape((w, h))).astype(int)
+        print 'data'
+        summgene(data)
+    else:
+        gdat.numbtime = 1
     print 'Image width and height: %d %d pixels' % (w, h)
     
     variance = data / gain
-    weight = 1. / variance # inverse variance
+    weig = 1. / variance # inverse variance
    
     _X = 0
     _Y = 1
@@ -273,6 +328,18 @@ def main( \
             
     class Proposal:
     
+        _X = 0
+        _Y = 1
+        _F = 2
+        numbparastar = 3
+        if booltimebins:
+            _L = np.arange(3, 3 + numblcpr)
+            numbparastar += numblcpr
+        if 'galx' in strgmodl:
+            _XX = 3
+            _XY = 4
+            _YY = 5
+            
         gridphon, amplphon = retr_sers(sersindx=2.)
         
         def __init__(self):
@@ -478,10 +545,7 @@ def main( \
             return np.log(slope-1) + (slope-1)*np.log(self.truermin_g) - slope*np.log(a) - 5*np.log(a) - np.log(u*u) - np.log(1-u*u)
     
         
-        def run_sampler(self, temperature, jj, numbloop=1000, boolplotshow=False):
-            
-            
-            
+        def run_sampler(self, gdat, temperature, jj, numbloop=1000, boolplotshow=False):
             
             t0 = time.clock()
             nmov = np.zeros(numbloop)
@@ -498,7 +562,7 @@ def main( \
             self.nregy = imsz[1] / regsize + 1
     
             resid = data.copy() # residual for zero image is data
-            lcpreval = None
+            lcpreval = np.array([[0.]], dtype=np.float32)
             if strgmodl == 'star':
                 xposeval = self.stars[self._X,0:self.n]
                 yposeval = self.stars[self._Y,0:self.n]
@@ -511,19 +575,20 @@ def main( \
                 yposeval = np.concatenate([self.stars[self._Y,0:self.n], yposphon]).astype(np.float32)
                 fluxeval = np.concatenate([self.stars[self._F,0:self.n], specphon]).astype(np.float32)
             numbphon = xposeval.size
-            model, diff2 = image_model_eval(xposeval, yposeval, fluxeval, self.back, imsz, nc, cf, lcpreval=lcpreval, weights=weight, ref=resid, lib=libmmult.pcat_model_eval, \
-                                                                                                regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
+            model, diff2 = image_model_eval(xposeval, yposeval, fluxeval, self.back, imsz, nc, cf, gdat.numbtime, booltimebins, lcpreval, \
+                                                               weig=weig, ref=resid, lib=libmmult.pcat_model_eval, \
+                                                               regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
             logL = -0.5*diff2
             resid -= model
     
-            moveweights = np.array([80., 40., 40.])
+            moveweig = np.array([80., 40., 40.])
             if strgmodl == 'galx':
-                moveweights = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
-            moveweights /= np.sum(moveweights)
+                moveweig = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
+            moveweig /= np.sum(moveweig)
     
             for i in xrange(numbloop):
                 t1 = time.clock()
-                rtype = np.random.choice(moveweights.size, p=moveweights)
+                rtype = np.random.choice(moveweig.size, p=moveweig)
                 movetype[i] = rtype
                 # defaults
                 dback = np.float32(0.)
@@ -542,8 +607,8 @@ def main( \
     
                 if proposal.goodmove:
                     t2 = time.clock()
-                    dmodel, diff2 = image_model_eval(proposal.xphon, proposal.yphon, proposal.fphon, dback, imsz, nc, cf, \
-                                weights=weight, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
+                    dmodel, diff2 = image_model_eval(proposal.xphon, proposal.yphon, proposal.fphon, dback, imsz, nc, cf, gdat.numbtime, booltimebins, lcpreval, \
+                                weig=weig, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
                     plogL = -0.5*diff2
                     dt2[i] = time.clock() - t2
     
@@ -573,6 +638,12 @@ def main( \
     
                     plogL[(1-self.parity_y)::2,:] = float('-inf') # don't accept off-parity regions
                     plogL[:,(1-self.parity_x)::2] = float('-inf')
+                    print 'diff2'
+                    summgene(diff2)
+                    print 'logL'
+                    summgene(logL)
+                    print 'plogL'
+                    summgene(plogL)
                     dlogP = (plogL - logL) / temperature
                     if proposal.factor is not None:
                         dlogP[regiony, regionx] += proposal.factor
@@ -585,7 +656,7 @@ def main( \
                     libmmult.pcat_imag_acpt(imsz[0], imsz[1], dmodel, dmodel_acpt, acceptreg, regsize, margin, self.offsetx, self.offsety)
                     # using this dmodel containing only accepted moves, update logL
                     diff2.fill(0)
-                    libmmult.pcat_like_eval(imsz[0], imsz[1], dmodel_acpt, resid, weight, diff2, regsize, margin, self.offsetx, self.offsety)
+                    libmmult.pcat_like_eval(imsz[0], imsz[1], dmodel_acpt, resid, weig, diff2, regsize, margin, self.offsetx, self.offsety)
                     logL = -0.5*diff2
                     resid -= dmodel_acpt # has to occur after pcat_like_eval, because resid is used as ref
                     model += dmodel_acpt
@@ -635,7 +706,7 @@ def main( \
                     outbounds[i] = 1
     
             numbdoff = retr_numbdoff(self.n, self.ng, numbener)
-            chi2 = np.sum(weight*(data-model)*(data-model))
+            chi2 = np.sum(weig*(data-model)*(data-model))
             chi2doff = chi2 / (numbpixl - numbdoff)
             fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
             print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', numbphon, \
@@ -668,7 +739,7 @@ def main( \
                             plt.scatter(truexg, trueyg, marker='1', s=sizemrkr*truefg, color='lime')
                             plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
                         if strgmodl == 'stargalx':
-                            plt.scatter(dictglob['truexposstar'], ypostrue[mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
+                            plt.scatter(gdat.truexposstar, ypostrue[mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
                     if strgmodl == 'galx':
                         plt.scatter(self.galaxies[self._X, 0:self.ng], self.galaxies[self._Y, 0:self.ng], marker='2', s=sizemrkr*self.galaxies[self._F, 0:self.ng], color='r')
                         a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
@@ -683,7 +754,7 @@ def main( \
                         cmap = cmapresi
                     else:
                         cmap = 'bwr'
-                    plt.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmap)
+                    plt.imshow(resid*np.sqrt(weig), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmap)
                     if j == 0:
                         plt.tight_layout()
                     
@@ -733,7 +804,7 @@ def main( \
                     
                     # residual map
                     figr, axis = plt.subplots()
-                    axis.imshow(resid*np.sqrt(weight), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmapresi)
+                    axis.imshow(resid*np.sqrt(weig), origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmapresi)
                     ## overplot point sources
                     supr_catl(axis, self.stars[self._X, 0:self.n], self.stars[self._Y, 0:self.n], self.stars[self._F, 0:self.n], xpostrue, ypostrue, fluxtrue)
                     setp_imaglimt(axis)
@@ -878,7 +949,10 @@ def main( \
                 dy = (np.random.normal(size=nms)*self.kickrange).astype(np.float32)
                 idx_move = np.random.choice(idx_bright, size=nms, replace=False)
                 stars0 = self.stars.take(idx_move, axis=1)
-                x0, y0, f0 = stars0
+                if booltimebins:
+                    x0, y0, f0, lcpr0 = stars0
+                else:
+                    x0, y0, f0 = stars0
                 fminratio = f0 / self.trueminf
                 frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
                 
@@ -1164,7 +1238,7 @@ def main( \
     
                 # need star pairs to calculate factor
                 sum_f = fkg
-                weightoverpairs = np.empty(nms) # w (1/sum w_1 + 1/sum w_2) / 2
+                weigoverpairs = np.empty(nms) # w (1/sum w_1 + 1/sum w_2) / 2
                 for k in xrange(nms):
                     xtemp = self.stars[self._X, 0:self.n].copy()
                     ytemp = self.stars[self._Y, 0:self.n].copy()
@@ -1174,11 +1248,11 @@ def main( \
                     neighi = neighbours(xtemp, ytemp, self.kickrange_g, self.n)
                     neighj = neighbours(xtemp, ytemp, self.kickrange_g, self.n+1)
                     if neighi > 0 and neighj > 0:
-                        weightoverpairs[k] = 1./neighi + 1./neighj
+                        weigoverpairs[k] = 1./neighi + 1./neighj
                     else:
-                        weightoverpairs[k] = 0.
-                weightoverpairs *= 0.5 * np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g))
-                weightoverpairs[weightoverpairs == 0] = 1
+                        weigoverpairs[k] = 0.
+                weigoverpairs *= 0.5 * np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g))
+                weigoverpairs[weigoverpairs == 0] = 1
             # merge
             elif not splitsville and idx_reg.size > 1: # need two things to merge!
                 nms = min(nms, idx_reg.size/2, self.ngalx-self.ng)
@@ -1212,8 +1286,8 @@ def main( \
                 dx = starsk[self._X,:,1] - starsk[self._X,:,0]
                 dy = starsk[self._X,:,1] - starsk[self._Y,:,0]
                 dr2 = dx*dx + dy*dy
-                weightoverpairs = np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g)) * invpairs
-                weightoverpairs[weightoverpairs == 0] = 1
+                weigoverpairs = np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g)) * invpairs
+                weigoverpairs[weigoverpairs == 0] = 1
                 sum_f = np.sum(fk, axis=1)
                 fminratio = sum_f / self.trueminf
                 frac = fk[:,0] / sum_f
@@ -1235,7 +1309,7 @@ def main( \
             if goodmove:
                 factor = 2*np.log(self.truealpha-1) - np.log(self.truealpha_g-1) + 2*(self.truealpha-1)*np.log(self.trueminf) - (self.truealpha_g-1)*np.log(self.trueminf_g) - \
                     self.truealpha*np.log(f1Mf) - (2*self.truealpha - self.truealpha_g)*np.log(sum_f) - np.log(imsz[0]*imsz[1]) + np.log(1. - 2./fminratio) - \
-                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) + np.log(bright_n/(self.ng+1.-splitsville)) + np.log((self.n-1+2*splitsville)*weightoverpairs) + \
+                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) + np.log(bright_n/(self.ng+1.-splitsville)) + np.log((self.n-1+2*splitsville)*weigoverpairs) + \
                     np.log(sum_f) - np.log(4.) - 2*np.log(dr2) - 3*np.log(f1Mf) - np.log(np.cos(theta)) - 3*np.log(np.sin(theta))
                 if not splitsville:
                     factor *= -1
@@ -1571,9 +1645,8 @@ def main( \
         if strgmodl == 'stargalx':
             truth = np.loadtxt(pathliondata + 'truecnts.txt')
             filetrue = h5py.File(pathliondata + 'true.h5', 'r')
-            dictglob = dict()
             for attr in filetrue:
-                dictglob[attr] = filetrue[attr][()]
+                gdat[attr] = filetrue[attr][()]
             filetrue.close()
         
         labldata = 'True'
@@ -1626,7 +1699,7 @@ def main( \
         #temptemp = max(50 - 0.1*j, 1)
         temptemp = 1.
         for k in xrange(ntemps):
-            _, _, chi2_all[k] = models[k].run_sampler(temptemp, j, boolplotshow=(k==0)*boolplotshow)
+            _, _, chi2_all[k] = models[k].run_sampler(gdat, temptemp, j, boolplotshow=(k==0)*boolplotshow)
     
         for k in xrange(ntemps-1, 0, -1):
             logfac = (chi2_all[k-1] - chi2_all[k]) * (1./temps[k-1] - 1./temps[k]) / 2.
@@ -1708,16 +1781,16 @@ def retr_catlseed(rtag):
     PCi = PCi[mask].flatten()
     
     #pos = {}
-    #weight = {}
+    #weig = {}
     #for i in xrange(np.sum(mask)):
     # pos[i] = (PCc_all[i, 0], PCc_all[i,1])
-    # weight[i] = 0.5
+    # weig[i] = 0.5
     
     #print pos[0]
     #print PCc_all[0, :]
     #print "graph..."
     #G = nx.read_gpickle('graph')
-    #G = nx.geographical_threshold_graph(np.sum(mask), 1./0.75, alpha=1., dim=2., pos=pos, weight=weight)
+    #G = nx.geographical_threshold_graph(np.sum(mask), 1./0.75, alpha=1., dim=2., pos=pos, weig=weig)
     
     kdtree = scipy.spatial.KDTree(PCc_all)
     matches = kdtree.query_ball_tree(kdtree, 0.75)
@@ -1785,7 +1858,7 @@ def retr_catlcond(rtag):
     pathlion = os.environ['LION_PATH'] + '/'
     pathliondata = os.environ["LION_PATH"] + '/Data/'
     pathdata = os.environ['LION_DATA_PATH'] + '/'
-    pathcatlcond = pathliondata + 'catlcond.txt'
+    pathcatlcond = pathliondata + strgtimestmp + '_catlcond.txt'
     
     # search radius
     radisrch = 0.75
@@ -1841,7 +1914,8 @@ def retr_catlcond(rtag):
     
     # seed catalog
     ## load the catalog
-    data = np.loadtxt(pathliondata + strgtimestmp + '_seed.txt')
+    pathcatlseed = pathliondata + strgtimestmp + '_catlseed.txt'
+    data = np.loadtxt(pathcatlseed)
     
     ## perform confidence cut
     seedxpos = data[:,0][data[:,2] >= cut*300]
@@ -1977,12 +2051,24 @@ def cnfg_oldd():
         )
 
 
+def cnfg_defa():
+
+    main( \
+         numbsamp=50, \
+         colrstyl='pcat', \
+         boolplotsave=False, \
+         boolplotshow=False, \
+         #booltimebins=True, \
+        )
+
+
 def cnfg_test():
 
     main( \
          numbsamp=50, \
          colrstyl='pcat', \
          boolplotsave=False, \
+         boolplotshow=False, \
          booltimebins=True, \
         )
 
