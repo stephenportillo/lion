@@ -2,8 +2,8 @@
 import numpy as np
 
 def summgene(varb):
-    
-    if varb == None:
+   
+    if len(varb) == 0 or varb == None or isinstance(varb, np.ndarray) and varb.size == 0:
         print varb
     else:
         print np.amin(varb)
