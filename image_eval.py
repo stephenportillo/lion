@@ -33,11 +33,11 @@ def psf_poly_fit(psfnusam, factusam):
             # solve p = A coefspix for coefspix
             p = psfnusampadd[i*factusam:(i+1)*factusam+1, j*factusam:(j+1)*factusam+1].flatten()
             print 'A'
-            print A.shape
+            summgene(A)
             print 'p'
-            print p.shape
+            summgene(p)
             print 'coefspix[:, i, j]'
-            print coefspix[:, i, j].shape
+            summgene(coefspix[:, i, j])
             print
             coefspix[:, i, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
     coefspix = coefspix.reshape(coefspix.shape[0], coefspix.shape[1] * coefspix.shape[2])
@@ -73,8 +73,8 @@ def image_model_eval(x, y, f, back, imsz, numbpixlpsfnside, coefspix, numbtime, 
     numbphon = x.size
     rad = numbpixlpsfnside / 2 # 12 for numbpixlpsfnside = 25
 
-    nregy = imsz[1] / regsize + 1 # assumes imsz % regsize = 0?
-    nregx = imsz[0] / regsize + 1
+    numbregiyaxi = imsz[1] / regsize + 1 # assumes imsz % regsize = 0?
+    numbregixaxi = imsz[0] / regsize + 1
 
     ix = np.ceil(x).astype(np.int32)
     dx = ix - x
@@ -84,22 +84,26 @@ def image_model_eval(x, y, f, back, imsz, numbpixlpsfnside, coefspix, numbtime, 
     dd = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32) * f[:, None]
 
     if lib is None:
-        image = np.full((imsz[1]+2*rad+1,imsz[0]+2*rad+1), back, dtype=np.float32)
+        
+        if True:
+            print 'lib is None'
+
+        modl = np.full((imsz[1]+2*rad+1,imsz[0]+2*rad+1), back, dtype=np.float32)
         recon2 = np.dot(dd, coefspix).reshape((numbphon,numbpixlpsfnside,numbpixlpsfnside))
         recon = np.zeros((numbphon,numbpixlpsfnside,numbpixlpsfnside), dtype=np.float32)
         recon[:,:,:] = recon2[:,:,:]
         for i in xrange(numbphon):
-            image[iy[i]:iy[i]+rad+rad+1,ix[i]:ix[i]+rad+rad+1] += recon[i,:,:]
+            modl[iy[i]:iy[i]+rad+rad+1,ix[i]:ix[i]+rad+rad+1] += recon[i,:,:]
 
-        image = image[rad:imsz[1]+rad,rad:imsz[0]+rad]
+        modl = modl[rad:imsz[1]+rad,rad:imsz[0]+rad]
 
         if ref is not None:
-                diff = ref - image
-        diff2 = np.zeros((nregy, nregx), dtype=np.float64)
-        for i in xrange(nregy):
+                diff = ref - modl
+        diff2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
+        for i in xrange(numbregiyaxi):
             y0 = max(i*regsize - offsety - margin, 0)
             y1 = min((i+1)*regsize - offsety + margin, imsz[1])
-            for j in xrange(nregx):
+            for j in xrange(numbregixaxi):
                 x0 = max(j*regsize - offsetx - margin, 0)
                 x1 = min((j+1)*regsize - offsetx + margin, imsz[0])
                 subdiff = diff[y0:y1,x0:x1]
@@ -108,13 +112,17 @@ def image_model_eval(x, y, f, back, imsz, numbpixlpsfnside, coefspix, numbtime, 
         recon = np.zeros((numbphon, numbpixlpsfn), dtype=np.float32)
         reftemp = ref
         if ref is None:
-            reftemp = np.zeros((imsz[1], imsz[0]), dtype=np.float32)
+            if booltimebins:
+                reftemp = np.zeros((numbtime, imsz[1], imsz[0]), dtype=np.float32)
+            else:
+                reftemp = np.zeros((imsz[1], imsz[0]), dtype=np.float32)
         if booltimebins:
-            image = np.full((numbtime, imsz[1], imsz[0]), back, dtype=np.float32)
-            diff2 = np.zeros((numbtime, nregy, nregx), dtype=np.float64)
+            modl = np.full((numbtime, imsz[1], imsz[0]), back, dtype=np.float32)
+            diff2 = np.zeros((numbtime, numbregiyaxi, numbregixaxi), dtype=np.float64)
         else:
-            image = np.full((imsz[1], imsz[0]), back, dtype=np.float32)
-            diff2 = np.zeros((nregy, nregx), dtype=np.float64)
+            modl = np.full((imsz[1], imsz[0]), back, dtype=np.float32)
+            diff2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
+        
         if True:
         #if False:
             print 'dd'
@@ -123,8 +131,8 @@ def image_model_eval(x, y, f, back, imsz, numbpixlpsfnside, coefspix, numbtime, 
             summgene(coefspix)
             print 'recon'
             summgene(recon)
-            print 'image'
-            summgene(image)
+            print 'modl'
+            summgene(modl)
             print 'weig'
             print weig.shape
             print 'reftemp'
@@ -141,10 +149,10 @@ def image_model_eval(x, y, f, back, imsz, numbpixlpsfnside, coefspix, numbtime, 
             print type(numbtime)
             print
 
-        lib(imsz[0], imsz[1], numbphon, numbpixlpsfnside, numbparaspix, dd, coefspix, recon, ix, iy, image, \
-                        reftemp, weig, diff2, regsize, margin, offsetx, offsety, numbtime, booltimebins, lcpreval)
+        lib(imsz[0], imsz[1], numbphon, numbpixlpsfnside, numbparaspix, dd, coefspix, recon, ix, iy, modl, \
+                                                reftemp, weig, diff2, regsize, margin, offsetx, offsety, numbtime, booltimebins, lcpreval)
 
     if ref is not None:
-        return image, diff2
+        return modl, diff2
     else:
-        return image
+        return modl
