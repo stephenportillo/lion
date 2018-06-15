@@ -286,7 +286,7 @@ def main( \
     strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
    
     # run tag
-    rtag = strgtimestmp 
+    rtag = strgtimestmp + '_%06d' % numbsamp
     if rtagextn != None:
         rtag += '_' + rtagextn
 
@@ -361,7 +361,7 @@ def main( \
         plt.colorbar()
         plt.title('fractional difference')
         if gdat.boolplotsave:
-            plt.savefig(pathdatartag + '%s_psfn.pdf' % strgtimestmp)
+            plt.savefig(pathdatartag + '%s_psfn.pdf' % rtag)
         else:
             plt.show()
     
@@ -401,7 +401,7 @@ def main( \
         if gdat.boolplotsave:
             figr, axis = plt.subplots()
             axis.imshow(psfnusampadd, interpolation='none')
-            plt.savefig(pathdatartag + '%s_psfnusampadd.pdf' % strgtimestmp)
+            plt.savefig(pathdatartag + '%s_psfnusampadd.pdf' % rtag)
     
         return coefspix
    
@@ -518,9 +518,9 @@ def main( \
             axis.imshow(data[k, :, :], origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
             ## limits
             setp_imaglimt(gdat, axis)
-            plt.savefig(pathdatartag + '%s_cntpdatainit%04d.pdf' % (strgtimestmp, k))
+            plt.savefig(pathdatartag + '%s_cntpdatainit%04d.pdf' % (rtag, k))
         print 'Making the animation...'
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdatainit*.pdf %s/%s_cntpdatainit.gif' % (pathdatartag, strgtimestmp, pathdatartag, strgtimestmp)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdatainit*.pdf %s/%s_cntpdatainit.gif' % (pathdatartag, rtag, pathdatartag, rtag)
         print cmnd
         os.system(cmnd)
     
@@ -669,7 +669,7 @@ def main( \
 
     def supr_catl(axis, xpos, ypos, flux, xpostrue=None, ypostrue=None, fluxtrue=None):
         
-        if datatype == 'mock':
+        if datatype == 'mock' and xpostrue != None:
             if strgmodl == 'star' or strgmodl == 'galx':
                 mask = fluxtrue > 250
                 axis.scatter(xpostrue[mask], ypostrue[mask], marker='+', s=sizemrkr*fluxtrue[mask], color=colrbrgt, lw=2)
@@ -817,6 +817,8 @@ def main( \
                 movetypes = ['P *', 'BD *', 'MS *', 'P g', 'BD g', '*-g', '**-g', '*g-g', 'MS g']
                 movefns = [self.move_stars, self.birth_death_stars, self.merge_split_stars, self.move_galaxies, self.birth_death_galaxies, self.star_galaxy, \
                         self.twostars_galaxy, self.stargalaxy_galaxy, self.merge_split_galaxies]
+                
+                # make the proposal
                 proposal = movefns[rtype]()
     
                 dt1[i] = time.clock() - t1
@@ -939,10 +941,19 @@ def main( \
             
             
                 if gdat.verbtype > 1:
+                    print 'rtype'
+                    print rtype
                     print 'diff2'
                     print diff2
                     print 'logL'
                     print logL
+                    if proposal.goodmove:
+                        print 'dmodel'
+                        summgene(dmodel)
+                    print 'accept[i]'
+                    print accept[i]
+                    print 'outbounds[i]'
+                    print outbounds[i]
                     print 'Loop %d ended.' % i
                     print
                     print
@@ -952,6 +963,7 @@ def main( \
             chi2 = np.sum(weig*(data-model)*(data-model))
             chi2doff = chi2 / (numbpixl - numbdoff)
             fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
+            print 'Sample %d' % jj
             print 'Temperature', temperature, 'background', self.back, 'N_star', self.n, 'N_gal', self.ng, 'N_phon', numbphon, \
                                                                                             'chi^2', chi2, 'numbdoff', numbdoff, 'chi2dof', chi2doff
             dt1 *= 1000
@@ -1060,7 +1072,7 @@ def main( \
                     supr_catl(axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n], xpostrue, ypostrue, fluxtrue)
                     ## limits
                     setp_imaglimt(gdat, axis)
-                    plt.savefig(pathdatartag + '%s_cntpdata%04d.pdf' % (strgtimestmp, jj))
+                    plt.savefig(pathdatartag + '%s_cntpdata%04d.pdf' % (rtag, jj))
                     
                     # residual map
                     figr, axis = plt.subplots()
@@ -1072,7 +1084,7 @@ def main( \
                     ## overplot point sources
                     supr_catl(axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n], xpostrue, ypostrue, fluxtrue)
                     setp_imaglimt(gdat, axis)
-                    plt.savefig(pathdatartag + '%s_cntpresi%04d.pdf' % (strgtimestmp, jj))
+                    plt.savefig(pathdatartag + '%s_cntpresi%04d.pdf' % (rtag, jj))
                     
                     ## flux histogram
                     figr, axis = plt.subplots()
@@ -1088,7 +1100,7 @@ def main( \
                         axis.hist(np.log10(self.stars[gdat.indxflux, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[gdat.indxflux, 0:self.n])))), \
                                                                                              lw=linewdth, facecolor='b', edgecolor='b', log=True, alpha=0.5, \
                                                                                              label='Sample', histtype=histtype)
-                    plt.savefig(pathdatartag + '%s_histflux%04d.pdf' % (strgtimestmp, jj))
+                    plt.savefig(pathdatartag + '%s_histflux%04d.pdf' % (rtag, jj))
 
             return self.n, self.ng, chi2
     
@@ -1938,7 +1950,7 @@ def main( \
     margin = 10
     
     nstar = Model.nstar
-    nstrsamp = np.zeros(numbsamp, dtype=np.int32)
+    numbstarsamp = np.zeros(numbsamp, dtype=np.int32)
     xpossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
     ypossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
     fluxsamp = np.zeros((numbsamp, nstar), dtype=np.float32)
@@ -1958,9 +1970,9 @@ def main( \
     
     # write the chain
     ## h5 file path
-    pathh5py = pathdatartag + strgtimestmp + '_chan.h5'
+    pathh5py = pathdatartag + rtag + '_chan.h5'
     ## numpy object file path
-    pathnump = pathdatartag + strgtimestmp + '_chan.npz'
+    pathnump = pathdatartag + rtag + '_chan.npz'
     
     filearry = h5py.File(pathh5py, 'w')
     print 'Will write the chain to %s...' % pathh5py
@@ -1982,7 +1994,7 @@ def main( \
                 print 'swapped', k-1, k
                 models[k-1], models[k] = models[k], models[k-1]
     
-        nstrsamp[j] = models[0].n
+        numbstarsamp[j] = models[0].n
         xpossamp[j,:] = models[0].stars[gdat.indxxpos, :]
         ypossamp[j,:] = models[0].stars[gdat.indxypos, :]
         fluxsamp[j,:] = models[0].stars[gdat.indxflux, :]
@@ -1999,6 +2011,7 @@ def main( \
             xygsample[j,:] = models[0].galaxies[Model._XY, :]
             yygsample[j,:] = models[0].galaxies[Model._YY, :]
     
+    filearry.create_dataset('numbstar', data=xpossamp[numbsampburn:])
     filearry.create_dataset('xpos', data=xpossamp[numbsampburn:, :])
     filearry.create_dataset('ypos', data=ypossamp[numbsampburn:, :])
     filearry.create_dataset('flux', data=fluxsamp[numbsampburn:, :])
@@ -2012,15 +2025,15 @@ def main( \
  
     if boolplotsave:
         print 'Making the animation...'
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdata*.pdf %s/%s_cntpdata.gif' % (pathdatartag, strgtimestmp, pathdatartag, strgtimestmp)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdata*.pdf %s/%s_cntpdata.gif' % (pathdatartag, rtag, pathdatartag, rtag)
         print cmnd
         os.system(cmnd)
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpresi*.pdf %s/%s_cntpresi.gif' % (pathdatartag, strgtimestmp, pathdatartag, strgtimestmp)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpresi*.pdf %s/%s_cntpresi.gif' % (pathdatartag, rtag, pathdatartag, rtag)
         print cmnd
         os.system(cmnd)
     
     print 'Saving the numpy object to %s...' % pathnump
-    np.savez(pathnump, n=nstrsamp, x=xpossamp, y=ypossamp, f=fluxsamp, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
+    np.savez(pathnump, n=numbstarsamp, x=xpossamp, y=ypossamp, f=fluxsamp, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
     # calculate the condensed catalog
     catlcond = retr_catlcond(rtag)
@@ -2030,9 +2043,18 @@ def main( \
         # plot the condensed catalog
         if boolplotsave:
             figr, axis = plt.subplots()
-            axis.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+            if gdat.booltimebins:
+                temp = data[0, :, :]
+            else:
+                temp = data
+            axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+            numbsampplot = min(gdat.numbsamp, 10)
+            indxsampplot = np.random.choice(np.arange(gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
+            for k in range(numbsampplot):
+                numb = numbstarsamp[indxsampplot[k]]
+                supr_catl(axis, xpossamp[k, :numb], ypossamp[k, :numb], fluxsamp[k, :numb])
             supr_catl(axis, catlcond[:, 0], catlcond[:, 2], catlcond[:, 4], xpostrue, ypostrue, fluxtrue)
-            plt.savefig(pathdatartag + '%s_condcatl.pdf' % strgtimestmp)
+            plt.savefig(pathdatartag + '%s_condcatl.pdf' % rtag)
 
 
 def retr_catlseed(rtag):
@@ -2051,7 +2073,7 @@ def retr_catlseed(rtag):
     
     # number of samples used in the seed catalog determination
     numbsampseed = 10
-    pathchan = pathdatartag + strgtimestmp + '_chan.h5'
+    pathchan = pathdatartag + rtag + '_chan.h5'
     filechan = h5py.File(pathchan, 'r')
     xpossamp = filechan['xpos'][()][:numbsampseed, :] 
     ypossamp = filechan['ypos'][()][:numbsampseed, :]
@@ -2131,7 +2153,7 @@ def retr_catlseed(rtag):
     
     catlseed = np.array(catlseed)
 
-    np.savetxt(pathdatartag + strgtimestmp + '_seed.txt', catlseed)
+    np.savetxt(pathdatartag + rtag + '_catlseed.txt', catlseed)
 
 
 def retr_catlcond(rtag):
@@ -2146,7 +2168,7 @@ def retr_catlcond(rtag):
     pathdatartag = pathdata + rtag + '/'
     os.system('mkdir -p %s' % pathdatartag)
 
-    pathcatlcond = pathdatartag + strgtimestmp + '_catlcond.txt'
+    pathcatlcond = pathdatartag + rtag + '_catlcond.txt'
     
     # search radius
     radisrch = 0.75
@@ -2159,7 +2181,7 @@ def retr_catlcond(rtag):
     
     # read the chain
     print 'Reading the chain...'    
-    pathchan = pathdatartag + strgtimestmp + '_chan.h5'
+    pathchan = pathdatartag + rtag + '_chan.h5'
     filechan = h5py.File(pathchan, 'r')
     catlxpos = filechan['xpos'][()] 
     catlypos = filechan['ypos'][()]
@@ -2208,7 +2230,7 @@ def retr_catlcond(rtag):
     
     # seed catalog
     ## load the catalog
-    pathcatlseed = pathdatartag + strgtimestmp + '_catlseed.txt'
+    pathcatlseed = pathdatartag + rtag + '_catlseed.txt'
     data = np.loadtxt(pathcatlseed)
     
     ## perform confidence cut
@@ -2348,7 +2370,7 @@ def cnfg_oldd():
 def cnfg_defa():
 
     main( \
-         numbsamp=3, \
+         numbsamp=100, \
          colrstyl='pcat', \
          #boolplotsave=False, \
          boolplotshow=False, \
