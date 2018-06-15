@@ -82,20 +82,21 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
     //cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, numbphon, numbpixlpsfn, numbparaspix, alpha, A, numbparaspix, B, numbpixlpsfn, beta, C, numbpixlpsfn);
 
     int c;
-    float summ = 0;
+    double summ;
     for (p = 0; p < numbphon; p++){
         for (i = 0; i < numbpixlpsfn; i++){
+            summ = 0.;
             for (c = 0; c < numbparaspix; c++){
                 //printf("numbphon, numbpixlpsfn, numbparaspix %d %d %d \n", numbphon, numbpixlpsfn, numbparaspix);
                 //printf("numbphon * numbparaspix %d \n", numbphon * numbparaspix);
                 //printf("numbparaspix * numbpixlpsfn %d \n", numbparaspix * numbpixlpsfn);
                 //printf("numbphon*p+c = %d\n", numbphon * p + c);
                 //printf("c*numbpixlpsfn+p = %d\n\n\n", c*numbpixlpsfn+p);
-                //summ = summ + A[numbparaspix*p+c] * B[c*numbpixlpsfn+i];
-                summ = summ + A[numbparaspix*p+c] * B[c*numbpixlpsfn+i];
+                summ = summ + A[p*numbparaspix+c] * B[c*numbpixlpsfn+i];
+                //summ = summ + A[p+c*numbphon] * B[c+i*numbpixlpsfn];
             }
-            C[p*numbparaspix+i] = summ;
-            summ = 0;
+            C[p*numbpixlpsfn+i] = summ;
+            //C[p+i*numbpixlpsfn] = summ;
         }
     }
 
