@@ -114,7 +114,7 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
                             image[t, j*NX+i] += C[m+r];
                         }
                         else{
-                            image[t, j*NX+i] += C[m+r] * lcpr[t-1];
+                            image[t, j*NX+i] += C[m+r] * lcpr[t];
                         }
                     }
                 }
