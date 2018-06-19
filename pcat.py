@@ -53,7 +53,10 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
     y = y.compress(goodsrc)
     f = f.compress(goodsrc)
     if gdat.booltimebins:
-        lcpreval = lcpreval.compress(goodsrc)
+        print 'lcpreval'
+        summgene(lcpreval)
+        print
+        lcpreval = lcpreval.compress(goodsrc, axis=1)
 
     numbphon = x.size
     rad = numbpixlpsfnside / 2 # 12 for numbpixlpsfnside = 25
@@ -225,8 +228,11 @@ class gdatstrt(object):
 
 
 def main( \
-         # string characterizing the type of data (experiment that collected it and its PSF, etc.)
-         strgdata='sdss.0921', \
+         # string characterizing the type of data
+         strgdata='sdss0921', \
+        
+         # string characterizing the type of PSF
+         strgpsfn='sdss0921', \
         
          # a Boolean flag indicating whether the data is time-binned
          booltimebins=False, \
@@ -276,10 +282,6 @@ def main( \
         if '__' not in attr and attr != 'gdat':
             setattr(gdat, attr, valu)
 
-    # check if source has been changed after compilation
-    if os.path.getmtime('blas.c') > os.path.getmtime('blas.so'):
-        warnings.warn('blas.c modified after compiled blas.so', Warning)
-    
     #np.seterr(all='raise')
 
     # load arguments into the global object
@@ -326,7 +328,7 @@ def main( \
         plt.ion()
     
     #probprop = np.array([80., 40., 40.])
-    probprop = np.array([80., 40., 0.])
+    probprop = np.array([80., 0., 0.])
     if strgmodl == 'galx':
         probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
     probprop /= np.sum(probprop)
@@ -433,6 +435,10 @@ def main( \
     pathliondata = os.environ["LION_PATH"] + '/Data/'
     pathdata = os.environ['LION_DATA_PATH'] + '/'
 
+    # check if source has been changed after compilation
+    if os.path.getmtime(pathlion + 'blas.c') > os.path.getmtime(pathlion + 'blas.so'):
+        warnings.warn('blas.c modified after compiled blas.so', Warning)
+    
     pathdatartag = pathdata + gdat.rtag + '/'
     os.system('mkdir -p %s' % pathdatartag)
 
@@ -450,7 +456,7 @@ def main( \
     print 'nbin'
     print nbin
     f.close()
-    psf = np.loadtxt(pathliondata + strgdata+'_psf.txt', skiprows=1).astype(np.float32)
+    psf = np.loadtxt(pathliondata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
     cf = psf_poly_fit(gdat, psf, nbin)
     npar = cf.shape[0]
     
@@ -502,13 +508,13 @@ def main( \
     libmmult.pcat_like_eval.argtypes += [c_int, c_int, c_int, c_int]
     
     # read data
-    f = open(pathliondata + strgdata+'_pix.txt')
+    f = open(pathliondata + strgdata + '_pixl.txt')
     w, h, nband = [np.int32(i) for i in f.readline().split()]
     gdat.sizeimag = (w, h)
     assert nband == 1
     bias, gain = [np.float32(i) for i in f.readline().split()]
     f.close()
-    data = np.loadtxt(pathliondata + strgdata+'_cts.txt').astype(np.float32)
+    data = np.loadtxt(pathliondata + strgdata + '_cntp.txt').astype(np.float32)
     data -= bias
     trueback = np.float32(179)#np.float32(445*250)#179.)
     numbpixl = w * h
@@ -534,7 +540,9 @@ def main( \
     ## PSF
     if boolplot and testpsfn:
         plot_psfn(gdat, nc, cf, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
-   
+    
+    stdvproplcpr = 1e-6
+
     ## data
     if False and gdat.booltimebins:
         for k in gdat.indxtime:
@@ -583,6 +591,7 @@ def main( \
             self.xphon = np.array([], dtype=np.float32)
             self.yphon = np.array([], dtype=np.float32)
             self.fphon = np.array([], dtype=np.float32)
+            self.lcprphon = np.array([[]], dtype=np.float32)
     
         
         def set_factor(self, factor):
@@ -600,6 +609,14 @@ def main( \
             self.xphon = np.append(self.xphon, stars[gdat.indxxpos,:])
             self.yphon = np.append(self.yphon, stars[gdat.indxypos,:])
             self.fphon = np.append(self.fphon, fluxmult*stars[gdat.indxflux,:])
+            print 'self.lcprphon'
+            summgene(self.lcprphon)
+            if self.lcprphon.size == 0:
+                self.lcprphon = np.copy(stars[gdat.indxlcpr, :])
+            else:
+                self.lcprphon = np.append(self.lcprphon, stars[gdat.indxlcpr, :], axis=1)
+            print 'self.lcprphon'
+            summgene(self.lcprphon)
             self.assert_types()
     
         
@@ -787,8 +804,7 @@ def main( \
                     lcpreval = self.stars[gdat.indxlcpr, :self.n]
 
                     if gdat.diagmode:
-                        if np.amax(np.abs(lcpreval)) > 1e3:
-                            raise Exception('')
+                        chec_lcpr(lcpreval)
             else:
                 xposphon, yposphon, specphon = retr_tranphon(self.gridphon, self.amplphon, self.galaxies[:,0:self.ng])
                 xposeval = np.concatenate([self.stars[gdat.indxxpos,0:self.n], xposphon]).astype(np.float32)
@@ -832,7 +848,7 @@ def main( \
     
                 if proposal.goodmove:
                     t2 = time.clock()
-                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, nc, cf, lcpreval, \
+                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, nc, cf, proposal.lcprphon, \
                                 weig=weig, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
                     plogL = -0.5*diff2
                     dt2[i] = time.clock() - t2
@@ -1141,7 +1157,7 @@ def main( \
         
         def in_bounds(self, catalogue):
             return np.logical_and(np.logical_and(catalogue[gdat.indxxpos,:] > 0, catalogue[gdat.indxxpos,:] < (gdat.sizeimag[0] -1)), \
-                    np.logical_and(catalogue[gdat.indxypos,:] > 0, catalogue[gdat.indxypos,:] < gdat.sizeimag[1] - 1))
+                                                        np.logical_and(catalogue[gdat.indxypos,:] > 0, catalogue[gdat.indxypos,:] < gdat.sizeimag[1] - 1))
     
         
         def move_stars(self): 
@@ -1172,6 +1188,7 @@ def main( \
             starsp[gdat.indxxpos,:] = stars0[gdat.indxxpos,:] + dx
             starsp[gdat.indxypos,:] = stars0[gdat.indxypos,:] + dy
             starsp[gdat.indxflux,:] = pf
+            starsp[gdat.indxlcpr,:] = stars0[gdat.indxlcpr, :] + np.random.normal(size=nw).astype(np.float32) * stdvproplcpr
             self.bounce_off_edges(starsp)
     
             proposal = Proposal()
@@ -1195,6 +1212,8 @@ def main( \
                 starsb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*regsize - self.offsetx
                 starsb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*regsize - self.offsety
                 starsb[gdat.indxflux,:] = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=nbd))
+                if gdat.booltimebins:
+                    starsb[gdat.indxlcpr, :] = np.rand(nbd) * 1e-6 + 1.
     
                 # some sources might be generated outside image
                 inbounds = self.in_bounds(starsb)
@@ -1923,16 +1942,16 @@ def main( \
 
     if datatype == 'mock':
         if strgmodl == 'star':
-            truth = np.loadtxt(pathliondata + strgdata+'_tru.txt')
+            truth = np.loadtxt(pathliondata + strgdata + '_true.txt')
             xpostrue = truth[:,0]
             ypostrue = truth[:,1]
             fluxtrue = truth[:,2]
         if strgmodl == 'galx':
-            truth_s = np.loadtxt(pathliondata + strgdata+'_str.txt')
+            truth_s = np.loadtxt(pathliondata + strgdata + '_str.txt')
             xpostrue = truth_s[:,0]
             ypostrue = truth_s[:,1]
             fluxtrue = truth_s[:,2]
-            truth_g = np.loadtxt(pathliondata + strgdata+'_gal.txt')
+            truth_g = np.loadtxt(pathliondata + strgdata + '_gal.txt')
             truexg = truth_g[:,0]
             trueyg = truth_g[:,1]
             truefg = truth_g[:,2]
@@ -2014,8 +2033,7 @@ def main( \
         if gdat.booltimebins:
             lcprsamp[j, :, :] = models[0].stars[gdat.indxlcpr, :]
             if gdat.diagmode:
-                if np.amax(np.abs(models[0].stars[gdat.indxlcpr, :])) > 1e3:
-                    raise Exception('')
+                chec_lcpr(models[0].stars[gdat.indxlcpr, :])
         
         if strgmodl == 'galx':
             ngsample[j] = models[0].ng
@@ -2040,6 +2058,8 @@ def main( \
     filearry.create_dataset('flux', data=fluxsamp)
     if gdat.booltimebins:
         filearry.create_dataset('lcpr', data=lcprsamp)
+        if gdat.diagmode:
+            chec_lcpr(lcprsamp)
     filearry.close()
 
     path = pathdatartag + 'gdat.p'
@@ -2086,6 +2106,17 @@ def main( \
         print cmnd
         os.system(cmnd)
     
+
+def chec_lcpr(lcpr):
+
+    if np.amax(np.abs(lcpr)) > 1e3 or np.isnan(lcpr).any():
+        print 'lcpr'
+        summgene(lcpr)
+        print lcpr
+        print 
+
+        raise Exception('')
+
 
 def retr_catlseed(rtag):
     
@@ -2356,12 +2387,12 @@ def retr_catlcond(rtag):
     fluxmean = np.zeros(numbsourseed)
     magtmean = np.zeros(numbsourseed)
     if gdat.booltimebins:
-        lcprmean = np.zeros((numbsourseed, gdat.numblcpr))
+        lcprmean = np.zeros((gdat.numblcpr, numbsourseed))
     stdvxpos = np.zeros(numbsourseed)
     stdvypos = np.zeros(numbsourseed)
     stdvflux = np.zeros(numbsourseed)
     if gdat.booltimebins:
-        stdvlcpr = np.zeros((numbsourseed, gdat.numblcpr))
+        stdvlcpr = np.zeros((gdat.numblcpr, numbsourseed))
     stdvmagt = np.zeros(numbsourseed)
     conf = np.zeros(numbsourseed)
     
@@ -2383,31 +2414,39 @@ def retr_catlcond(rtag):
         yposmean[i] = np.mean(y)
         fluxmean[i] = np.mean(f)
         if gdat.booltimebins:
-            lcprmean[i] = np.mean(lcpr, axis=0)
+            print 'lcpr'
+            print lcpr
+            summgene(lcpr)
+            print 
+
+            lcprmean[:, i] = np.mean(lcpr, axis=0)
         if x.size > 1:
             stdvxpos[i] = np.percentile(x, pctlhigh) - np.percentile(x, pctlloww)
             stdvypos[i] = np.percentile(y, pctlhigh) - np.percentile(y, pctlloww)
             stdvflux[i] = np.percentile(f, pctlhigh) - np.percentile(f, pctlloww)
             if gdat.booltimebins:
-                stdvlcpr[i] = np.percentile(lcpr, pctlhigh) - np.percentile(lcpr, pctlloww)
+                stdvlcpr[:, i] = np.percentile(lcpr, pctlhigh) - np.percentile(lcpr, pctlloww)
 
-    catlcond = np.zeros((numbsourseed, gdat.numbparacatlcond, 2))
-    catlcond[:, gdat.indxxpos, 0] = xposmean
-    catlcond[:, gdat.indxxpos, 1] = stdvxpos
-    catlcond[:, gdat.indxypos, 0] = yposmean
-    catlcond[:, gdat.indxypos, 1] = stdvypos
-    catlcond[:, gdat.indxflux, 0] = fluxmean
-    catlcond[:, gdat.indxflux, 1] = stdvflux
-    catlcond[:, gdat.indxlcpr, 0] = lcprmean
-    catlcond[:, gdat.indxlcpr, 1] = stdvlcpr
-    catlcond[:, gdat.indxconf, 0] = conf
+    catlcond = np.zeros((gdat.numbparacatlcond, numbsourseed, 2))
+    catlcond[gdat.indxxpos, :, 0] = xposmean
+    catlcond[gdat.indxxpos, :, 1] = stdvxpos
+    catlcond[gdat.indxypos, :, 0] = yposmean
+    catlcond[gdat.indxypos, :, 1] = stdvypos
+    catlcond[gdat.indxflux, :, 0] = fluxmean
+    catlcond[gdat.indxflux, :, 1] = stdvflux
+    catlcond[gdat.indxlcpr, :, 0] = lcprmean
+    catlcond[gdat.indxlcpr, :, 1] = stdvlcpr
+    catlcond[gdat.indxconf, :, 0] = conf
     
     #magt = 22.5 - 2.5 * np.log10(flux * gain)
 
     # save catalog
-    print 'catlcond[:, gdat.indxlcpr, :]'
-    print catlcond[:, gdat.indxlcpr, :]
-    summgene(catlcond[:, gdat.indxlcpr, :])
+    print 'catlcond[gdat.indxlcpr, :, 0]'
+    print catlcond[gdat.indxlcpr, :, 0]
+    summgene(catlcond[gdat.indxlcpr, :, 0])
+    print 'catlcond[gdat.indxlcpr, :, 1]'
+    print catlcond[gdat.indxlcpr, :, 1]
+    summgene(catlcond[gdat.indxlcpr, :, 1])
     print
 
     np.savetxt(pathcatlcond, catlcond)
@@ -2454,8 +2493,8 @@ def cnfg_test():
          boolplotsave=True, \
          boolplotshow=False, \
          booltimebins=True, \
-         #diagmode=True, \
-         #verbtype=2, \
+         diagmode=True, \
+         verbtype=2, \
          #testpsfn=True, \
          #boolplotsave=True, \
          #boolplotshow=True, \

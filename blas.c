@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
-#include "mkl_cblas.h"
-#include "i_malloc.h"
+//#include "mkl_cblas.h"
+//#include "i_malloc.h"
 #define max(a,b) ({ typeof (a) _a = (a); typeof (b) _b = (b); _a > _b ? _a : _b; })
 #define min(a,b) ({ typeof (a) _a = (a); typeof (b) _b = (b); _a < _b ? _a : _b; })
 
@@ -50,6 +50,7 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
     int i, m, t, imax, j, r, jmax, rad, p, xposthis, yposthis;
     float alpha, beta;
     int numbpixlpsfn = numbpixlpsfnside * numbpixlpsfnside;
+    int numbpixl = NX * NY;
     rad = numbpixlpsfnside / 2;
     alpha = 1.; beta = 0.;
 
@@ -111,10 +112,10 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
 		        if (booltimebins > 0){
                     for (t = 0; t < numbtime; t++){
                         if (t == 0){
-                            image[t, j*NX+i] += C[m+r];
+                            image[numbpixl*t+j*NX+i] += C[m+r];
                         }
                         else{
-                            image[t, j*NX+i] += C[m+r] * lcpr[t];
+                            image[numbpixl*t+j*NX+i] += C[m+r] * lcpr[t];
                         }
                     }
                 }
