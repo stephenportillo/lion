@@ -125,6 +125,6 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
             }
         }
     }
-
+    
     pcat_like_eval(NX, NY, image, ref, weight, diff2, regsize, margin, offsetx, offsety);
 }

@@ -34,8 +34,8 @@ class gdatstrt(object):
         super(gdatstrt, self).__setattr__(attr, valu)
 
 
-def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
-                                            regsize=None, margin=0, offsetx=0, offsety=0, weig=None, ref=None, lib=None, sizeimag=None):
+def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, lcpreval, \
+                                            sizeregi=None, margin=0, offsetx=0, offsety=0, weig=None, ref=None, lib=None, sizeimag=None):
     
     assert x.dtype == np.float32
     assert y.dtype == np.float32
@@ -47,7 +47,7 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
     if sizeimag == None:
         sizeimag = gdat.sizeimag
 
-    numbpixlpsfn = numbpixlpsfnside**2
+    numbpixlpsfn = numbsidepsfn**2
 
     numbparaspix = coefspix.shape[0]
 
@@ -56,8 +56,8 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
             weig = np.full([gdat.numbtime] + sizeimag, 1., dtype=np.float32)
         else:
             weig = np.full(sizeimag, 1., dtype=np.float32)
-    if regsize is None:
-        regsize = max(sizeimag[0], sizeimag[1])
+    if sizeregi is None:
+        sizeregi = max(sizeimag[0], sizeimag[1])
 
     # temp -- sometimes phonions are outside image... what is best way to handle?
     goodsrc = (x > 0) * (x < sizeimag[0] - 1) * (y > 0) * (y < sizeimag[1] - 1)
@@ -68,10 +68,10 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
         lcpreval = lcpreval.compress(goodsrc, axis=1)
 
     numbphon = x.size
-    rad = numbpixlpsfnside / 2 # 12 for numbpixlpsfnside = 25
+    rad = numbsidepsfn / 2 # 12 for numbsidepsfn = 25
 
-    numbregiyaxi = sizeimag[1] / regsize + 1 # assumes sizeimag % regsize = 0?
-    numbregixaxi = sizeimag[0] / regsize + 1
+    numbregiyaxi = sizeimag[1] / sizeregi + 1 # assumes sizeimag % sizeregi = 0?
+    numbregixaxi = sizeimag[0] / sizeregi + 1
 
     ix = np.ceil(x).astype(np.int32)
     dx = ix - x
@@ -83,8 +83,18 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
     if lib is None:
         
         modl = np.full((sizeimag[1]+2*rad+1,sizeimag[0]+2*rad+1), back, dtype=np.float32)
-        recon2 = np.dot(dd, coefspix).reshape((numbphon,numbpixlpsfnside,numbpixlpsfnside))
-        recon = np.zeros((numbphon,numbpixlpsfnside,numbpixlpsfnside), dtype=np.float32)
+        
+        if gdat.verbtype > 1:
+            print 'dd'
+            summgene(dd)
+            print 'coefspix'
+            summgene(coefspix)
+            print 'numbphon'
+            print numbphon
+            print 'numbsidepsfn'
+            print numbsidepsfn
+        recon2 = np.dot(dd, coefspix).reshape((numbphon,numbsidepsfn,numbsidepsfn))
+        recon = np.zeros((numbphon,numbsidepsfn,numbsidepsfn), dtype=np.float32)
         recon[:,:,:] = recon2[:,:,:]
         for i in xrange(numbphon):
             modl[iy[i]:iy[i]+rad+rad+1,ix[i]:ix[i]+rad+rad+1] += recon[i,:,:]
@@ -95,11 +105,11 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
             diff = ref - modl
         diff2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
         for i in xrange(numbregiyaxi):
-            y0 = max(i*regsize - offsety - margin, 0)
-            y1 = min((i+1)*regsize - offsety + margin, sizeimag[1])
+            y0 = max(i*sizeregi - offsety - margin, 0)
+            y1 = min((i+1)*sizeregi - offsety + margin, sizeimag[1])
             for j in xrange(numbregixaxi):
-                x0 = max(j*regsize - offsetx - margin, 0)
-                x1 = min((j+1)*regsize - offsetx + margin, sizeimag[0])
+                x0 = max(j*sizeregi - offsetx - margin, 0)
+                x1 = min((j+1)*sizeregi - offsetx + margin, sizeimag[0])
                 subdiff = diff[y0:y1,x0:x1]
                 diff2[i,j] = np.sum(subdiff*subdiff*weig[y0:y1,x0:x1])
     else:
@@ -141,8 +151,8 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
             summgene(lcpreval)
             print
 
-        lib(sizeimag[0], sizeimag[1], numbphon, numbpixlpsfnside, numbparaspix, dd, coefspix, recon, ix, iy, modl, \
-                                                reftemp, weig, diff2, regsize, margin, offsetx, offsety, gdat.numbtime, gdat.booltimebins, lcpreval)
+        lib(sizeimag[0], sizeimag[1], numbphon, numbsidepsfn, numbparaspix, dd, coefspix, recon, ix, iy, modl, \
+                                                reftemp, weig, diff2, sizeregi, margin, offsetx, offsety, gdat.numbtime, gdat.booltimebins, lcpreval)
 
     if ref is not None:
         return modl, diff2
@@ -161,14 +171,14 @@ def psf_poly_fit(gdat, psfnusam, factusam):
     assert psfnusam.shape[0] == psfnusam.shape[1] # assert PSF is square
     
     # number of pixels along the side of the upsampled PSF
-    numbpixlpsfnsideusam = psfnusam.shape[0]
+    numbsidepsfnusam = psfnusam.shape[0]
 
     # pad by one row and one column
-    psfnusampadd = np.zeros((numbpixlpsfnsideusam+1, numbpixlpsfnsideusam+1), dtype=np.float32)
-    psfnusampadd[0:numbpixlpsfnsideusam, 0:numbpixlpsfnsideusam] = psfnusam
+    psfnusampadd = np.zeros((numbsidepsfnusam+1, numbsidepsfnusam+1), dtype=np.float32)
+    psfnusampadd[0:numbsidepsfnusam, 0:numbsidepsfnusam] = psfnusam
 
     # make design matrix for each factusam x factusam region
-    numbpixlpsfnside = numbpixlpsfnsideusam / factusam # dimension of original psf
+    numbsidepsfn = numbsidepsfnusam / factusam # dimension of original psf
     nx = factusam + 1
     y, x = np.mgrid[0:nx, 0:nx] / np.float32(factusam)
     x = x.flatten()
@@ -179,11 +189,11 @@ def psf_poly_fit(gdat, psfnusam, factusam):
     numbparaspix = A.shape[1]
 
     # output array of coefficients
-    coefspix = np.zeros((numbparaspix, numbpixlpsfnside, numbpixlpsfnside), dtype=np.float32)
+    coefspix = np.zeros((numbparaspix, numbsidepsfn, numbsidepsfn), dtype=np.float32)
 
     # loop over original psf pixels and get fit coefficients
-    for i in xrange(numbpixlpsfnside):
-        for j in xrange(numbpixlpsfnside):
+    for i in xrange(numbsidepsfn):
+        for j in xrange(numbsidepsfn):
             # solve p = A coefspix for coefspix
             p = psfnusampadd[i*factusam:(i+1)*factusam+1, j*factusam:(j+1)*factusam+1].flatten()
             coefspix[:, i, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
@@ -192,7 +202,7 @@ def psf_poly_fit(gdat, psfnusam, factusam):
     if gdat.boolplotsave:
         figr, axis = plt.subplots()
         axis.imshow(psfnusampadd, interpolation='none')
-        plt.savefig(gdat.pathdatartag + '%s_psfnusampadd.pdf' % gdat.rtag)
+        plt.savefig(gdat.pathdatartag + '%s_psfnusampadd.' % gdat.rtag + gdat.strgplotfile)
 
     return coefspix
    
@@ -214,8 +224,8 @@ def neighbours(x,y,neigh,i,generate=False):
         return neighbours
 
 
-def get_region(x, offsetx, regsize):
-    return np.floor(x + offsetx).astype(np.int) / regsize
+def get_region(x, offsetx, sizeregi):
+    return np.floor(x + offsetx).astype(np.int) / sizeregi
 
 
 # visualization-related functions
@@ -225,9 +235,9 @@ def setp_imaglimt(gdat, axis):
     axis.set_ylim(-0.5, gdat.sizeimag[1] - 0.5)
                     
     
-def idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, regsize):
-    match_x = (get_region(x[0:n], offsetx, regsize) % 2) == parity_x
-    match_y = (get_region(y[0:n], offsety, regsize) % 2) == parity_y
+def idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, sizeregi):
+    match_x = (get_region(x[0:n], offsetx, sizeregi) % 2) == parity_x
+    match_y = (get_region(y[0:n], offsety, sizeregi) % 2) == parity_y
     return np.flatnonzero(np.logical_and(match_x, match_y))
 
 
@@ -305,6 +315,9 @@ def main( \
         
          # numpy array containing the PSF counts
          cntppsfn=None, \
+            
+         # factor by which the PSF is oversampled
+         factusam=None, \
 
          # a Boolean flag indicating whether the data is time-binned
          booltimebins=False, \
@@ -312,6 +325,12 @@ def main( \
          # number of samples
          numbsamp=100, \
     
+         # size of the regions in number of pixels
+         sizeregi=20, \
+         
+         # string indicating type of plot file
+         strgplotfile='pdf', \
+
          # number of samples
          numbsampburn=None, \
     
@@ -335,7 +354,13 @@ def main( \
          catlforc=None, \
 
          # reference catalog
-         catlrefr=None, \
+         catlrefr=[], \
+
+         # labels for reference catalogs
+         lablrefr=[], \
+
+         # colors for reference catalogs
+         colrrefr=[], \
 
          # a string extension to the run tag
          rtagextn=None, \
@@ -406,11 +431,18 @@ def main( \
         matplotlib.use('Agg')
     if boolplotshow:
         plt.ion()
+   
+    # plotting 
+    gdat.maxmfluxplot = 1e6
+    gdat.minmfluxplot = 1e1
     
+    gdat.numbrefr = len(gdat.catlrefr)
+    gdat.indxrefr = np.arange(gdat.numbrefr)
+
     if strgmode == 'pcat':
-        probprop = np.array([80., 40., 0.])
+        #probprop = np.array([80., 40., 0.])
         # temp 
-        #probprop = np.array([80., 40., 40.])
+        probprop = np.array([80., 40., 40.])
         if strgmodl == 'galx':
             probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
     else:
@@ -418,7 +450,7 @@ def main( \
     probprop /= np.sum(probprop)
     
     # ix, iy = 0. to 3.999
-    def plot_psfn(gdat, nc, coefspix, psf, ix, iy, lib=None):
+    def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, lib=None):
         
         lcpreval = np.array([[0.]], dtype=np.float32)
         xpos = np.array([12. - ix / 5.], dtype=np.float32)
@@ -426,7 +458,7 @@ def main( \
         flux = np.array([1.], dtype=np.float32)
         back = 0.
         sizeimag = [25, 25]
-        psf0 = eval_modl(gdat, xpos, ypos, flux, back, nc, coefspix, lcpreval, lib=lib, sizeimag=sizeimag)
+        psf0 = eval_modl(gdat, xpos, ypos, flux, back, numbsidepsfn, coefspix, lcpreval, lib=lib, sizeimag=sizeimag)
         plt.subplot(2,2,1)
         if gdat.booltimebins:
             temp = psf0[0, :, :]
@@ -458,7 +490,7 @@ def main( \
         plt.colorbar()
         plt.title('fractional difference')
         if gdat.boolplotsave:
-            plt.savefig(gdat.pathdatartag + '%s_psfn.pdf' % gdat.rtag)
+            plt.savefig(gdat.pathdatartag + '%s_psfn.' % gdat.rtag + gdat.strgplotfile)
         else:
             plt.show()
     
@@ -483,7 +515,7 @@ def main( \
             
             axis.set_title(stdvflux)
             if k % 10 == 0 and k != 0:
-                plt.savefig(gdat.pathdatartag + '%s_lcur%04d.pdf' % (gdat.rtag, cntr))
+                plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
                 cntr += 1
     
     pathlion, pathdata = retr_path()
@@ -501,16 +533,15 @@ def main( \
     
     boolplot = boolplotshow or boolplotsave
 
-    # read PSF
-    f = open(pathdata + strgdata + '_psfn.txt')
-    nc, nbin = [np.int32(i) for i in f.readline().split()]
-    print 'nc'
-    print nc
-    print 'nbin'
-    print nbin
-    f.close()
-    psf = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
-    coefspix = psf_poly_fit(gdat, psf, nbin)
+    # parse PSF
+    
+    numbsidepsfnusam = cntppsfn.shape[0]
+    numbsidepsfn = numbsidepsfnusam / factusam
+    print 'numbsidepsfn'
+    print numbsidepsfn
+    print 'factusam'
+    print factusam
+    coefspix = psf_poly_fit(gdat, cntppsfn, factusam)
     npar = coefspix.shape[0]
     
     # construct C library
@@ -523,15 +554,15 @@ def main( \
     libmmult = npct.load_library(pathlion + 'blas', '.')
     libmmult.pcat_model_eval.restype = None
     
-    #void pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* B, float* C, int* x,
-	#int* y, float* image, float* ref, float* weig, double* diff2, int regsize, int margin, int offsetx, int offsety)
+    #void pcat_model_eval(int NX, int NY, int nstar, int numbsidepsfn, int k, float* A, float* B, float* C, int* x,
+	#int* y, float* image, float* ref, float* weig, double* diff2, int sizeregi, int margin, int offsetx, int offsety)
     
-    #lib(gdat.sizeimag[0], gdat.sizeimag[1], nstar, nc, coefspix.shape[0], dd, coefspix, recon, ix, iy, image, reftemp, weig, diff2, regsize, margin, offsetx, offsety)
+    #lib(gdat.sizeimag[0], gdat.sizeimag[1], nstar, numbsidepsfn, coefspix.shape[0], dd, coefspix, recon, ix, iy, image, reftemp, weig, diff2, sizeregi, margin, offsetx, offsety)
     
-    #libmmult.pcat_model_eval.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int nstar, c_int nc, c_int k coefspix.shape[0]
+    #libmmult.pcat_model_eval.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int nstar, c_int numbsidepsfn, c_int k coefspix.shape[0]
     
     # array_2d_float A dd, array_2d_float B coefspix, array_2d_float C recon
-    # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double diff2, c_int regsize, 
+    # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double diff2, c_int sizeregi, 
     # c_int margin, c_int offsetx, c_int offsety]
     
     libmmult.pcat_imag_acpt.restype = None
@@ -595,7 +626,7 @@ def main( \
     # plots
     ## PSF
     if boolplot and testpsfn:
-        plot_psfn(gdat, nc, coefspix, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
+        plot_psfn(gdat, numbsidepsfn, coefspix, cntppsfn, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
     
     stdvproplcpr = 1e-6
 
@@ -606,9 +637,9 @@ def main( \
             axis.imshow(data[k, :, :], origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
             ## limits
             setp_imaglimt(gdat, axis)
-            plt.savefig(gdat.pathdatartag + '%s_cntpdatainit%04d.pdf' % (gdat.rtag, k))
+            plt.savefig(gdat.pathdatartag + '%s_cntpdatainit%04d.' % (gdat.rtag, k) + gdat.strgplotfile)
         print 'Making the animation...'
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdatainit*.pdf %s/%s_cntpdatainit.gif' % (gdat.pathdatartag, gdat.rtag, gdat.pathdatartag, gdat.rtag)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdatainit*.%s %s/%s_cntpdatainit.gif' % (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
         print cmnd
         os.system(cmnd)
     
@@ -621,15 +652,21 @@ def main( \
     gdat.indxflux = cntr.incr()
     if gdat.booltimebins:
         gdat.indxlcpr = np.zeros(gdat.numblcpr, dtype=int)
-        for k in gdat.indxlcpr:
+        for k in range(gdat.numblcpr):
             gdat.indxlcpr[k] = cntr.incr()
+        if gdat.verbtype > 1:
+            print 'gdat.indxlcpr'
+            print gdat.indxlcpr
+            summgene(gdat.indxlcpr)
+            print
+
     if 'galx' in strgmodl:
         _XX = cntr.incr()
         _XY = cntr.incr()
         _YY = cntr.incr()
-    gdat.indxconf = cntr.incr()
     
     gdat.numbparastar = cntr.gets()
+    gdat.indxconf = cntr.incr()
     gdat.numbparacatlcond = 1 + 2 * gdat.numbparastar
     
     class Proposal:
@@ -755,14 +792,14 @@ def main( \
             elif self.idx_kill_g is not None:
                 return self.galaxiesk[gdat.indxxpos,:], self.galaxiesk[gdat.indxypos,:]
 
-    def supr_catl(axis, xpos, ypos, flux, xpostrue=None, ypostrue=None, fluxtrue=None, boolcond=False):
+    def supr_catl(gdat, axis, xpos, ypos, flux, boolcond=False):
         
-        if datatype == 'mock' and isinstance(xpostrue, np.ndarray):
-            if strgmodl == 'star' or strgmodl == 'galx':
-                mask = fluxtrue > 250
-                axis.scatter(xpostrue[mask], ypostrue[mask], marker='+', s=sizemrkr*fluxtrue[mask], color=colrbrgt, lw=2, alpha=0.7)
-                mask = np.logical_not(mask)
-                axis.scatter(xpostrue[mask], ypostrue[mask], marker='+', s=sizemrkr*fluxtrue[mask], color='g', lw=2, alpha=0.7)
+        for k in gdat.indxrefr:
+            mask = catlrefr[k]['flux'] > 250
+            size = sizemrkr * catlrefr[k]['flux'][mask]
+            axis.scatter(catlrefr[k]['xpos'][mask], catlrefr[k]['ypos'][mask], marker='+', s=size, color=gdat.colrrefr[k], lw=2, alpha=0.7)
+            mask = np.logical_not(mask)
+            axis.scatter(catlrefr[k]['xpos'][mask], catlrefr[k]['ypos'][mask], marker='+', s=size, color=colrbrgt, lw=2, alpha=0.7)
         if boolcond:
             colr = 'yellow'
         else:
@@ -852,10 +889,10 @@ def main( \
             dt2 = np.zeros(gdat.numbloop)
             dt3 = np.zeros(gdat.numbloop)
     
-            self.offsetx = np.random.randint(regsize)
-            self.offsety = np.random.randint(regsize)
-            self.nregx = gdat.sizeimag[0] / regsize + 1
-            self.nregy = gdat.sizeimag[1] / regsize + 1
+            self.offsetx = np.random.randint(sizeregi)
+            self.offsety = np.random.randint(sizeregi)
+            self.nregx = gdat.sizeimag[0] / sizeregi + 1
+            self.nregy = gdat.sizeimag[1] / sizeregi + 1
     
             resid = gdat.cntpdata.copy() # residual for zero image is data
             lcpreval = np.array([[0.]], dtype=np.float32)
@@ -874,12 +911,27 @@ def main( \
                 yposeval = np.concatenate([self.stars[gdat.indxypos,0:self.n], yposphon]).astype(np.float32)
                 fluxeval = np.concatenate([self.stars[gdat.indxflux,0:self.n], specphon]).astype(np.float32)
             numbphon = xposeval.size
-            model, diff2 = eval_modl(gdat, xposeval, yposeval, fluxeval, self.back, nc, coefspix, lcpreval, \
+            model, diff2 = eval_modl(gdat, xposeval, yposeval, fluxeval, self.back, numbsidepsfn, coefspix, lcpreval, \
                                                                weig=weig, ref=resid, lib=libmmult.pcat_model_eval, \
-                                                               regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
+                                                               #weig=weig, ref=resid, lib=None, \
+                                                               sizeregi=sizeregi, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
             logL = -0.5*diff2
             resid -= model
-    
+            if gdat.verbtype > 1:
+                print 'model'
+                summgene(model)
+                print 'diff2'
+                summgene(diff2)
+                print 'logL'
+                summgene(logL)
+                print 'resid'
+                summgene(resid)
+                print 
+            
+            if gdat.diagmode:
+                if not np.isfinite(resid).all():
+                    raise Exception('')
+
             for i in xrange(gdat.numbloop):
 
                 if gdat.verbtype > 1:
@@ -911,22 +963,22 @@ def main( \
     
                 if proposal.goodmove:
                     t2 = time.clock()
-                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, nc, coefspix, proposal.lcprphon, \
-                                weig=weig, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
+                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, numbsidepsfn, coefspix, proposal.lcprphon, \
+                                weig=weig, ref=resid, lib=libmmult.pcat_model_eval, sizeregi=sizeregi, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
                     plogL = -0.5*diff2
                     dt2[i] = time.clock() - t2
     
                     t3 = time.clock()
                     refx, refy = proposal.get_ref_xy()
-                    regionx = get_region(refx, self.offsetx, regsize)
-                    regiony = get_region(refy, self.offsety, regsize)
+                    regionx = get_region(refx, self.offsetx, sizeregi)
+                    regiony = get_region(refy, self.offsety, sizeregi)
     
                     ###
                     '''
                     if i == 0:
                         yy, xx = np.mgrid[0:100,0:100]
-                        rxx = get_region(xx, self.offsetx, regsize) % 2
-                        ryy = get_region(yy, self.offsety, regsize) % 2
+                        rxx = get_region(xx, self.offsetx, sizeregi) % 2
+                        ryy = get_region(yy, self.offsety, sizeregi) % 2
                         rrr = rxx*2 + ryy
                         plt.figure(2)
                         plt.imshow(rrr, interpolation='none', origin='lower', cmap='Accent')
@@ -951,10 +1003,10 @@ def main( \
     
                     # only keep dmodel in accepted regions+margins
                     dmodel_acpt = np.zeros_like(dmodel)
-                    libmmult.pcat_imag_acpt(gdat.sizeimag[0], gdat.sizeimag[1], dmodel, dmodel_acpt, acceptreg, regsize, margin, self.offsetx, self.offsety)
+                    libmmult.pcat_imag_acpt(gdat.sizeimag[0], gdat.sizeimag[1], dmodel, dmodel_acpt, acceptreg, sizeregi, margin, self.offsetx, self.offsety)
                     # using this dmodel containing only accepted moves, update logL
                     diff2.fill(0)
-                    libmmult.pcat_like_eval(gdat.sizeimag[0], gdat.sizeimag[1], dmodel_acpt, resid, weig, diff2, regsize, margin, self.offsetx, self.offsety)
+                    libmmult.pcat_like_eval(gdat.sizeimag[0], gdat.sizeimag[1], dmodel_acpt, resid, weig, diff2, sizeregi, margin, self.offsetx, self.offsety)
                     logL = -0.5*diff2
                     resid -= dmodel_acpt # has to occur after pcat_like_eval, because resid is used as ref
                     model += dmodel_acpt
@@ -1096,14 +1148,14 @@ def main( \
                             plt.scatter(truexg, trueyg, marker='1', s=sizemrkr*truefg, color='lime')
                             plt.scatter(truexg, trueyg, marker='o', s=truerng*truerng*4, edgecolors='lime', facecolors='none')
                         if strgmodl == 'stargalx':
-                            plt.scatter(gdat.truexposstar, ypostrue[mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
+                            plt.scatter(catlrefr[k]['xpos'][mask], catlrefr[k]['ypos'][mask], marker='+', s=np.sqrt(fluxtrue[mask]), color='g')
                     if strgmodl == 'galx':
                         plt.scatter(self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], marker='2', \
                                                                                             s=sizemrkr*self.galaxies[gdat.indxflux, 0:self.ng], color='r')
                         a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
                         plt.scatter(self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
                     
-                    supr_catl(plt.gca(), self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                    supr_catl(gdat, plt.gca(), self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                     
                     plt.subplot(1, 3, 2)
                     
@@ -1126,7 +1178,7 @@ def main( \
                         else:
                             colr = None
                         plt.hist(np.log10(fluxtrue), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), \
-                                                                                        log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
+                                                                                        log=True, alpha=0.5, label=gdat.lablrefr[k], histtype=histtype, lw=linewdth, \
                                                                                         color=colr, facecolor=colr, edgecolor=colr)
                         if colrstyl == 'pcat':
                             colr = 'b'
@@ -1160,10 +1212,10 @@ def main( \
                         temp = gdat.cntpdata
                     axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
                     ## overplot point sources
-                    supr_catl(axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                    supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                     ## limits
                     setp_imaglimt(gdat, axis)
-                    plt.savefig(gdat.pathdatartag + '%s_cntpdata%04d.pdf' % (gdat.rtag, jj))
+                    plt.savefig(gdat.pathdatartag + '%s_cntpdata%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
                     
                     # residual map
                     figr, axis = plt.subplots()
@@ -1173,35 +1225,28 @@ def main( \
                         temp = resid * np.sqrt(weig)
                     axis.imshow(temp, origin='lower', interpolation='none', vmin=-5, vmax=5, cmap=cmapresi)
                     ## overplot point sources
-                    supr_catl(axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n], xpostrue, ypostrue, fluxtrue)
+                    supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                     setp_imaglimt(gdat, axis)
-                    plt.savefig(gdat.pathdatartag + '%s_cntpresi%04d.pdf' % (gdat.rtag, jj))
+                    plt.savefig(gdat.pathdatartag + '%s_cntpresi%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
                     
                     ## flux histogram
                     figr, axis = plt.subplots()
-                    if datatype == 'mock':
-                        axis.hist(np.log10(fluxtrue), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), \
-                                                                                            log=True, alpha=0.5, label=labldata, histtype=histtype, lw=linewdth, \
-                                                                                            facecolor='g', edgecolor='g')
-                        axis.hist(np.log10(self.stars[gdat.indxflux, 0:self.n]), range=(np.log10(self.trueminf), np.log10(np.max(fluxtrue))), \
-                                                                                            edgecolor='b', facecolor='b', lw=linewdth, \
-                                                                                            log=True, alpha=0.5, label='Sample', histtype=histtype)
-                    else:
-                        colr = 'b'
-                        axis.hist(np.log10(self.stars[gdat.indxflux, 0:self.n]), range=(np.log10(self.trueminf), np.ceil(np.log10(np.max(self.stars[gdat.indxflux, 0:self.n])))), \
-                                                                                             lw=linewdth, facecolor='b', edgecolor='b', log=True, alpha=0.5, \
-                                                                                             label='Sample', histtype=histtype)
-                    plt.savefig(gdat.pathdatartag + '%s_histflux%04d.pdf' % (gdat.rtag, jj))
+                    for k in gdat.indxrefr:
+                        axis.hist(np.log10(catlrefr[k]['flux']), log=True, alpha=0.5, label=gdat.lablrefr[k], histtype=histtype, lw=linewdth, \
+                                                                                                                    facecolor=gdat.colrrefr[k], edgecolor=gdat.colrrefr[k])
+                    axis.hist(np.log10(self.stars[gdat.indxflux, 0:self.n]), edgecolor='b', facecolor='b', lw=linewdth, log=True, alpha=0.5, label='Sample', histtype=histtype)
+                    axis.set_xlim([gdat.minmfluxplot, gdat.maxmfluxplot])
+                    plt.savefig(gdat.pathdatartag + '%s_histflux%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
 
             return self.n, self.ng, chi2
     
         
         def idx_parity_stars(self):
-            return idx_parity(self.stars[gdat.indxxpos,:], self.stars[gdat.indxypos,:], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+            return idx_parity(self.stars[gdat.indxxpos,:], self.stars[gdat.indxypos,:], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, sizeregi)
     
         
         def idx_parity_galaxies(self):
-            return idx_parity(self.galaxies[gdat.indxxpos,:], self.galaxies[gdat.indxypos,:], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, regsize)
+            return idx_parity(self.galaxies[gdat.indxxpos,:], self.galaxies[gdat.indxypos,:], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, sizeregi)
     
         
         def bounce_off_edges(self, catalogue): # works on both stars and galaxies
@@ -1270,11 +1315,11 @@ def main( \
                 nbd = min(nbd, self.nstar-self.n) # add nbd sources, or just as many as will fit
                                         # mildly violates detailed balance when n close to nstar
                 # want number of regions in each direction, divided by two, rounded up
-                mregx = ((gdat.sizeimag[0] / regsize + 1) + 1) / 2 # assumes that sizeimag are multiples of regsize
-                mregy = ((gdat.sizeimag[1] / regsize + 1) + 1) / 2
+                mregx = ((gdat.sizeimag[0] / sizeregi + 1) + 1) / 2 # assumes that sizeimag are multiples of sizeregi
+                mregy = ((gdat.sizeimag[1] / sizeregi + 1) + 1) / 2
                 starsb = np.empty((gdat.numbparastar, nbd), dtype=np.float32)
-                starsb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*regsize - self.offsetx
-                starsb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*regsize - self.offsety
+                starsb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*sizeregi - self.offsetx
+                starsb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsety
                 starsb[gdat.indxflux,:] = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=nbd))
                 if gdat.booltimebins:
                     starsb[gdat.indxlcpr, :] = np.random.randn(nbd) * 1e-6 + 1.
@@ -1320,16 +1365,14 @@ def main( \
                 dy = (np.random.normal(size=nms)*self.kickrange).astype(np.float32)
                 idx_move = np.random.choice(idx_bright, size=nms, replace=False)
                 stars0 = self.stars.take(idx_move, axis=1)
+                if gdat.verbtype > 1:
+                    print 'stars0'
+                    summgene(stars0)
+                x0 = stars0[gdat.indxxpos, :]
+                y0 = stars0[gdat.indxypos, :]
+                f0 = stars0[gdat.indxflux, :]
                 if gdat.booltimebins:
-                    
-                    if gdat.verbtype > 1:
-                        print 'stars0'
-                        summgene(stars0)
-                    x0 = stars0[gdat.indxxpos, :]
-                    y0 = stars0[gdat.indxypos, :]
-                    f0 = stars0[gdat.indxflux, :]
                     lcpr0 = stars0[gdat.indxlcpr, :]
-                    #x0, y0, f0, lcpr0 = stars0
                 else:
                     x0, y0, f0 = stars0
                 fminratio = f0 / self.trueminf
@@ -1503,11 +1546,11 @@ def main( \
                 nbd = min(nbd, self.ngalx-self.ng) # add nbd sources, or just as many as will fit
                                         # mildly violates detailed balance when n close to nstar
                 # want number of regions in each direction, divided by two, rounded up
-                mregx = ((gdat.sizeimag[0] / regsize + 1) + 1) / 2 # assumes that sizeimag are multiples of regsize
-                mregy = ((gdat.sizeimag[1] / regsize + 1) + 1) / 2
+                mregx = ((gdat.sizeimag[0] / sizeregi + 1) + 1) / 2 # assumes that sizeimag are multiples of sizeregi
+                mregy = ((gdat.sizeimag[1] / sizeregi + 1) + 1) / 2
                 galaxiesb = np.empty((6,nbd))
-                galaxiesb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*regsize - self.offsetx
-                galaxiesb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*regsize - self.offsety
+                galaxiesb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*sizeregi - self.offsetx
+                galaxiesb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsety
                 galaxiesb[gdat.indxflux,:] = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=nbd))
                 galaxiesb[[self._XX, self._XY, self._YY],:] = self.moments_from_prior(self.truermin_g, nbd)
     
@@ -2004,45 +2047,14 @@ def main( \
                 proposal.set_factor(factor)
             return proposal
 
-    if datatype == 'mock':
-        if strgmodl == 'star':
-            truth = np.loadtxt(pathdata + strgdata + '_true.txt')
-            xpostrue = truth[:,0]
-            ypostrue = truth[:,1]
-            fluxtrue = truth[:,2]
-        if strgmodl == 'galx':
-            truth_s = np.loadtxt(pathdata + strgdata + '_str.txt')
-            xpostrue = truth_s[:,0]
-            ypostrue = truth_s[:,1]
-            fluxtrue = truth_s[:,2]
-            truth_g = np.loadtxt(pathdata + strgdata + '_gal.txt')
-            truexg = truth_g[:,0]
-            trueyg = truth_g[:,1]
-            truefg = truth_g[:,2]
-            truexxg= truth_g[:,3]
-            truexyg= truth_g[:,4]
-            trueyyg= truth_g[:,5]
-            truerng, theta, phi = from_moments(truexxg, truexyg, trueyyg)
-        if strgmodl == 'stargalx':
-            truth = np.loadtxt(pathdata + 'truecnts.txt')
-            filetrue = h5py.File(pathdata + 'true.h5', 'r')
-            for attr in filetrue:
-                gdat[attr] = filetrue[attr][()]
-            filetrue.close()
-        
-        labldata = 'True'
-    else:
-        labldata = 'HST 606W'
-    
     ntemps = 1
     temps = np.sqrt(2) ** np.arange(ntemps)
     
-    regsize = 20
     print 'gdat.sizeimag'
     print gdat.sizeimag
     print ''
-    assert gdat.sizeimag[0] % regsize == 0
-    assert gdat.sizeimag[1] % regsize == 0
+    assert gdat.sizeimag[0] % sizeregi == 0
+    assert gdat.sizeimag[1] % sizeregi == 0
     margin = 10
     
     nstar = Model.nstar
@@ -2154,19 +2166,26 @@ def main( \
                 temp = gdat.cntpdata
             axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
             numbsampplot = min(gdat.numbsamp - gdat.numbsampburn, 10)
-            indxsampplot = np.random.choice(np.arange(gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
+            indxsampplot = np.random.choice(np.arange(gdat.numbsampbburn, gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
             for k in range(numbsampplot):
+                print 'k'
+                print k
+                print 'indxsampplot'
+                summgene(indxsampplot)
+                print 'numbstarsamp'
+                summgene(numbstarsamp)
+                print
                 numb = numbstarsamp[indxsampplot[k]]
-                supr_catl(axis, xpossamp[k, :numb], ypossamp[k, :numb], fluxsamp[k, :numb])
-            supr_catl(axis, catlcond[:, 0], catlcond[:, 2], catlcond[:, 4], xpostrue, ypostrue, fluxtrue, boolcond=True)
-            plt.savefig(gdat.pathdatartag + '%s_condcatl.pdf' % gdat.rtag)
+                supr_catl(gdat, axis, xpossamp[k, :numb], ypossamp[k, :numb], fluxsamp[k, :numb])
+            supr_catl(gdat, axis, catlcond[:, 0], catlcond[:, 2], catlcond[:, 4], boolcond=True)
+            plt.savefig(gdat.pathdatartag + '%s_condcatl.' % gdat.rtag + gdat.strgplotfile)
 
     if boolplotsave:
         print 'Making the animation...'
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdata*.pdf %s/%s_cntpdata.gif' % (gdat.pathdatartag, gdat.rtag, gdat.pathdatartag, gdat.rtag)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdata*.%s %s/%s_cntpdata.gif' % (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
         print cmnd
         os.system(cmnd)
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpresi*.pdf %s/%s_cntpresi.gif' % (gdat.pathdatartag, gdat.rtag, gdat.pathdatartag, gdat.rtag)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpresi*.%s %s/%s_cntpresi.gif' % (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
         print cmnd
         os.system(cmnd)
     
@@ -2174,6 +2193,10 @@ def main( \
 def chec_lcpr(lcpr):
 
     if np.amax(np.abs(lcpr)) > 1e3 or np.isnan(lcpr).any():
+        if np.amax(np.abs(lcpr)) > 1e3:
+            print 'if np.amax(np.abs(lcpr)) > 1e3'
+        if np.isnan(lcpr).any():
+            print 'np.isnan(lcpr).any()'
         print 'lcpr'
         summgene(lcpr)
         print lcpr
@@ -2515,8 +2538,7 @@ def read_datafromtext(strgdata):
     pathlion, pathdata = retr_path()
 
     filepixl = open(pathdata + strgdata + '_pixl.txt')
-    print 'filepixl.readline()'
-    print filepixl.readline()
+    filepixl.readline()
     bias, gain = [np.float32(i) for i in filepixl.readline().split()]
     filepixl.close()
     cntpdata = np.loadtxt(pathdata + strgdata + '_cntp.txt').astype(np.float32)
@@ -2530,20 +2552,80 @@ def cnfg_defa():
     # read the data
     strgdata = 'sdss0921'
     cntpdata, bias, gain = read_datafromtext(strgdata)
+    
+    # read PSF
+    pathlion, pathdata = retr_path()
+    filepsfn = open(pathdata + strgdata + '_psfn.txt')
+    numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
+    filepsfn.close()
+    cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
+    
+    print 'cntppsfn'
+    summgene(cntppsfn)
+    print 'cntpdata'
+    summgene(cntpdata)
+    print
+
+    strgmodl = 'star'
+    datatype = 'mock'
+    catlrefr = [{}]
+
+    if datatype == 'mock':
+        
+        # get the true catalog 
+        if strgmodl == 'star':
+            truth = np.loadtxt(pathdata + strgdata + '_true.txt')
+            catlrefr[0]['xpos'] = truth[:, 0]
+            catlrefr[0]['ypos'] = truth[:, 1]
+            catlrefr[0]['flux'] = truth[:, 2]
+        if strgmodl == 'galx':
+            truth_s = np.loadtxt(pathdata + strgdata + '_str.txt')
+            catlrefr['xpos'] = truth_s[:, 0]
+            catlrefr['ypos'] = truth_s[:, 1]
+            catlrefr['flux'] = truth_s[:, 2]
+            truth_g = np.loadtxt(pathdata + strgdata + '_gal.txt')
+            truexg = truth_g[:,0]
+            trueyg = truth_g[:,1]
+            truefg = truth_g[:,2]
+            truexxg= truth_g[:,3]
+            truexyg= truth_g[:,4]
+            trueyyg= truth_g[:,5]
+            truerng, theta, phi = from_moments(truexxg, truexyg, trueyyg)
+        if strgmodl == 'stargalx':
+            truth = np.loadtxt(pathdata + 'truecnts.txt')
+            filetrue = h5py.File(pathdata + 'true.h5', 'r')
+            for attr in filetrue:
+                gdat[attr] = filetrue[attr][()]
+            filetrue.close()
+        
+        lablrefr = ['True']
+        colrrefr = ['g']
+    else:
+        lablrefr = ['HST 606W']
+        colrrefr = ['m']
+    
 
     main( \
+         cntpdata=cntpdata, \
+         cntppsfn=cntppsfn, \
+         factusam=factusam, \
+
+         catlrefr=catlrefr, \
+         lablrefr=lablrefr, \
+         colrrefr=colrrefr, \
+
          #numbsamp=200, \
          colrstyl='pcat', \
          #boolplotsave=False, \
+         #diagmode=True, \
          boolplotshow=False, \
          boolplotsave=True, \
-         cntpdata=cntpdata, \
          testpsfn=True, \
          bias=bias, \
          gain=gain, \
-         verbtype=2, \
-         numbsamp=1, \
-         numbloop=4, \
+         #verbtype=2, \
+         numbsamp=100, \
+         numbloop=1000, \
          #booltimebins=True, \
         )
 
@@ -2553,7 +2635,7 @@ def cnfg_time():
     # read the data
     strgdata = 'sdss0921'
     cntpdata, bias, gain = read_datafromtext(strgdata)
-    
+   
     # perturb the data in each time bin
     numbtime = 10
     indxtime = np.arange(numbtime)
@@ -2564,19 +2646,28 @@ def cnfg_time():
     for k in indxtime:
         cntpdata[k, :, :] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
 
+    # read PSF
+    pathlion, pathdata = retr_path()
+    filepsfn = open(pathdata + strgdata + '_psfn.txt')
+    numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
+    filepsfn.close()
+    cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
+
     main( \
-         numbsamp=2, \
-         numbloop=10, \
+         cntpdata=cntpdata, \
+         cntppsfn=cntppsfn, \
+         factusam=factusam, \
+         numbsamp=100, \
+         numbloop=1000, \
          colrstyl='pcat', \
          #boolplotsave=False, \
          boolplotsave=True, \
          boolplotshow=False, \
          booltimebins=True, \
          diagmode=True, \
-         cntpdata=cntpdata, \
          bias=bias, \
          gain=gain, \
-         #verbtype=2, \
+         verbtype=2, \
          #testpsfn=True, \
          #boolplotsave=True, \
          #boolplotshow=True, \
