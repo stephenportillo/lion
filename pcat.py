@@ -1,4 +1,4 @@
-import numpy as np
+#import numpy as np
 import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
 import h5py, datetime
@@ -138,6 +138,47 @@ def eval_modl(gdat, x, y, f, back, numbpixlpsfnside, coefspix, lcpreval, \
         return modl
 
 
+def psf_poly_fit(gdat, psfnusam, factusam):
+    
+    assert psfnusam.shape[0] == psfnusam.shape[1] # assert PSF is square
+    
+    # number of pixels along the side of the upsampled PSF
+    numbpixlpsfnsideusam = psfnusam.shape[0]
+
+    # pad by one row and one column
+    psfnusampadd = np.zeros((numbpixlpsfnsideusam+1, numbpixlpsfnsideusam+1), dtype=np.float32)
+    psfnusampadd[0:numbpixlpsfnsideusam, 0:numbpixlpsfnsideusam] = psfnusam
+
+    # make design matrix for each factusam x factusam region
+    numbpixlpsfnside = numbpixlpsfnsideusam / factusam # dimension of original psf
+    nx = factusam + 1
+    y, x = np.mgrid[0:nx, 0:nx] / np.float32(factusam)
+    x = x.flatten()
+    y = y.flatten()
+    A = np.column_stack([np.full(nx*nx, 1, dtype=np.float32), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y]).astype(np.float32)
+    
+    # number of subpixel parameters
+    numbparaspix = A.shape[1]
+
+    # output array of coefficients
+    coefspix = np.zeros((numbparaspix, numbpixlpsfnside, numbpixlpsfnside), dtype=np.float32)
+
+    # loop over original psf pixels and get fit coefficients
+    for i in xrange(numbpixlpsfnside):
+        for j in xrange(numbpixlpsfnside):
+            # solve p = A coefspix for coefspix
+            p = psfnusampadd[i*factusam:(i+1)*factusam+1, j*factusam:(j+1)*factusam+1].flatten()
+            coefspix[:, i, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
+    coefspix = coefspix.reshape(coefspix.shape[0], coefspix.shape[1] * coefspix.shape[2])
+    
+    if gdat.boolplotsave:
+        figr, axis = plt.subplots()
+        axis.imshow(psfnusampadd, interpolation='none')
+        plt.savefig(pathdatartag + '%s_psfnusampadd.pdf' % gdat.rtag)
+
+    return coefspix
+   
+
 def neighbours(x,y,neigh,i,generate=False):
     neighx = np.abs(x - x[i])
     neighy = np.abs(y - y[i])
@@ -206,16 +247,6 @@ def make_cmap(seq):
     return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
 
 
-class gdatstrt(object):
-
-    def __init__(self):
-        self.boollockmodi = False
-        pass
-    
-    def __setattr__(self, attr, valu):
-        super(gdatstrt, self).__setattr__(attr, valu)
-
-
 #def summgene(varb):
 #
 #    print np.amin(varb)
@@ -253,6 +284,15 @@ def main( \
          # boolean flag whether to save the image and catalog samples to disc
          boolplotsave=True, \
         
+         # string indicating the type of model
+         strgmode='pcat', \
+    
+         # catalog for forced photometry
+         catlforc=None, \
+
+         # reference catalog
+         catlrefr=None, \
+
          # a string extension to the run tag
          rtagextn=None, \
        
@@ -324,14 +364,18 @@ def main( \
     if boolplotshow:
         plt.ion()
     
-    #probprop = np.array([80., 40., 40.])
-    probprop = np.array([80., 40., 0.])
-    if strgmodl == 'galx':
-        probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
+    if strgmode == 'pcat':
+        probprop = np.array([80., 40., 0.])
+        # temp 
+        #probprop = np.array([80., 40., 40.])
+        if strgmodl == 'galx':
+            probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
+    else:
+        probprop = np.array([80., 0., 0.])
     probprop /= np.sum(probprop)
     
     # ix, iy = 0. to 3.999
-    def plot_psfn(gdat, nc, cf, psf, ix, iy, lib=None):
+    def plot_psfn(gdat, nc, coefspix, psf, ix, iy, lib=None):
         
         lcpreval = np.array([[0.]], dtype=np.float32)
         xpos = np.array([12. - ix / 5.], dtype=np.float32)
@@ -339,7 +383,7 @@ def main( \
         flux = np.array([1.], dtype=np.float32)
         back = 0.
         sizeimag = [25, 25]
-        psf0 = eval_modl(gdat, xpos, ypos, flux, back, nc, cf, lcpreval, lib=lib, sizeimag=sizeimag)
+        psf0 = eval_modl(gdat, xpos, ypos, flux, back, nc, coefspix, lcpreval, lib=lib, sizeimag=sizeimag)
         plt.subplot(2,2,1)
         if gdat.booltimebins:
             temp = psf0[0, :, :]
@@ -380,56 +424,27 @@ def main( \
         cntr = 0
         for k in gdat.indxsourcond:
             
+            spec = np.empty(gdat.numbtime)
+            spec[0] = catlcond[gdat.indxflux, k, 0]
+            spec[1:] = spec[0] * catlcond[gdat.indxlcpr, k, 0]
+            
+            # temp -- detrend?
+            specdtre = retr_dtre(spec)
+            
+            medispec = np.median(specdtre)
+            stdvflux = np.sqrt((specdtre - medispec)**2)
+            
             if k % 10 == 0 and k != gdat.numbsourcond - 1:
                 figr, axis = plt.subplots()
             
             axis.errorbar(gdat.indxtime, catlcond[gdat.indxlcpr, k, 0], yerr=catlcond[gdat.indxlcpr, k, 1])
             
+            axis.set_title(stdvflux)
             if k % 10 == 0 and k != 0:
                 plt.savefig(pathdatartag + '%s_lcur%04d.pdf' % (gdat.rtag, cntr))
                 cntr += 1
     
         
-    def psf_poly_fit(gdat, psfnusam, factusam):
-        
-        assert psfnusam.shape[0] == psfnusam.shape[1] # assert PSF is square
-        
-        # number of pixels along the side of the upsampled PSF
-        numbpixlpsfnsideusam = psfnusam.shape[0]
-    
-        # pad by one row and one column
-        psfnusampadd = np.zeros((numbpixlpsfnsideusam+1, numbpixlpsfnsideusam+1), dtype=np.float32)
-        psfnusampadd[0:numbpixlpsfnsideusam, 0:numbpixlpsfnsideusam] = psfnusam
-    
-        # make design matrix for each factusam x factusam region
-        numbpixlpsfnside = numbpixlpsfnsideusam / factusam # dimension of original psf
-        nx = factusam + 1
-        y, x = np.mgrid[0:nx, 0:nx] / np.float32(factusam)
-        x = x.flatten()
-        y = y.flatten()
-        A = np.column_stack([np.full(nx*nx, 1, dtype=np.float32), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y]).astype(np.float32)
-        
-        # number of subpixel parameters
-        numbparaspix = A.shape[1]
-    
-        # output array of coefficients
-        coefspix = np.zeros((numbparaspix, numbpixlpsfnside, numbpixlpsfnside), dtype=np.float32)
-    
-        # loop over original psf pixels and get fit coefficients
-        for i in xrange(numbpixlpsfnside):
-            for j in xrange(numbpixlpsfnside):
-                # solve p = A coefspix for coefspix
-                p = psfnusampadd[i*factusam:(i+1)*factusam+1, j*factusam:(j+1)*factusam+1].flatten()
-                coefspix[:, i, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
-        coefspix = coefspix.reshape(coefspix.shape[0], coefspix.shape[1] * coefspix.shape[2])
-        
-        if gdat.boolplotsave:
-            figr, axis = plt.subplots()
-            axis.imshow(psfnusampadd, interpolation='none')
-            plt.savefig(pathdatartag + '%s_psfnusampadd.pdf' % gdat.rtag)
-    
-        return coefspix
-   
     pathlion = os.environ['LION_PATH'] + '/'
     pathliondata = os.environ["LION_PATH"] + '/Data/'
     pathdata = os.environ['LION_DATA_PATH'] + '/'
@@ -456,8 +471,8 @@ def main( \
     print nbin
     f.close()
     psf = np.loadtxt(pathliondata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
-    cf = psf_poly_fit(gdat, psf, nbin)
-    npar = cf.shape[0]
+    coefspix = psf_poly_fit(gdat, psf, nbin)
+    npar = coefspix.shape[0]
     
     # construct C library
     array_2d_float = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
@@ -466,17 +481,17 @@ def main( \
     array_1d_float = npct.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
     array_2d_double = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
     array_2d_int = npct.ndpointer(dtype=np.int32, ndim=2, flags="C_CONTIGUOUS")
-    libmmult = npct.load_library('blas', '.')
+    libmmult = npct.load_library(pathlion + 'blas', '.')
     libmmult.pcat_model_eval.restype = None
     
     #void pcat_model_eval(int NX, int NY, int nstar, int nc, int k, float* A, float* B, float* C, int* x,
 	#int* y, float* image, float* ref, float* weig, double* diff2, int regsize, int margin, int offsetx, int offsety)
     
-    #lib(gdat.sizeimag[0], gdat.sizeimag[1], nstar, nc, cf.shape[0], dd, cf, recon, ix, iy, image, reftemp, weig, diff2, regsize, margin, offsetx, offsety)
+    #lib(gdat.sizeimag[0], gdat.sizeimag[1], nstar, nc, coefspix.shape[0], dd, coefspix, recon, ix, iy, image, reftemp, weig, diff2, regsize, margin, offsetx, offsety)
     
-    #libmmult.pcat_model_eval.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int nstar, c_int nc, c_int k cf.shape[0]
+    #libmmult.pcat_model_eval.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int nstar, c_int nc, c_int k coefspix.shape[0]
     
-    # array_2d_float A dd, array_2d_float B cf, array_2d_float C recon
+    # array_2d_float A dd, array_2d_float B coefspix, array_2d_float C recon
     # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double diff2, c_int regsize, 
     # c_int margin, c_int offsetx, c_int offsety]
     
@@ -505,18 +520,30 @@ def main( \
     libmmult.pcat_model_eval.argtypes += [c_int, c_int, c_int, c_int, c_int, c_int, array_2d_float]
     libmmult.pcat_imag_acpt.argtypes += [array_2d_int, c_int, c_int, c_int, c_int]
     libmmult.pcat_like_eval.argtypes += [c_int, c_int, c_int, c_int]
-    
+
     # read data
-    f = open(pathliondata + strgdata + '_pixl.txt')
-    w, h, nband = [np.int32(i) for i in f.readline().split()]
+    if isinstance(gdat.cntpdata, np.ndarray):
+        if gdat.cntpdata.ndim == 3:
+            h = gdat.cntpdata.shape[1]
+            w = gdat.cntpdata.shape[2]
+        else:
+            h = gdat.cntpdata.shape[0]
+            w = gdat.cntpdata.shape[1]
+    else:
+        f = open(pathliondata + strgdata + '_pixl.txt')
+        w, h, numbener = [np.int32(i) for i in f.readline().split()]
+        bias, gain = [np.float32(i) for i in f.readline().split()]
+        f.close()
+        data = np.loadtxt(pathliondata + strgdata + '_cntp.txt').astype(np.float32)
+        data -= bias
+
     gdat.sizeimag = (w, h)
-    assert nband == 1
-    bias, gain = [np.float32(i) for i in f.readline().split()]
-    f.close()
-    data = np.loadtxt(pathliondata + strgdata + '_cntp.txt').astype(np.float32)
-    data -= bias
-    trueback = np.float32(179)#np.float32(445*250)#179.)
+    trueback = np.float32(179)
+
     numbpixl = w * h
+
+    # temp
+    assert numbener == 1
 
     if gdat.booltimebins:
         gdat.numbtime = 10
@@ -540,7 +567,7 @@ def main( \
     # plots
     ## PSF
     if boolplot and testpsfn:
-        plot_psfn(gdat, nc, cf, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
+        plot_psfn(gdat, nc, coefspix, psf, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
     
     stdvproplcpr = 1e-6
 
@@ -733,11 +760,18 @@ def main( \
         kickrange_g = 1.
         
         def __init__(self):
+
+            # initialize parameters
             self.n = np.random.randint(self.nstar)+1
             self.stars = np.zeros((gdat.numbparastar, self.nstar), dtype=np.float32)
             self.stars[:, :self.n] = np.random.uniform(size=(gdat.numbparastar, self.n))  # refactor into some sort of prior function?
-            self.stars[gdat.indxxpos, :self.n] *= gdat.sizeimag[0] - 1
-            self.stars[gdat.indxypos, :self.n] *= gdat.sizeimag[1] - 1
+            
+            if gdat.strgmode == 'pcat':
+                self.stars[gdat.indxxpos, :self.n] *= gdat.sizeimag[0] - 1
+                self.stars[gdat.indxypos, :self.n] *= gdat.sizeimag[1] - 1
+            else:
+                self.stars[gdat.indxxpos, :self.n] = gdat.catlforc['xpos']
+                self.stars[gdat.indxypos, :self.n] = gdat.catlforc['ypos']
             self.stars[gdat.indxflux, :self.n] **= -1. / (self.truealpha - 1.)
             self.stars[gdat.indxflux, :self.n] *= self.trueminf
             if gdat.booltimebins:
@@ -809,7 +843,7 @@ def main( \
                 yposeval = np.concatenate([self.stars[gdat.indxypos,0:self.n], yposphon]).astype(np.float32)
                 fluxeval = np.concatenate([self.stars[gdat.indxflux,0:self.n], specphon]).astype(np.float32)
             numbphon = xposeval.size
-            model, diff2 = eval_modl(gdat, xposeval, yposeval, fluxeval, self.back, nc, cf, lcpreval, \
+            model, diff2 = eval_modl(gdat, xposeval, yposeval, fluxeval, self.back, nc, coefspix, lcpreval, \
                                                                weig=weig, ref=resid, lib=libmmult.pcat_model_eval, \
                                                                regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
             logL = -0.5*diff2
@@ -846,7 +880,7 @@ def main( \
     
                 if proposal.goodmove:
                     t2 = time.clock()
-                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, nc, cf, proposal.lcprphon, \
+                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, nc, coefspix, proposal.lcprphon, \
                                 weig=weig, ref=resid, lib=libmmult.pcat_model_eval, regsize=regsize, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
                     plogL = -0.5*diff2
                     dt2[i] = time.clock() - t2

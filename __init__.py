@@ -1,6 +1,16 @@
 # lets make this a package
 import numpy as np
 
+class gdatstrt(object):
+
+    def __init__(self):
+        self.boollockmodi = False
+        pass
+    
+    def __setattr__(self, attr, valu):
+        super(gdatstrt, self).__setattr__(attr, valu)
+
+
 def summgene(varb):
    
     if len(varb) == 0 or varb is None or isinstance(varb, np.ndarray) and varb.size == 0:
