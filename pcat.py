@@ -2,7 +2,6 @@
 import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
 import h5py, datetime
-# in order for visual=True to work, interactive backend should be loaded before importing pyplot
 import matplotlib 
 import seaborn as sns
 sns.set(context='poster', style='ticks', color_codes=True)
@@ -322,6 +321,9 @@ def main( \
          # a Boolean flag indicating whether the data is time-binned
          booltimebins=False, \
 
+         # data path
+         pathdata=None, \
+
          # number of samples
          numbsamp=100, \
     
@@ -399,12 +401,12 @@ def main( \
     strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
    
     # run tag
-    gdat.rtag = strgtimestmp + '_%06d' % numbsamp
+    gdat.rtag = 'pcat_' + strgtimestmp + '_%06d' % gdat.numbsamp
     if gdat.rtagextn != None:
         gdat.rtag += '_' + gdat.rtagextn
 
     if gdat.numbsampburn == None:
-        gdat.numbsampburn = int(0.2 * numbsamp)
+        gdat.numbsampburn = int(0.2 * gdat.numbsamp)
 
     print 'Lion initialized at %s' % strgtimestmp
 
@@ -440,9 +442,8 @@ def main( \
     gdat.indxrefr = np.arange(gdat.numbrefr)
 
     if strgmode == 'pcat':
-        #probprop = np.array([80., 40., 0.])
-        # temp 
         probprop = np.array([80., 40., 40.])
+            
         if strgmodl == 'galx':
             probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
     else:
@@ -518,13 +519,13 @@ def main( \
                 plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
                 cntr += 1
     
-    pathlion, pathdata = retr_path()
+    pathlion, gdat.pathdata = retr_path(gdat.pathdata)
         
     # check if source has been changed after compilation
     if os.path.getmtime(pathlion + 'blas.c') > os.path.getmtime(pathlion + 'blas.so'):
         warnings.warn('blas.c modified after compiled blas.so', Warning)
     
-    gdat.pathdatartag = pathdata + gdat.rtag + '/'
+    gdat.pathdatartag = gdat.pathdata + gdat.rtag + '/'
     os.system('mkdir -p %s' % gdat.pathdatartag)
 
     # constants
@@ -537,10 +538,12 @@ def main( \
     
     numbsidepsfnusam = cntppsfn.shape[0]
     numbsidepsfn = numbsidepsfnusam / factusam
-    print 'numbsidepsfn'
-    print numbsidepsfn
-    print 'factusam'
-    print factusam
+    
+    if gdat.verbtype > 1:
+        print 'numbsidepsfn'
+        print numbsidepsfn
+        print 'factusam'
+        print factusam
     coefspix = psf_poly_fit(gdat, cntppsfn, factusam)
     npar = coefspix.shape[0]
     
@@ -603,11 +606,7 @@ def main( \
         numbsidexpos = gdat.cntpdata.shape[1]
 
     gdat.sizeimag = (numbsidexpos, numbsideypos)
-    trueback = np.float32(179)
     numbpixl = numbsidexpos * numbsideypos
-
-    # temp
-    assert numbener == 1
 
     if gdat.booltimebins:
         if gdat.cntpdata.ndim == 2:
@@ -687,7 +686,9 @@ def main( \
             self.yphon = np.array([], dtype=np.float32)
             self.fphon = np.array([], dtype=np.float32)
             self.lcprphon = np.array([[]], dtype=np.float32)
-    
+            
+            #self.back = None
+
         
         def set_factor(self, factor):
             self.factor = factor
@@ -813,7 +814,6 @@ def main( \
         nstar = 2000
         trueminf = np.float32(250.)#*136)
         truealpha = np.float32(2.00)
-        back = trueback
     
         ngalx = 100
         trueminf_g = np.float32(250.)#*136)
@@ -856,7 +856,8 @@ def main( \
                 self.galaxies[gdat.indxflux, :self.ng] **= -1./(self.truealpha_g - 1.)
                 self.galaxies[gdat.indxflux, :self.ng] *= self.trueminf_g
                 self.galaxies[[self._XX,self._XY,self._YY],0:self.ng] = self.moments_from_prior(self.truermin_g, self.ng)
-    
+            self.back = np.float32(179)
+
         
         # should offsetx/y, parity_x/y be instance variables?
         def moments_from_prior(self, truermin_g, ngalx, slope=np.float32(4)):
@@ -941,9 +942,9 @@ def main( \
                 rtype = np.random.choice(probprop.size, p=probprop)
                 movetype[i] = rtype
                 # defaults
-                dback = np.float32(0.)
                 pn = self.n
-    
+                dback = np.float32(0.)
+
                 # should regions be perturbed randomly or systematically?
                 self.parity_x = np.random.randint(2)
                 self.parity_y = np.random.randint(2)
@@ -954,7 +955,7 @@ def main( \
                 
                 # make the proposal
                 proposal = movefns[rtype]()
-    
+                
                 if gdat.verbtype > 1:
                     print 'rtype'
                     print rtype
@@ -1010,6 +1011,7 @@ def main( \
                     logL = -0.5*diff2
                     resid -= dmodel_acpt # has to occur after pcat_like_eval, because resid is used as ref
                     model += dmodel_acpt
+                    
                     # implement accepted moves
                     if proposal.idx_move is not None:
                         starsp = proposal.starsp.compress(acceptprop, axis=1)
@@ -1074,8 +1076,6 @@ def main( \
                         self.ng -= num_kill
                     dt3[i] = time.clock() - t3
     
-                    # hmm...
-                    #back += dback
                     if acceptprop.size > 0: 
                         accept[i] = np.count_nonzero(acceptprop) / float(acceptprop.size)
                     else:
@@ -1348,44 +1348,57 @@ def main( \
     
         
         def merge_split_stars(self):
-            splitsville = np.random.randint(2)
+            
+            boolsplt = np.random.randint(2)
             idx_reg = self.idx_parity_stars()
             sum_f = 0
             low_n = 0
             idx_bright = idx_reg.take(np.flatnonzero(self.stars[gdat.indxflux, :].take(idx_reg) > 2*self.trueminf)) # in region!
-            bright_n = idx_bright.size
+            numbbrgt = idx_bright.size
     
-            nms = (self.nregx * self.nregy) / 4
+            numbspmr = (self.nregx * self.nregy) / 4
             goodmove = False
             proposal = Proposal()
             # split
-            if splitsville and self.n > 0 and self.n < self.nstar and bright_n > 0: # need something to split, but don't exceed nstar
-                nms = min(nms, bright_n, self.nstar-self.n) # need bright source AND room for split source
-                dx = (np.random.normal(size=nms)*self.kickrange).astype(np.float32)
-                dy = (np.random.normal(size=nms)*self.kickrange).astype(np.float32)
-                idx_move = np.random.choice(idx_bright, size=nms, replace=False)
+            if boolsplt and self.n > 0 and self.n < self.nstar and numbbrgt > 0: # need something to split, but don't exceed nstar
+                numbspmr = min(numbspmr, numbbrgt, self.nstar - self.n) # need bright source AND room for split source
+                dx = (np.random.normal(size=numbspmr)*self.kickrange).astype(np.float32)
+                dy = (np.random.normal(size=numbspmr)*self.kickrange).astype(np.float32)
+                idx_move = np.random.choice(idx_bright, size=numbspmr, replace=False)
                 stars0 = self.stars.take(idx_move, axis=1)
                 if gdat.verbtype > 1:
                     print 'stars0'
                     summgene(stars0)
                 x0 = stars0[gdat.indxxpos, :]
                 y0 = stars0[gdat.indxypos, :]
-                f0 = stars0[gdat.indxflux, :]
                 if gdat.booltimebins:
+                    spec = np.empty(gdat.numbtime)
+                    spec[0] = stars0[gdat.indxflux, :]
+                    spec[1:] = spec[0] * stars0[gdat.indxlcpr, :]
+                    f0 = np.mean(spec)
                     lcpr0 = stars0[gdat.indxlcpr, :]
                 else:
+                    f0 = stars0[gdat.indxflux, :]
                     x0, y0, f0 = stars0
                 fminratio = f0 / self.trueminf
-                frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
+                frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
                 
                 starsp = np.empty_like(stars0)
                 starsp[gdat.indxxpos,:] = x0 + ((1-frac)*dx)
                 starsp[gdat.indxypos,:] = y0 + ((1-frac)*dy)
-                starsp[gdat.indxflux,:] = f0 * frac
+                if gdat.booltimebins:
+                    starsp[gdat.indxlcpr, :] = f0 * frac * (1. + np.random.rand(gdat.numblcpr) * 1e-6) / gdat.numbtime
+                    starsp[gdat.indxflux, :] = f0 * frac - sum(starsp[gdat.indxlcpr, :])
+                else:
+                    starsp[gdat.indxflux,:] = f0 * frac
                 starsb = np.empty_like(stars0)
                 starsb[gdat.indxxpos,:] = x0 - frac*dx
                 starsb[gdat.indxypos,:] = y0 - frac*dy
-                starsb[gdat.indxflux,:] = f0 * (1-frac)
+                if gdat.booltimebins:
+                    starsb[gdat.indxlcpr, :] = fluxtotl[1:] - starsp[gdat.indxlcprZZ, :]
+                    starsb[gdat.indxflux, :] = f0 * (1. - frac) - sum(starsp[gdat.indxlcpr, :])
+                else:
+                    starsb[gdat.indxflux,:] = f0 * (1-frac)
     
                 # don't want to think about how to bounce split-merge
                 # don't need to check if above fmin, because of how frac is decided
@@ -1396,16 +1409,16 @@ def main( \
                 idx_move = idx_move.compress(inbounds)
                 fminratio = fminratio.compress(inbounds)
                 frac = frac.compress(inbounds)
-                nms = idx_move.size
-                goodmove = nms > 0
+                numbspmr = idx_move.size
+                goodmove = numbspmr > 0
                 if goodmove:
                     proposal.add_move_stars(idx_move, stars0, starsp)
                     proposal.add_birth_stars(starsb)
     
                 # need to calculate factor
                 sum_f = stars0[gdat.indxflux,:]
-                invpairs = np.empty(nms)
-                for k in xrange(nms):
+                invpairs = np.empty(numbspmr)
+                for k in xrange(numbspmr):
                     xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
                     ytemp = self.stars[gdat.indxypos, 0:self.n].copy()
                     xtemp[idx_move[k]] = starsp[gdat.indxxpos, k]
@@ -1417,16 +1430,16 @@ def main( \
                     invpairs[k] += 1./neighbours(xtemp, ytemp, self.kickrange, self.n)
                 invpairs *= 0.5
             # merge
-            elif not splitsville and idx_reg.size > 1: # need two things to merge!
-                nms = min(nms, idx_reg.size/2)
-                idx_move = np.empty(nms, dtype=np.int)
-                idx_kill = np.empty(nms, dtype=np.int)
+            elif not boolsplt and idx_reg.size > 1: # need two things to merge!
+                numbspmr = min(numbspmr, idx_reg.size/2)
+                idx_move = np.empty(numbspmr, dtype=np.int)
+                idx_kill = np.empty(numbspmr, dtype=np.int)
                 choosable = np.zeros(self.nstar, dtype=np.bool)
                 choosable[idx_reg] = True
                 nchoosable = float(idx_reg.size)
-                invpairs = np.empty(nms)
+                invpairs = np.empty(numbspmr)
     
-                for k in xrange(nms):
+                for k in xrange(numbspmr):
                     idx_move[k] = np.random.choice(self.nstar, p=choosable/nchoosable)
                     invpairs[k], idx_kill[k] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.kickrange, idx_move[k], generate=True)
                     if invpairs[k] > 0:
@@ -1445,8 +1458,8 @@ def main( \
                 idx_move = idx_move.compress(inbounds)
                 idx_kill = idx_kill.compress(inbounds)
                 invpairs = invpairs.compress(inbounds)
-                nms = idx_move.size
-                goodmove = nms > 0
+                numbspmr = idx_move.size
+                goodmove = numbspmr > 0
     
                 stars0 = self.stars.take(idx_move, axis=1)
                 starsk = self.stars.take(idx_kill, axis=1)
@@ -1463,13 +1476,13 @@ def main( \
                 if goodmove:
                     proposal.add_move_stars(idx_move, stars0, starsp)
                     proposal.add_death_stars(idx_kill, starsk)
-                # turn bright_n into an array
-                bright_n = bright_n - (f0 > 2*self.trueminf) - (fk > 2*self.trueminf) + (starsp[gdat.indxflux,:] > 2*self.trueminf)
+                # turn numbbrgt into an array
+                numbbrgt = numbbrgt - (f0 > 2*self.trueminf) - (fk > 2*self.trueminf) + (starsp[gdat.indxflux,:] > 2*self.trueminf)
             if goodmove:
                 factor = np.log(self.truealpha-1) + (self.truealpha-1)*np.log(self.trueminf) - self.truealpha*np.log(frac*(1-frac)*sum_f) + \
                                             np.log(2*np.pi*self.kickrange*self.kickrange) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fminratio) + \
-                                            np.log(bright_n) + np.log(invpairs) + np.log(sum_f) # last term is Jacobian
-                if not splitsville:
+                                            np.log(numbbrgt) + np.log(invpairs) + np.log(sum_f) # last term is Jacobian
+                if not boolsplt:
                     factor *= -1
                     factor += self.penalty
                 else:
@@ -1611,31 +1624,31 @@ def main( \
     
         
         def twostars_galaxy(self):
-            splitsville = np.random.randint(2)
+            boolsplt = np.random.randint(2)
             idx_reg = self.idx_parity_stars() # stars
             idx_reg_g = self.idx_parity_galaxies() # galaxies
             sum_f = 0
             low_n = 0
             idx_bright = idx_reg_g.take(np.flatnonzero(self.galaxies[gdat.indxflux, :].take(idx_reg_g) > 2*self.trueminf)) # in region and bright enough to make two stars
-            bright_n = idx_bright.size # can only split bright galaxies
+            numbbrgt = idx_bright.size # can only split bright galaxies
     
-            nms = (self.nregx * self.nregy) / 4
+            numbspmr = (self.nregx * self.nregy) / 4
             goodmove = False
             proposal = Proposal()
             # split
-            if splitsville and self.ng > 0 and self.n < self.nstar-2 and bright_n > 0: # need something to split, but don't exceed nstar
-                nms = min(nms, bright_n, (self.nstar-self.n)/2) # need bright galaxy AND room for split stars
-                idx_kill_g = np.random.choice(idx_bright, size=nms, replace=False)
+            if boolsplt and self.ng > 0 and self.n < self.nstar-2 and numbbrgt > 0: # need something to split, but don't exceed nstar
+                numbspmr = min(numbspmr, numbbrgt, (self.nstar-self.n)/2) # need bright galaxy AND room for split stars
+                idx_kill_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
                 galaxiesk = self.galaxies.take(idx_kill_g, axis=1)
                 xkg, ykg, fkg, xxkg, xykg, yykg = galaxiesk
                 fminratio = fkg / self.trueminf # again, care about fmin for stars
-                frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
+                frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
                 f1Mf = frac * (1. - frac) # frac(1 - frac)
                 agalx, theta, phi = from_moments(xxkg, xykg, yykg)
                 dx = agalx * np.cos(phi) / np.sqrt(2 * f1Mf)
                 dy = agalx * np.sin(phi) / np.sqrt(2 * f1Mf)
                 dr2 = dx*dx + dy*dy
-                starsb = np.empty((gdat.numbparastar, nms, 2), dtype=np.float32)
+                starsb = np.empty((gdat.numbparastar, numbspmr, 2), dtype=np.float32)
                 starsb[gdat.indxxpos, :, [0,1]] = xkg + ((1-frac)*dx), xkg - frac*dx
                 starsb[gdat.indxypos, :, [0,1]] = ykg + ((1-frac)*dy), ykg - frac*dy
                 starsb[gdat.indxflux, :, [0,1]] = fkg * frac         , fkg * (1-frac)
@@ -1652,16 +1665,16 @@ def main( \
                 f1Mf = f1Mf.compress(inbounds)
                 theta = theta.compress(inbounds)
                 fkg = fkg.compress(inbounds)
-                nms = fkg.size
-                goodmove = nms > 0
+                numbspmr = fkg.size
+                goodmove = numbspmr > 0
                 if goodmove:
                     proposal.add_death_galaxies(idx_kill_g, galaxiesk)
                     proposal.add_birth_stars(starsb)
     
                 # need star pairs to calculate factor
                 sum_f = fkg
-                weigoverpairs = np.empty(nms) # w (1/sum w_1 + 1/sum w_2) / 2
-                for k in xrange(nms):
+                weigoverpairs = np.empty(numbspmr) # w (1/sum w_1 + 1/sum w_2) / 2
+                for k in xrange(numbspmr):
                     xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
                     ytemp = self.stars[gdat.indxypos, 0:self.n].copy()
                     xtemp = np.concatenate([xtemp, starsb[0, k:k+1, gdat.indxxpos], starsb[1, k:k+1, gdat.indxxpos]])
@@ -1676,15 +1689,15 @@ def main( \
                 weigoverpairs *= 0.5 * np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g))
                 weigoverpairs[weigoverpairs == 0] = 1
             # merge
-            elif not splitsville and idx_reg.size > 1: # need two things to merge!
-                nms = min(nms, idx_reg.size/2, self.ngalx-self.ng)
-                idx_kill = np.empty((nms, 2), dtype=np.int)
+            elif not boolsplt and idx_reg.size > 1: # need two things to merge!
+                numbspmr = min(numbspmr, idx_reg.size/2, self.ngalx-self.ng)
+                idx_kill = np.empty((numbspmr, 2), dtype=np.int)
                 choosable = np.zeros(self.nstar, dtype=np.bool)
                 choosable[idx_reg] = True
                 nchoosable = float(idx_reg.size)
-                invpairs = np.empty(nms)
+                invpairs = np.empty(numbspmr)
     
-                for k in xrange(nms):
+                for k in xrange(numbspmr):
                     idx_kill[k,0] = np.random.choice(self.nstar, p=choosable/nchoosable)
                     invpairs[k], idx_kill[k,1] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.kickrange_g, idx_kill[k,0], generate=True)
                     # prevent sources from being involved in multiple proposals
@@ -1700,10 +1713,10 @@ def main( \
                 inbounds = (idx_kill[:,1] != -1)
                 idx_kill = idx_kill.compress(inbounds, axis=0)
                 invpairs = invpairs.compress(inbounds)
-                nms = np.sum(inbounds)
-                goodmove = nms > 0
+                numbspmr = np.sum(inbounds)
+                goodmove = numbspmr > 0
     
-                starsk = self.stars.take(idx_kill, axis=1) # because stars is (numbparastar, N) and idx_kill is (nms, 2), this is (numbparastar, nms, 2)
+                starsk = self.stars.take(idx_kill, axis=1) # because stars is (numbparastar, N) and idx_kill is (numbspmr, 2), this is (numbparastar, numbspmr, 2)
                 fk = starsk[gdat.indxflux,:,:]
                 dx = starsk[gdat.indxxpos,:,1] - starsk[gdat.indxxpos,:,0]
                 dy = starsk[gdat.indxxpos,:,1] - starsk[gdat.indxypos,:,0]
@@ -1714,26 +1727,26 @@ def main( \
                 fminratio = sum_f / self.trueminf
                 frac = fk[:,0] / sum_f
                 f1Mf = frac * (1. - frac)
-                galaxiesb = np.empty((6, nms))
+                galaxiesb = np.empty((6, numbspmr))
                 galaxiesb[gdat.indxxpos,:] = frac*starsk[gdat.indxxpos,:,0] + (1-frac)*starsk[gdat.indxxpos,:,1]
                 galaxiesb[gdat.indxypos,:] = frac*starsk[gdat.indxypos,:,0] + (1-frac)*starsk[gdat.indxypos,:,1]
                 galaxiesb[gdat.indxflux,:] = sum_f
-                u = np.random.uniform(low=3e-4, high=1., size=nms).astype(np.float32) #3e-4 for numerics
+                u = np.random.uniform(low=3e-4, high=1., size=numbspmr).astype(np.float32) #3e-4 for numerics
                 theta = np.arccos(u).astype(np.float32)
                 galaxiesb[self._XX,:] = f1Mf*(dx*dx+u*u*dy*dy)
                 galaxiesb[self._XY,:] = f1Mf*(1-u*u)*dx*dy
                 galaxiesb[self._YY,:] = f1Mf*(dy*dy+u*u*dx*dx)
                 # this move proposes a splittable galaxy
-                bright_n += 1
+                numbbrgt += 1
                 if goodmove:
                     proposal.add_death_stars(idx_kill, starsk)
                     proposal.add_birth_galaxies(galaxiesb)
             if goodmove:
                 factor = 2*np.log(self.truealpha-1) - np.log(self.truealpha_g-1) + 2*(self.truealpha-1)*np.log(self.trueminf) - (self.truealpha_g-1)*np.log(self.trueminf_g) - \
                     self.truealpha*np.log(f1Mf) - (2*self.truealpha - self.truealpha_g)*np.log(sum_f) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fminratio) - \
-                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) + np.log(bright_n/(self.ng+1.-splitsville)) + np.log((self.n-1+2*splitsville)*weigoverpairs) + \
+                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) + np.log(numbbrgt/(self.ng+1.-boolsplt)) + np.log((self.n-1+2*boolsplt)*weigoverpairs) + \
                     np.log(sum_f) - np.log(4.) - 2*np.log(dr2) - 3*np.log(f1Mf) - np.log(np.cos(theta)) - 3*np.log(np.sin(theta))
-                if not splitsville:
+                if not boolsplt:
                     factor *= -1
                     factor += 2*self.penalty - self.penalty_g
                     factor += self.log_prior_moments(galaxiesb)
@@ -1745,25 +1758,25 @@ def main( \
     
         
         def stargalaxy_galaxy(self):
-            splitsville = np.random.randint(2)
+            boolsplt = np.random.randint(2)
             idx_reg_g = self.idx_parity_galaxies()
             sum_f = 0
             low_n = 0
             idx_bright = idx_reg_g.take(np.flatnonzero(self.galaxies[gdat.indxflux, :].take(idx_reg_g) > self.trueminf + self.trueminf_g)) # in region and bright enough to make s+g
-            bright_n = idx_bright.size
+            numbbrgt = idx_bright.size
     
-            nms = (self.nregx * self.nregy) / 4
+            numbspmr = (self.nregx * self.nregy) / 4
             goodmove = False
             proposal = Proposal()
             # split off star
-            if splitsville and self.ng > 0 and self.n < self.nstar and bright_n > 0: # need something to split, but don't exceed nstar
-                nms = min(nms, bright_n, self.nstar-self.n) # need bright source AND room for split off star
-                dx = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
-                dy = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
-                idx_move_g = np.random.choice(idx_bright, size=nms, replace=False)
+            if boolsplt and self.ng > 0 and self.n < self.nstar and numbbrgt > 0: # need something to split, but don't exceed nstar
+                numbspmr = min(numbspmr, numbbrgt, self.nstar-self.n) # need bright source AND room for split off star
+                dx = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
+                dy = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
+                idx_move_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
                 galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                 x0g, y0g, f0g, xx0g, xy0g, yy0g = galaxies0
-                frac = (self.trueminf_g/f0g + np.random.uniform(size=nms)*(1. - (self.trueminf_g + self.trueminf)/f0g)).astype(np.float32)
+                frac = (self.trueminf_g/f0g + np.random.uniform(size=numbspmr)*(1. - (self.trueminf_g + self.trueminf)/f0g)).astype(np.float32)
                 galaxiesp = np.empty_like(galaxies0)
                 galaxiesp[gdat.indxxpos,:] = x0g + ((1-frac)*dx)
                 galaxiesp[gdat.indxypos,:] = y0g + ((1-frac)*dy)
@@ -1774,7 +1787,7 @@ def main( \
                 galaxiesp[self._XX,:] = pxxg
                 galaxiesp[self._XY,:] = pxyg
                 galaxiesp[self._YY,:] = pyyg
-                starsb = np.empty((gdat.numbparastar, nms), dtype=np.float32)
+                starsb = np.empty((gdat.numbparastar, numbspmr), dtype=np.float32)
                 starsb[gdat.indxxpos,:] = x0g - frac*dx
                 starsb[gdat.indxypos,:] = y0g - frac*dy
                 starsb[gdat.indxflux,:] = f0g * (1-frac)
@@ -1789,16 +1802,16 @@ def main( \
                 starsb = starsb.compress(inbounds, axis=1)
                 frac = frac.compress(inbounds)
                 f0g = f0g.compress(inbounds)
-                nms = idx_move_g.size
-                goodmove = nms > 0
+                numbspmr = idx_move_g.size
+                goodmove = numbspmr > 0
                 if goodmove:
                     proposal.add_move_galaxies(idx_move_g, galaxies0, galaxiesp)
                     proposal.add_birth_stars(starsb)
     
                 # need to calculate factor
                 sum_f = f0g
-                invpairs = np.zeros(nms)
-                for k in xrange(nms):
+                invpairs = np.zeros(numbspmr)
+                for k in xrange(numbspmr):
                     xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
                     ytemp = self.stars[gdat.indxypos, 0:self.n].copy()
                     xtemp = np.concatenate([xtemp, galaxiesp[gdat.indxxpos, k:k+1], starsb[gdat.indxxpos, k:k+1]])
@@ -1806,15 +1819,15 @@ def main( \
     
                     invpairs[k] =  1./neighbours(xtemp, ytemp, self.kickrange_g, self.n)
             # merge star into galaxy
-            elif not splitsville and idx_reg_g.size > 1: # need two things to merge!
-                nms = min(nms, idx_reg_g.size)
-                idx_move_g = np.random.choice(idx_reg_g, size=nms, replace=False) # choose galaxies and then see if they have neighbours
-                idx_kill = np.empty(nms, dtype=np.int)
+            elif not boolsplt and idx_reg_g.size > 1: # need two things to merge!
+                numbspmr = min(numbspmr, idx_reg_g.size)
+                idx_move_g = np.random.choice(idx_reg_g, size=numbspmr, replace=False) # choose galaxies and then see if they have neighbours
+                idx_kill = np.empty(numbspmr, dtype=np.int)
                 choosable = np.full(self.nstar, True, dtype=np.bool)
                 nchoosable = float(self.nstar)
-                invpairs = np.empty(nms)
+                invpairs = np.empty(numbspmr)
     
-                for k in xrange(nms):
+                for k in xrange(numbspmr):
                     l = idx_move_g[k]
                     invpairs[k], idx_kill[k] = neighbours(np.concatenate([self.stars[gdat.indxxpos, 0:self.n], self.galaxies[gdat.indxxpos, l:l+1]]), \
                             np.concatenate([self.stars[gdat.indxypos, 0:self.n], self.galaxies[gdat.indxypos, l:l+1]]), self.kickrange_g, self.n, generate=True)
@@ -1832,8 +1845,8 @@ def main( \
                 idx_move_g = idx_move_g.compress(inbounds)
                 idx_kill = idx_kill.compress(inbounds)
                 invpairs = invpairs.compress(inbounds)
-                nms = idx_move_g.size
-                goodmove = nms > 0
+                numbspmr = idx_move_g.size
+                goodmove = numbspmr > 0
     
                 galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                 starsk = self.stars.take(idx_kill, axis=1)
@@ -1855,11 +1868,11 @@ def main( \
                 pxxg = pxxg.compress(inbounds)
                 pxyg = pxyg.compress(inbounds)
                 pyyg = pyyg.compress(inbounds)
-                nms = idx_move_g.size
-                goodmove = np.logical_and(goodmove, nms > 0)
+                numbspmr = idx_move_g.size
+                goodmove = np.logical_and(goodmove, numbspmr > 0)
     
                 if goodmove:
-                    galaxiesp = np.empty((6, nms))
+                    galaxiesp = np.empty((6, numbspmr))
                     galaxiesp[gdat.indxxpos,:] = frac*galaxies0[gdat.indxxpos,:] + (1-frac)*starsk[gdat.indxxpos,:]
                     galaxiesp[gdat.indxypos,:] = frac*galaxies0[gdat.indxypos,:] + (1-frac)*starsk[gdat.indxypos,:]
                     galaxiesp[gdat.indxflux,:] = galaxies0[gdat.indxflux,:] + starsk[gdat.indxflux,:]
@@ -1869,15 +1882,15 @@ def main( \
                     proposal.add_move_galaxies(idx_move_g, galaxies0, galaxiesp)
                     proposal.add_death_stars(idx_kill, starsk)
                 # this proposal makes a galaxy that is bright enough to split
-                bright_n = bright_n + 1
+                numbbrgt = numbbrgt + 1
             if goodmove:
                 factor = np.log(self.truealpha-1) - (self.truealpha-1)*np.log(sum_f/self.trueminf) - self.truealpha_g*np.log(frac) - self.truealpha*np.log(1-frac) + \
                         np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - (self.trueminf+self.trueminf_g)/sum_f) + \
-                        np.log(bright_n/float(self.ng)) + np.log((self.n+1.-splitsville)*invpairs) - 2*np.log(frac)
-                if not splitsville:
+                        np.log(numbbrgt/float(self.ng)) + np.log((self.n+1.-boolsplt)*invpairs) - 2*np.log(frac)
+                if not boolsplt:
                     factor *= -1
                 factor += self.log_prior_moments(galaxiesp) - self.log_prior_moments(galaxies0) # galaxy prior
-                if not splitsville:
+                if not boolsplt:
                     factor += self.penalty
                 else:
                     factor -= self.penalty
@@ -1886,28 +1899,28 @@ def main( \
     
         
         def merge_split_galaxies(self):
-            splitsville = np.random.randint(2)
+            boolsplt = np.random.randint(2)
             idx_reg = self.idx_parity_galaxies()
             sum_f = 0
             low_n = 0
             idx_bright = idx_reg.take(np.flatnonzero(self.galaxies[gdat.indxflux, :].take(idx_reg) > 2*self.trueminf_g)) # in region!
-            bright_n = idx_bright.size
+            numbbrgt = idx_bright.size
     
-            nms = (self.nregx * self.nregy) / 4
+            numbspmr = (self.nregx * self.nregy) / 4
             goodmove = False
             proposal = Proposal()
             # split
-            if splitsville and self.ng > 0 and self.ng < self.ngalx and bright_n > 0: # need something to split, but don't exceed nstar
-                nms = min(nms, bright_n, self.ngalx-self.ng) # need bright source AND room for split source
-                dx = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
-                dy = (np.random.normal(size=nms)*self.kickrange_g).astype(np.float32)
-                idx_move_g = np.random.choice(idx_bright, size=nms, replace=False)
+            if boolsplt and self.ng > 0 and self.ng < self.ngalx and numbbrgt > 0: # need something to split, but don't exceed nstar
+                numbspmr = min(numbspmr, numbbrgt, self.ngalx-self.ng) # need bright source AND room for split source
+                dx = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
+                dy = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
+                idx_move_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
                 galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                 fminratio = galaxies0[gdat.indxflux,:] / self.trueminf_g
-                frac = (1./fminratio + np.random.uniform(size=nms)*(1. - 2./fminratio)).astype(np.float32)
-                frac_xx = np.random.uniform(size=nms).astype(np.float32)
-                frac_xy = np.random.uniform(size=nms).astype(np.float32)
-                frac_yy = np.random.uniform(size=nms).astype(np.float32)
+                frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
+                frac_xx = np.random.uniform(size=numbspmr).astype(np.float32)
+                frac_xy = np.random.uniform(size=numbspmr).astype(np.float32)
+                frac_yy = np.random.uniform(size=numbspmr).astype(np.float32)
                 xx_p = galaxies0[self._XX,:] - frac*(1-frac)*dx*dx# moments of just galaxy pair
                 xy_p = galaxies0[self._XY,:] - frac*(1-frac)*dx*dy
                 yy_p = galaxies0[self._YY,:] - frac*(1-frac)*dy*dy
@@ -1942,13 +1955,13 @@ def main( \
                 xx_p = xx_p.compress(inbounds)
                 xy_p = xy_p.compress(inbounds)
                 yy_p = yy_p.compress(inbounds)
-                nms = idx_move_g.size
-                goodmove = nms > 0
+                numbspmr = idx_move_g.size
+                goodmove = numbspmr > 0
     
                 # need to calculate factor
                 sum_f = galaxies0[gdat.indxflux,:]
-                invpairs = np.empty(nms)
-                for k in xrange(nms):
+                invpairs = np.empty(numbspmr)
+                for k in xrange(numbspmr):
                     xtemp = self.galaxies[gdat.indxxpos, 0:self.ng].copy()
                     ytemp = self.galaxies[gdat.indxypos, 0:self.ng].copy()
                     xtemp[idx_move_g[k]] = galaxiesp[gdat.indxxpos, k]
@@ -1960,16 +1973,16 @@ def main( \
                     invpairs[k] += 1./neighbours(xtemp, ytemp, self.kickrange_g, self.ng)
                 invpairs *= 0.5
             # merge
-            elif not splitsville and idx_reg.size > 1: # need two things to merge!
-                nms = min(nms, idx_reg.size/2)
-                idx_move_g = np.empty(nms, dtype=np.int)
-                idx_kill_g = np.empty(nms, dtype=np.int)
+            elif not boolsplt and idx_reg.size > 1: # need two things to merge!
+                numbspmr = min(numbspmr, idx_reg.size/2)
+                idx_move_g = np.empty(numbspmr, dtype=np.int)
+                idx_kill_g = np.empty(numbspmr, dtype=np.int)
                 choosable = np.zeros(self.ngalx, dtype=np.bool)
                 choosable[idx_reg] = True
                 nchoosable = float(idx_reg.size)
-                invpairs = np.empty(nms)
+                invpairs = np.empty(numbspmr)
     
-                for k in xrange(nms):
+                for k in xrange(numbspmr):
                     idx_move_g[k] = np.random.choice(self.ngalx, p=choosable/nchoosable)
                     invpairs[k], idx_kill_g[k] = neighbours(self.galaxies[gdat.indxxpos, 0:self.ng], \
                                                             self.galaxies[gdat.indxypos, 0:self.ng], self.kickrange_g, idx_move_g[k], generate=True)
@@ -2024,20 +2037,20 @@ def main( \
                 xy_p = xy_p.compress(inbounds)
                 yy_p = yy_p.compress(inbounds)
     
-                nms = idx_move_g.size
-                goodmove = nms > 0
+                numbspmr = idx_move_g.size
+                goodmove = numbspmr > 0
                 if goodmove:
                     proposal.add_move_galaxies(idx_move_g, galaxies0, galaxiesp)
                     proposal.add_death_galaxies(idx_kill_g, galaxiesk)
     
-                # turn bright_n into an array
-                bright_n = bright_n - (galaxies0[gdat.indxflux,:] > 2*self.trueminf_g) - (galaxiesk[gdat.indxflux,:] > 2*self.trueminf_g) + \
+                # turn numbbrgt into an array
+                numbbrgt = numbbrgt - (galaxies0[gdat.indxflux,:] > 2*self.trueminf_g) - (galaxiesk[gdat.indxflux,:] > 2*self.trueminf_g) + \
                                                                                                                 (galaxiesp[gdat.indxflux,:] > 2*self.trueminf_g)
             if goodmove:
                 factor = np.log(self.truealpha_g-1) + (self.truealpha_g-1)*np.log(self.trueminf) - self.truealpha_g*np.log(frac*(1-frac)*sum_f) + \
-                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fminratio) + np.log(bright_n) + np.log(invpairs) + \
+                    np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fminratio) + np.log(numbbrgt) + np.log(invpairs) + \
                     np.log(sum_f) + np.log(xx_p) + np.log(np.abs(xy_p)) + np.log(yy_p) - 3*np.log(frac) - 3*np.log(1-frac) # last line is Jacobian
-                if not splitsville:
+                if not boolsplt:
                     factor *= -1
                     factor += self.penalty_g
                     factor += self.log_prior_moments(galaxiesp) - self.log_prior_moments(galaxies0) - self.log_prior_moments(galaxiesk)
@@ -2058,20 +2071,20 @@ def main( \
     margin = 10
     
     nstar = Model.nstar
-    numbstarsamp = np.zeros(numbsamp, dtype=np.int32)
-    xpossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
-    ypossamp = np.zeros((numbsamp, nstar), dtype=np.float32)
-    fluxsamp = np.zeros((numbsamp, nstar), dtype=np.float32)
+    numbstarsamp = np.zeros(gdat.numbsamp, dtype=np.int32)
+    xpossamp = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    ypossamp = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    fluxsamp = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
     
     if gdat.booltimebins:
-        lcprsamp = np.zeros((numbsamp, gdat.numblcpr, nstar), dtype=np.float32)
-    ngsample = np.zeros(numbsamp, dtype=np.int32)
-    xgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
-    ygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
-    fgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
-    xxgsample = np.zeros((numbsamp, nstar), dtype=np.float32)
-    xygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
-    yygsample = np.zeros((numbsamp, nstar), dtype=np.float32)
+        lcprsamp = np.zeros((gdat.numbsamp, gdat.numblcpr, nstar), dtype=np.float32)
+    ngsample = np.zeros(gdat.numbsamp, dtype=np.int32)
+    xgsample = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    ygsample = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    fgsample = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    xxgsample = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    xygsample = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
+    yygsample = np.zeros((gdat.numbsamp, nstar), dtype=np.float32)
     
     # construct model for each temperature
     models = [Model() for k in xrange(ntemps)]
@@ -2088,7 +2101,7 @@ def main( \
     if boolplot:
         plt.figure(figsize=(21, 7))
     
-    for j in xrange(numbsamp):
+    for j in xrange(gdat.numbsamp):
         chi2_all = np.zeros(ntemps)
     
         #temptemp = max(50 - 0.1*j, 1)
@@ -2148,7 +2161,7 @@ def main( \
     np.savez(pathnump, n=numbstarsamp, x=xpossamp, y=ypossamp, f=fluxsamp, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
     
     # calculate the condensed catalog
-    catlcond = retr_catlcond(gdat.rtag)
+    catlcond = retr_catlcond(gdat.rtag, gdat.pathdata)
     
     if gdat.booltimebins:
         gdat.numbsourcond = catlcond.shape[0]
@@ -2166,7 +2179,11 @@ def main( \
                 temp = gdat.cntpdata
             axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
             numbsampplot = min(gdat.numbsamp - gdat.numbsampburn, 10)
-            indxsampplot = np.random.choice(np.arange(gdat.numbsampbburn, gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
+            print 'gdat.numbsamp'
+            print gdat.numbsamp
+            print 'gdat.numbsampburn'
+            print gdat.numbsampburn
+            indxsampplot = np.random.choice(np.arange(gdat.numbsampburn, gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
             for k in range(numbsampplot):
                 print 'k'
                 print k
@@ -2197,6 +2214,8 @@ def chec_lcpr(lcpr):
             print 'if np.amax(np.abs(lcpr)) > 1e3'
         if np.isnan(lcpr).any():
             print 'np.isnan(lcpr).any()'
+            for k in range(lcpr.shape[1]):
+                print lcpr[:, k]
         print 'lcpr'
         summgene(lcpr)
         print lcpr
@@ -2205,11 +2224,11 @@ def chec_lcpr(lcpr):
         raise Exception('')
 
 
-def retr_catlseed(rtag):
+def retr_catlseed(rtag, pathdata):
     
     strgtimestmp = rtag[:15]
     
-    pathlion, pathdata = retr_path()
+    pathlion, pathdata = retr_path(pathdata)
     
     pathdatartag = pathdata + rtag + '/'
     path = pathdatartag + 'gdat.p'
@@ -2310,12 +2329,12 @@ def retr_catlseed(rtag):
     np.savetxt(gdat.pathdatartag + rtag + '_catlseed.txt', catlseed)
 
 
-def retr_catlcond(rtag):
+def retr_catlcond(rtag, pathdata):
 
     strgtimestmp = rtag[:15]
     
     # paths
-    pathlion, pathdata = retr_path()
+    pathlion, pathdata = retr_path(pathdata)
     
     pathdatartag = pathdata + rtag + '/'
     os.system('mkdir -p %s' % pathdatartag)
@@ -2379,7 +2398,7 @@ def retr_catlcond(rtag):
         PCc_stack[j:j+n, 1] = catlsort[i, 0:n, gdat.indxypos]
         j += n
 
-    retr_catlseed(rtag)
+    retr_catlseed(rtag, gdat.pathdata)
     
     # seed catalog
     ## load the catalog
@@ -2523,10 +2542,11 @@ def retr_catlcond(rtag):
     return catlcond
 
 
-def retr_path():
+def retr_path(pathdata=None):
     
     pathlion = os.environ['LION_PATH'] + '/'
-    pathdata = os.environ['LION_DATA_PATH'] + '/'
+    if pathdata == None:
+        pathdata = os.environ['LION_DATA_PATH'] + '/'
     
     return pathlion, pathdata
 
@@ -2623,9 +2643,9 @@ def cnfg_defa():
          testpsfn=True, \
          bias=bias, \
          gain=gain, \
-         #verbtype=2, \
-         numbsamp=100, \
-         numbloop=1000, \
+         verbtype=1, \
+         #numbsamp=5, \
+         #numbloop=10, \
          #booltimebins=True, \
         )
 
@@ -2667,7 +2687,7 @@ def cnfg_time():
          diagmode=True, \
          bias=bias, \
          gain=gain, \
-         verbtype=2, \
+         #verbtype=2, \
          #testpsfn=True, \
          #boolplotsave=True, \
          #boolplotshow=True, \
