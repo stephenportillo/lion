@@ -323,6 +323,11 @@ def main( \
 
          # data path
          pathdata=None, \
+            
+         back=None, \
+
+         # user-defined time stamp string
+         strgtimestmp=None, \
 
          # number of samples
          numbsamp=100, \
@@ -398,17 +403,19 @@ def main( \
     #gdat.verbtype = booltimebins
 
     # time stamp string
-    strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    if gdat.strgtimestmp == None:
+        gdat.strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
    
     # run tag
-    gdat.rtag = 'pcat_' + strgtimestmp + '_%06d' % gdat.numbsamp
+    gdat.rtag = 'pcat_' + gdat.strgtimestmp + '_%06d' % gdat.numbsamp
+    
     if gdat.rtagextn != None:
         gdat.rtag += '_' + gdat.rtagextn
 
     if gdat.numbsampburn == None:
         gdat.numbsampburn = int(0.2 * gdat.numbsamp)
 
-    print 'Lion initialized at %s' % strgtimestmp
+    print 'Lion initialized at %s' % gdat.strgtimestmp
 
     # show critical inputs
     print 'strgdata: ', strgdata
@@ -419,12 +426,10 @@ def main( \
     if colrstyl == 'pcat':
         sizemrkr = 1e-2
         linewdth = 3
-        histtype = 'bar'
         colrbrgt = 'green'
     else:
         linewdth = None
         sizemrkr = 1. / 1360.
-        histtype = 'step'
         colrbrgt = 'lime'
     
     if boolplotshow:
@@ -435,9 +440,11 @@ def main( \
         plt.ion()
    
     # plotting 
-    gdat.maxmfluxplot = 1e6
+    gdat.numbbinsfluxplot = 10
     gdat.minmfluxplot = 1e1
-    
+    gdat.maxmfluxplot = 1e6
+    gdat.binsfluxplot = np.linspace(np.log10(gdat.minmfluxplot), np.log10(gdat.maxmfluxplot), gdat.numbbinsfluxplot)
+
     gdat.numbrefr = len(gdat.catlrefr)
     gdat.indxrefr = np.arange(gdat.numbrefr)
 
@@ -633,7 +640,7 @@ def main( \
     if False and gdat.booltimebins:
         for k in gdat.indxtime:
             figr, axis = plt.subplots()
-            axis.imshow(data[k, :, :], origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+            axis.imshow(data[k, :, :], origin='lower', interpolation='none', cmap='Greys_r', vmin=np.min(data), vmax=np.percentile(data, 95))
             ## limits
             setp_imaglimt(gdat, axis)
             plt.savefig(gdat.pathdatartag + '%s_cntpdatainit%04d.' % (gdat.rtag, k) + gdat.strgplotfile)
@@ -856,7 +863,7 @@ def main( \
                 self.galaxies[gdat.indxflux, :self.ng] **= -1./(self.truealpha_g - 1.)
                 self.galaxies[gdat.indxflux, :self.ng] *= self.trueminf_g
                 self.galaxies[[self._XX,self._XY,self._YY],0:self.ng] = self.moments_from_prior(self.truermin_g, self.ng)
-            self.back = np.float32(179)
+            self.back = gdat.back
 
         
         # should offsetx/y, parity_x/y be instance variables?
@@ -1140,7 +1147,7 @@ def main( \
                     plt.figure(1)
                     plt.clf()
                     plt.subplot(1, 3, 1)
-                    plt.imshow(data, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(data), vmax=np.percentile(data, 95))
+                    plt.imshow(data, origin='lower', interpolation='none', cmap='Greys_r', vmin=np.min(data), vmax=np.percentile(data, 95))
                     
                     # overplot point sources
                     if datatype == 'mock':
@@ -1210,7 +1217,7 @@ def main( \
                         temp = gdat.cntpdata[0, :, :]
                     else:
                         temp = gdat.cntpdata
-                    axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
+                    axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys_r', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
                     ## overplot point sources
                     supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                     ## limits
@@ -1231,10 +1238,13 @@ def main( \
                     
                     ## flux histogram
                     figr, axis = plt.subplots()
+                    
+                    xdat = gdat.binsfluxplot
                     for k in gdat.indxrefr:
-                        axis.hist(np.log10(catlrefr[k]['flux']), log=True, alpha=0.5, label=gdat.lablrefr[k], histtype=histtype, lw=linewdth, \
-                                                                                                                    facecolor=gdat.colrrefr[k], edgecolor=gdat.colrrefr[k])
-                    axis.hist(np.log10(self.stars[gdat.indxflux, 0:self.n]), edgecolor='b', facecolor='b', lw=linewdth, log=True, alpha=0.5, label='Sample', histtype=histtype)
+                        hist = np.histogram(catlrefr[k]['flux'], bins=gdat.binsfluxplot)
+                        axis.bar(xdat, hist, alpha=0.5, label=gdat.lablrefr[k], lw=linewdth, facecolor=gdat.colrrefr[k], edgecolor=gdat.colrrefr[k])
+                    hist = np.histogram(self.stars[gdat.indxflux, 0:self.n], bins=binsfluxplot)
+                    axis.bar(xdat, hist edgecolor='b', facecolor='b', lw=linewdth, alpha=0.5, label='Sample')
                     axis.set_xlim([gdat.minmfluxplot, gdat.maxmfluxplot])
                     plt.savefig(gdat.pathdatartag + '%s_histflux%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
 
@@ -1372,7 +1382,7 @@ def main( \
                 x0 = stars0[gdat.indxxpos, :]
                 y0 = stars0[gdat.indxypos, :]
                 if gdat.booltimebins:
-                    spec = np.empty(gdat.numbtime)
+                    spec = np.empty((gdat.numbtime, stars0.shape[1]))
                     spec[0] = stars0[gdat.indxflux, :]
                     spec[1:] = spec[0] * stars0[gdat.indxlcpr, :]
                     f0 = np.mean(spec)
@@ -2177,7 +2187,7 @@ def main( \
                 temp = gdat.cntpdata[0, :, :]
             else:
                 temp = gdat.cntpdata
-            axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
+            axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys_r', vmin=np.min(gdat.cntpdata), vmax=np.percentile(gdat.cntpdata, 95))
             numbsampplot = min(gdat.numbsamp - gdat.numbsampburn, 10)
             print 'gdat.numbsamp'
             print gdat.numbsamp
@@ -2585,7 +2595,9 @@ def cnfg_defa():
     print 'cntpdata'
     summgene(cntpdata)
     print
-
+    
+    back = np.float32(179)
+    
     strgmodl = 'star'
     datatype = 'mock'
     catlrefr = [{}]
@@ -2633,6 +2645,8 @@ def cnfg_defa():
          catlrefr=catlrefr, \
          lablrefr=lablrefr, \
          colrrefr=colrrefr, \
+        
+         back=back, \
 
          #numbsamp=200, \
          colrstyl='pcat', \
@@ -2666,6 +2680,8 @@ def cnfg_time():
     for k in indxtime:
         cntpdata[k, :, :] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
 
+    back = np.float32(179)
+    
     # read PSF
     pathlion, pathdata = retr_path()
     filepsfn = open(pathdata + strgdata + '_psfn.txt')
@@ -2685,6 +2701,9 @@ def cnfg_time():
          boolplotshow=False, \
          booltimebins=True, \
          diagmode=True, \
+         
+         back=back, \
+
          bias=bias, \
          gain=gain, \
          #verbtype=2, \
