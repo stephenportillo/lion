@@ -202,6 +202,7 @@ def psf_poly_fit(gdat, psfnusam, factusam):
         figr, axis = plt.subplots()
         axis.imshow(psfnusampadd, interpolation='none')
         plt.savefig(gdat.pathdatartag + '%s_psfnusampadd.' % gdat.rtag + gdat.strgplotfile)
+        plt.close()
 
     return coefspix
    
@@ -487,7 +488,7 @@ def main( \
     # plotting 
     gdat.minmcntpresi = -5.
     gdat.maxmcntpresi = 5.
-    gdat.minmcntpdata = np.percentile(gdat.cntpdata, 0)
+    gdat.minmcntpdata = np.percentile(gdat.cntpdata, 5)
     gdat.maxmcntpdata = np.percentile(gdat.cntpdata, 95)
     gdat.limthist = [0.5, 1e3]
     gdat.numbbinsfluxplot = 10
@@ -581,14 +582,15 @@ def main( \
             medimeanspecdtre = np.median(errrspecdtre[0, :])
             stdvflux = np.sqrt((errrspecdtre[0, :] - medimeanspecdtre)**2)
             
-            if k % 10 == 0 and k != gdat.numbsourcond - 1:
+            if k % 10 == 0:
                 figr, axis = plt.subplots()
             
-            axis.errorbar(gdat.indxtime, errrspecdtre[0, :], yerr=errrspecdtre[1, :])
+            axis.errorbar(gdat.indxtime, errrspecdtre[0, :], yerr=errrspecdtre[1, :], ls='')
             
             axis.set_title(stdvflux)
-            if k % 10 == 0 or k == gdat.numbsourcond - 1:
+            if (k + 1) % 10 == 0 or k == gdat.numbsourcond - 1:
                 plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
+                plt.close()
                 cntr += 1
     
     pathlion, gdat.pathdata = retr_path()
@@ -715,6 +717,7 @@ def main( \
             ## limits
             setp_imaglimt(gdat, axis)
             plt.savefig(gdat.pathdatartag + '%s_cntpdatainit%04d.' % (gdat.rtag, k) + gdat.strgplotfile)
+            plt.close()
         print 'Making the animation...'
         cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdatainit*.%s %s/%s_cntpdatainit.gif' % (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
         print cmnd
@@ -1314,7 +1317,7 @@ def main( \
                 else:
                     
                     # count map
-                    figr, axis = plt.subplots()
+                    figr, axis = plt.subplots(figsize=(20, 20))
                     if gdat.booltimebins:
                         temp = gdat.cntpdata[0, :, :, 0]
                     else:
@@ -1325,7 +1328,8 @@ def main( \
                     ## limits
                     setp_imaglimt(gdat, axis)
                     plt.savefig(gdat.pathdatartag + '%s_cntpdata%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
-                    
+                    plt.close()
+
                     # residual map
                     figr, axis = plt.subplots()
                     if gdat.booltimebins:
@@ -1337,6 +1341,7 @@ def main( \
                     supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                     setp_imaglimt(gdat, axis)
                     plt.savefig(gdat.pathdatartag + '%s_cntpresi%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
+                    plt.close()
                     
                     ## flux histogram
                     figr, axis = plt.subplots()
@@ -1353,7 +1358,6 @@ def main( \
                     axis.set_xscale('log')
                     axis.set_yscale('log')
                     plt.savefig(gdat.pathdatartag + '%s_histflux%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
-                    
                     plt.close()
 
             return self.n, self.ng, chi2
@@ -2312,6 +2316,8 @@ def main( \
             
         # plot the condensed catalog
         if boolplotsave:
+            print 'Plotting the condensed catalog...'
+
             figr, axis = plt.subplots()
             if gdat.booltimebins:
                 temp = gdat.cntpdata[0, :, :, 0]
@@ -2325,6 +2331,7 @@ def main( \
                 supr_catl(gdat, axis, chan['xpos'][k, :numb], chan['ypos'][k, :numb], chan['flux'][k, :numb])
             supr_catl(gdat, axis, catlcond[gdat.indxxpos, :, 0], catlcond[gdat.indxypos, :, 0], catlcond[gdat.indxflux, :, 0], boolcond=True)
             plt.savefig(gdat.pathdatartag + '%s_condcatl.' % gdat.rtag + gdat.strgplotfile)
+            plt.close()
 
     if boolplotsave:
         print 'Making the animation...'
@@ -2835,7 +2842,7 @@ def cnfg_time():
     print 'numbpixl'
     print numbpixl
     for k in indxtime:
-        cntpdata[k, :, :, 0] += (100 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
+        cntpdata[k, :, :, 0] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
     
     catlinit = {}
     catlinit['numb'] = 1
