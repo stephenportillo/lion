@@ -280,27 +280,19 @@ def writ_catl(gdat, catl, path):
     filetemp.create_dataset('numb', data=catl['numb'])
     for strgfeat in gdat.liststrgfeatstar:
         filetemp.create_dataset(strgfeat, data=catl[strgfeat])
-    #filetemp.create_dataset('ypos', data=ypossamp)
-    #filetemp.create_dataset('flux', data=fluxsamp)
-    #if gdat.booltimebins:
-    #    filearry.create_dataset('lcpr', data=lcprsamp)
     filetemp.close()
 
 
 def read_catl(gdat, path):
     
     filetemp = h5py.File(path, 'r')
+    print 'Reading %s...' % path
     catl = {}
+    catl['numb'] = filetemp['numb'][()]
     for strgfeat in gdat.liststrgfeatstar:
         catl[strgfeat] = filetemp[strgfeat][()] 
     filetemp.close()
    
-    # temp
-    #catl['ypos'] = fileinit['ypos'][()]
-    #catl['flux'] = fileinit['flux'][()]
-    #if gdat.booltiminitebins:
-    #    catl['lcpr'] = fileinit['lcpr'][()]
-    
     return catl
 
 
@@ -317,14 +309,6 @@ def make_cmap(seq):
             colrdict['blue'].append([item, blu1, blu2])
    
     return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
-
-
-#def summgene(varb):
-#
-#    print np.amin(varb)
-#    print np.amax(varb)
-#    print np.mean(varb)
-#    print varb.shape
 
 
 def main( \
@@ -350,7 +334,7 @@ def main( \
          factusam=None, \
 
          # data path
-         pathdata=None, \
+         pathdatartag=None, \
             
          back=None, \
         
@@ -360,7 +344,7 @@ def main( \
          strgtimestmp=None, \
 
          # number of samples
-         numbsamp=100, \
+         numbswep=100, \
     
          # size of the regions in number of pixels
          sizeregi=20, \
@@ -369,7 +353,7 @@ def main( \
          strgplotfile='pdf', \
 
          # number of samples
-         numbsampburn=None, \
+         numbswepburn=None, \
     
          # catalog to initialize the chain with
          catlinit=None, \
@@ -442,19 +426,29 @@ def main( \
     else:
         gdat.booltimebins = False
 
-    # time stamp string
+    # defaults
+    ## time stamp string
     if gdat.strgtimestmp == None:
         gdat.strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-   
+  
+    ## number of sweeps to be burnt
+    if gdat.numbswepburn == None:
+        gdat.numbswepburn = int(0.2 * gdat.numbswep)
+
+    gdat.numbsamp = gdat.numbswep - gdat.numbswepburn
+
     # run tag
-    gdat.rtag = 'pcat_' + gdat.strgtimestmp + '_%06d' % gdat.numbsamp
+    gdat.rtag = 'pcat_' + gdat.strgtimestmp + '_%06d' % gdat.numbswep
     
     if gdat.rtagextn != None:
         gdat.rtag += '_' + gdat.rtagextn
     
-    # defaults
-    if gdat.numbsampburn == None:
-        gdat.numbsampburn = int(0.2 * gdat.numbsamp)
+    gdat.indxsamp = np.arange(gdat.numbsamp)
+    
+    gdat.indxswep = np.arange(gdat.numbswep)
+    gdat.boolsaveswep = np.zeros(gdat.numbswep, dtype=bool)
+    gdat.indxswepsave = np.arange(gdat.numbswepburn, gdat.numbswepburn + gdat.numbsamp)
+    gdat.boolsaveswep[gdat.indxswepsave] = True
 
     print 'Lion initialized at %s' % gdat.strgtimestmp
 
@@ -481,7 +475,7 @@ def main( \
     #    plt.ion()
   
     if gdat.strgstat != None and gdat.catlinit != None:
-        raise Exception('')
+        print 'strgstat and catlinit defined at the same time. catlinit takes precedence for the initial catalog.'
 
     gdat.liststrgfeatstar = ['xpos', 'ypos', 'flux']
     if gdat.booltimebins:
@@ -597,22 +591,23 @@ def main( \
                 plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
                 cntr += 1
     
-    pathlion, gdat.pathdata = retr_path(gdat.pathdata)
+    pathlion, gdat.pathdata = retr_path()
         
     if gdat.strgstat != None:
-        gdat.pathstat = gdat.pathdata + 'catlinit_' + gdat.strgstat + '.h5'
+        gdat.pathstat = gdat.pathdata + 'stat_' + gdat.strgstat + '.h5'
         if os.path.isfile(gdat.pathstat):
             gdat.catlinit = read_catl(gdat, gdat.pathstat)
-            gdat.boolinitcatl = True
+            #gdat.boolinitcatl = True
         else:
             print 'No initialization catalog found. Initializing randomly...'
-            gdat.boolinitcatl = False
+            #gdat.boolinitcatl = False
 
     # check if source has been changed after compilation
     if os.path.getmtime(pathlion + 'blas.c') > os.path.getmtime(pathlion + 'blas.so'):
         warnings.warn('blas.c modified after compiled blas.so', Warning)
     
-    gdat.pathdatartag = gdat.pathdata + gdat.rtag + '/'
+    if gdat.pathdatartag == None:
+        gdat.pathdatartag = gdat.pathdata + gdat.rtag + '/'
     os.system('mkdir -p %s' % gdat.pathdatartag)
 
     # constants
@@ -622,7 +617,6 @@ def main( \
     boolplot = boolplotshow or boolplotsave
 
     # parse PSF
-    
     numbsidepsfnusam = cntppsfn.shape[0]
     numbsidepsfn = numbsidepsfnusam / factusam
     
@@ -710,11 +704,11 @@ def main( \
     if boolplot and testpsfn:
         plot_psfn(gdat, numbsidepsfn, coefspix, cntppsfn, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), libmmult.pcat_model_eval)
     
-    stdvproplcpr = 1e-6
+    stdvproplcpr = 1e-5
 
     ## data
-    #if True and gdat.booltimebins:
-    if False: 
+    if gdat.booltimebins:
+    #if False: 
         for k in gdat.indxtime:
             figr, axis = plt.subplots()
             axis.imshow(gdat.cntpdata[k, :, :, 0], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
@@ -755,7 +749,7 @@ def main( \
     
     gdat.numbparastar = cntr.gets()
     gdat.indxconf = cntr.incr()
-    gdat.numbparacatlcond = 1 + 2 * gdat.numbparastar
+    gdat.numbparacatlcond = 1 + gdat.numbparastar
     
     class Proposal:
     
@@ -918,30 +912,40 @@ def main( \
         def __init__(self):
 
             # initialize parameters
-            self.n = np.random.randint(gdat.maxmnumbstar) + 1
+            if gdat.catlinit == None:
+                self.n = np.random.randint(gdat.maxmnumbstar) + 1
+            else:
+                self.n = gdat.catlinit['numb']
             self.stars = np.zeros((gdat.numbparastar, gdat.maxmnumbstar), dtype=np.float32)
             
-            if gdat.strgstat == None and gdat.strgmode == 'pcat' or not gdat.boolinitcatl:
+            if gdat.catlinit == None and gdat.strgmode == 'pcat':
                 self.stars[:, :self.n] = np.random.uniform(size=(gdat.numbparastar, self.n))  # refactor into some sort of prior function?
                 self.stars[gdat.indxxpos, :self.n] *= gdat.sizeimag[0] - 1
                 self.stars[gdat.indxypos, :self.n] *= gdat.sizeimag[1] - 1
             else:
-                self.stars[gdat.indxxpos, :self.n] = gdat.catlinit['xpos']
-                self.stars[gdat.indxypos, :self.n] = gdat.catlinit['ypos']
+                print 'Initializing positions from the catalog...'
+                self.stars[gdat.indxxpos, :] = gdat.catlinit['xpos']
+                self.stars[gdat.indxypos, :] = gdat.catlinit['ypos']
+                print 'gdat.catlinit[xpos]'
+                summgene(gdat.catlinit['xpos'])
                 #for strgfeat in gdat.liststrgfeatstar:
                 #    self.stars[gdat.indxparastar[strgfeat], :self.n] = gdat.catlinit[strgfeat]
             
-            if gdat.strgstat == None or not gdat.boolinitcatl:
+            if gdat.catlinit == None:
                 self.stars[gdat.indxflux, :self.n] **= -1. / (self.truealpha - 1.)
                 self.stars[gdat.indxflux, :self.n] *= self.trueminf
             else:
-                self.stars[gdat.indxflux, :self.n] = gdat.catlinit['flux']
+                print 'Initializing fluxes from the catalog...'
+                print 'gdat.catlinit[flux]'
+                summgene(gdat.catlinit['flux'])
+                self.stars[gdat.indxflux, :] = gdat.catlinit['flux']
 
             if gdat.booltimebins:
-                if gdat.strgstat == None or not gdat.boolinitcatl:
+                if gdat.catlinit == None:
                     self.stars[gdat.indxlcpr, :self.n] = 1e-6 * np.random.randn(self.n * gdat.numblcpr).reshape((gdat.numblcpr, self.n)) + 1.
                 else:
-                    self.stars[gdat.indxlcpr, :self.n] = gdat.catlinit['lcpr']
+                    print 'Initializing LC parameters from the catalog...'
+                    self.stars[gdat.indxlcpr, :] = gdat.catlinit['lcpr']
 
             self.ng = 0
             if strgmodl == 'galx':
@@ -1226,7 +1230,6 @@ def main( \
                 if j == 1:
                     print '-'*16
             print '='*16
-            print
 
             if gdat.verbtype > 1:
                 print 'Sample %d ended' % jj
@@ -1348,6 +1351,7 @@ def main( \
                     axis.set_xlim([gdat.minmfluxplot, gdat.maxmfluxplot])
                     axis.set_ylim(gdat.limthist)
                     axis.set_xscale('log')
+                    axis.set_yscale('log')
                     plt.savefig(gdat.pathdatartag + '%s_histflux%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
                     
                     plt.close()
@@ -2228,7 +2232,7 @@ def main( \
             chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
     
     mlik = -1e100
-    for j in xrange(gdat.numbsamp):
+    for j in gdat.indxswep:
         chi2_all = np.zeros(ntemps)
     
         #temptemp = max(50 - 0.1*j, 1)
@@ -2243,17 +2247,7 @@ def main( \
             if np.log(np.random.uniform()) < logfac:
                 print 'swapped', k-1, k
                 models[k-1], models[k] = models[k], models[k-1]
-    
-        #numbstarsamp[j] = models[0].n
-        chan['numb'][j] = models[0].n
-        for strgfeat in gdat.liststrgfeatstar:
-            indx = getattr(gdat, 'indx' + strgfeat)
-            chan[strgfeat][j, :] = models[0].stars[indx, :]
-        # temp
-        #ypossamp[j,:] = models[0].stars[gdat.indxypos, :]
-        #fluxsamp[j,:] = models[0].stars[gdat.indxflux, :]
-        #if gdat.booltimebins:
-        #    lcprsamp[j, :, :] = models[0].stars[gdat.indxlcpr, :]
+        
         if gdat.booltimebins:
             if gdat.diagmode:
                 chec_lcpr(models[0].stars[gdat.indxlcpr, :])
@@ -2261,46 +2255,38 @@ def main( \
         if gdat.strgstat != None:
             # save the sample and record the likelihood
             if llik > mlik:
-                gdat.catlmlik['numb'][j] = chan['numb'][j]
+                gdat.catlmlik['numb'] = chan['numb'][j-gdat.numbswepburn]
                 for strgfeat in gdat.liststrgfeatstar:
-                    gdat.catlmlik[strgfeat] = chan[strgfeat][j, :]
+                    gdat.catlmlik[strgfeat] = chan[strgfeat][j-gdat.numbswepburn, :]
                 mlik = llik
+                writ_catl(gdat, gdat.catlmlik, gdat.pathstat)
+            print 'llik'
+            print llik
+            print 'mlik'
+            print mlik
 
-        if strgmodl == 'galx':
-            ngsample[j] = models[0].ng
-            xgsample[j,:] = models[0].galaxies[gdat.indxxpos, :]
-            ygsample[j,:] = models[0].galaxies[gdat.indxypos, :]
-            fgsample[j,:] = models[0].galaxies[gdat.indxflux, :]
-            xxgsample[j,:] = models[0].galaxies[Model._XX, :]
-            xygsample[j,:] = models[0].galaxies[Model._XY, :]
-            yygsample[j,:] = models[0].galaxies[Model._YY, :]
+        if gdat.boolsaveswep[j]:
+            chan['numb'][j-gdat.numbswepburn] = models[0].n
+            for strgfeat in gdat.liststrgfeatstar:
+                indx = getattr(gdat, 'indx' + strgfeat)
+                chan[strgfeat][j-gdat.numbswepburn, :] = models[0].stars[indx, :]
+                if strgfeat == 'lcpr':
+                    print 'models[0].stars[indx, :]'
+                    print models[0].stars[indx, :]
+                    summgene(models[0].stars[indx, :])
+                    print
+
+            if strgmodl == 'galx':
+                ngsample[j] = models[0].ng
+                xgsample[j,:] = models[0].galaxies[gdat.indxxpos, :]
+                ygsample[j,:] = models[0].galaxies[gdat.indxypos, :]
+                fgsample[j,:] = models[0].galaxies[gdat.indxflux, :]
+                xxgsample[j,:] = models[0].galaxies[Model._XX, :]
+                xygsample[j,:] = models[0].galaxies[Model._XY, :]
+                yygsample[j,:] = models[0].galaxies[Model._YY, :]
+        print
    
-    # burn out the initial numbsampburn samples
-    chan['numb'] = chan['numb'][gdat.numbsampburn:]
-    for strgfeat in gdat.liststrgfeatstar:
-        chan[strgfeat] = chan[strgfeat][gdat.numbsampburn:, :]
-    # temp
-    #numbstarsamp = numbstarsamp[gdat.numbsampburn:]
-    #xpossamp = xpossamp[gdat.numbsampburn:, :]
-    #ypossamp = ypossamp[gdat.numbsampburn:, :]
-    #fluxsamp = fluxsamp[gdat.numbsampburn:, :]
-    #if gdat.booltimebins:
-    #    lcprsamp = lcprsamp[gdat.numbsampburn:, :, :]
-    #
-    
-    if gdat.strgstat != None:
-        writ_catl(gdat, gdat.catlmlik, gdat.pathstat)
-
     writ_catl(gdat, chan, pathh5py)
-    
-    # temp
-    #filearry = h5py.File(pathh5py, 'w')
-    #filearry.create_dataset('xpos', data=xpossamp)
-    #filearry.create_dataset('ypos', data=ypossamp)
-    #filearry.create_dataset('flux', data=fluxsamp)
-    #if gdat.booltimebins:
-    #    filearry.create_dataset('lcpr', data=lcprsamp)
-    #filearry.close()
     
     if gdat.booltimebins:
         if gdat.diagmode:
@@ -2312,16 +2298,13 @@ def main( \
     cPickle.dump(gdat, filepick, protocol=cPickle.HIGHEST_PROTOCOL)
     filepick.close()
  
-    # temp
-    #print 'Saving the numpy object to %s...' % pathnump
-    #np.savez(pathnump, n=numbstarsamp, x=xpossamp, y=ypossamp, f=fluxsamp, ng=ngsample, xg=xgsample, yg=ygsample, fg=fgsample, xxg=xxgsample, xyg=xygsample, yyg=yygsample)
-    
     # calculate the condensed catalog
-    catlcond = retr_catlcond(gdat.rtag, gdat.pathdata)
+    catlcond = retr_catlcond(gdat.rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag)
+    
+    gdat.numbsourcond = catlcond.shape[1]
+    gdat.indxsourcond = np.arange(gdat.numbsourcond)
     
     if gdat.booltimebins:
-        gdat.numbsourcond = catlcond.shape[0]
-        gdat.indxsourcond = np.arange(gdat.numbsourcond)
         print 'Plotting light curves...'
         plot_lcur(gdat)
 
@@ -2335,10 +2318,10 @@ def main( \
             else:
                 temp = gdat.cntpdata[0, :, :, 0]
             axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
-            numbsampplot = min(gdat.numbsamp - gdat.numbsampburn, 10)
-            indxsampplot = np.random.choice(np.arange(gdat.numbsampburn, gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
+            numbsampplot = min(gdat.numbsamp - gdat.numbswepburn, 10)
+            indxsampplot = np.random.choice(np.arange(gdat.numbswepburn, gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
             for k in range(numbsampplot):
-                numb = chan['numb'][indxsampplot[k]-gdat.numbsampburn]
+                numb = chan['numb'][indxsampplot[k]-gdat.numbswepburn]
                 supr_catl(gdat, axis, chan['xpos'][k, :numb], chan['ypos'][k, :numb], chan['flux'][k, :numb])
             supr_catl(gdat, axis, catlcond[gdat.indxxpos, :, 0], catlcond[gdat.indxypos, :, 0], catlcond[gdat.indxflux, :, 0], boolcond=True)
             plt.savefig(gdat.pathdatartag + '%s_condcatl.' % gdat.rtag + gdat.strgplotfile)
@@ -2355,28 +2338,30 @@ def main( \
 
 def chec_lcpr(lcpr):
 
-    if np.amax(np.abs(lcpr)) > 1e3 or np.isnan(lcpr).any():
-        if np.amax(np.abs(lcpr)) > 1e3:
-            print 'if np.amax(np.abs(lcpr)) > 1e3'
-        if np.isnan(lcpr).any():
-            print 'np.isnan(lcpr).any()'
-            for k in range(lcpr.shape[1]):
-                print lcpr[:, k]
-        print 'lcpr'
-        summgene(lcpr)
-        print lcpr
-        print 
+    if lcpr.size > 0:
+        if np.amax(np.abs(lcpr)) > 1e3 or np.isnan(lcpr).any():
+            if np.amax(np.abs(lcpr)) > 1e3:
+                print 'if np.amax(np.abs(lcpr)) > 1e3'
+            if np.isnan(lcpr).any():
+                print 'np.isnan(lcpr).any()'
+                for k in range(lcpr.shape[1]):
+                    print lcpr[:, k]
+            print 'lcpr'
+            summgene(lcpr)
+            print lcpr
+            print 
 
-        raise Exception('')
+            raise Exception('')
 
 
-def retr_catlseed(rtag, pathdata):
+def retr_catlseed(rtag, pathdata, pathdatartag=None):
     
     strgtimestmp = rtag[:15]
     
-    pathlion, pathdata = retr_path(pathdata)
+    pathlion, pathdata = retr_path()
     
-    pathdatartag = pathdata + rtag + '/'
+    if pathdatartag == None:
+        pathdatartag = pathdata + rtag + '/'
     path = pathdatartag + 'gdat.p'
     filepick = open(path, 'rb')
     print 'Reading %s...' % path
@@ -2385,9 +2370,6 @@ def retr_catlseed(rtag, pathdata):
 
     os.system('mkdir -p %s' % gdat.pathdatartag)
 
-    # maximum number of sources
-    maxmnumbsour = 2000
-    
     # number of samples used in the seed catalog determination
     numbsampseed = min(10, gdat.numbsamp)
     pathchan = gdat.pathdatartag + rtag + '_chan.h5'
@@ -2405,7 +2387,7 @@ def retr_catlseed(rtag, pathdata):
     for strgfeat in gdat.liststrgfeatstar:
         chan[strgfeat] = chan[strgfeat][:numbsampseed, :]
     
-    PCi, junk = np.mgrid[:numbsampseed, :maxmnumbsour]
+    PCi, junk = np.mgrid[:numbsampseed, :gdat.maxmnumbstar]
     
     mask = chan['flux'] > 0
     PCc_all = np.zeros((np.sum(mask), 2))
@@ -2489,14 +2471,15 @@ def retr_catlseed(rtag, pathdata):
     np.savetxt(gdat.pathdatartag + rtag + '_catlseed.txt', catlseed)
 
 
-def retr_catlcond(rtag, pathdata):
+def retr_catlcond(rtag, pathdata, pathdatartag=None):
 
     strgtimestmp = rtag[:15]
     
     # paths
-    pathlion, pathdata = retr_path(pathdata)
+    pathlion, pathdata = retr_path()
     
-    pathdatartag = pathdata + rtag + '/'
+    if pathdatartag == None:
+        pathdatartag = pathdata + rtag + '/'
     os.system('mkdir -p %s' % pathdatartag)
 
     pathcatlcond = pathdatartag + rtag + '_catlcond.h5'
@@ -2519,46 +2502,33 @@ def retr_catlcond(rtag, pathdata):
     # read the chain
     print 'Reading the chain...'    
     pathchan = pathdatartag + rtag + '_chan.h5'
-    filechan = h5py.File(pathchan, 'r')
-    catlxpos = filechan['xpos'][()] 
-    catlypos = filechan['ypos'][()]
-    catlflux = filechan['flux'][()]
-    if gdat.booltimebins:
-        catllcpr = filechan['lcpr'][()]
-        numblcpr = catllcpr.shape[0]
+    chan = read_catl(gdat, pathchan)
 
-    gdat.numbsamp = len(catlxpos)
-    catlnumb = np.zeros(gdat.numbsamp, dtype=int)
-    gdat.indxsamp = np.arange(gdat.numbsamp)
-    for k in gdat.indxsamp:
-        catlnumb[k] = len(catlxpos[k])
-    filechan.close()
-    
-    maxmnumbsour = catlxpos.shape[1]
-    
     # sort the catalog in decreasing flux
-    catlsort = np.zeros((gdat.numbsamp, maxmnumbsour, gdat.numbparastar))
+    catlsort = np.zeros((gdat.numbsamp, gdat.maxmnumbstar, gdat.numbparastar))
     for i in gdat.indxsamp:
-        catl = np.zeros((maxmnumbsour, gdat.numbparastar))
-        catl[:, gdat.indxxpos] = catlxpos[i, :]
-        catl[:, gdat.indxypos] = catlypos[i, :]
-        catl[:, gdat.indxflux] = catlflux[i, :] 
+        catl = np.zeros((gdat.maxmnumbstar, gdat.numbparastar))
+        catl[:, gdat.indxxpos] = chan['xpos'][i, :]
+        catl[:, gdat.indxypos] = chan['ypos'][i, :]
+        catl[:, gdat.indxflux] = chan['flux'][i, :] 
         if gdat.booltimebins:
-            catl[:, gdat.indxlcpr] = catllcpr[i, :, :].T 
-        catlsort[i, :, :] = np.flipud(catl[catl[:, gdat.indxflux].argsort()])
-    
+            catl[:, gdat.indxlcpr] = chan['lcpr'][i, :, :].T 
+        catlsort[i, :, :] = np.flipud(catl[catl[:, gdat.indxflux].argsort(), :])
+   
     print "Stacking catalogs..."
     
+    # number of stacked stars
+    numbstarstck = np.sum(chan['numb'])
+    
     # create array for KD tree creation
-    PCc_stack = np.zeros((np.sum(catlnumb), 2))
-    j = 0
-    for i in xrange(catlnumb.size):
-        n = catlnumb[i]
-        PCc_stack[j:j+n, 0] = catlsort[i, 0:n, gdat.indxxpos]
-        PCc_stack[j:j+n, 1] = catlsort[i, 0:n, gdat.indxypos]
-        j += n
+    catlstck = np.zeros((numbstarstck, 2))
+    cntr = 0
+    for i in gdat.indxsamp:
+        catlstck[cntr:cntr+chan['numb'][i], 0] = catlsort[i, :chan['numb'][i], gdat.indxxpos]
+        catlstck[cntr:cntr+chan['numb'][i], 1] = catlsort[i, :chan['numb'][i], gdat.indxypos]
+        cntr += chan['numb'][i]
 
-    retr_catlseed(rtag, gdat.pathdata)
+    retr_catlseed(rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag)
     
     # seed catalog
     ## load the catalog
@@ -2581,37 +2551,33 @@ def retr_catlcond(rtag, pathdata):
     indxsourcatlseed = np.arange(numbsourcatlseed)
     
     #creates tree, where tree is Pcc_stack
-    tree = scipy.spatial.KDTree(PCc_stack)
+    tree = scipy.spatial.KDTree(catlstck)
     
     # features of the condensed sources
     featcond = np.zeros((gdat.numbsamp, numbsourcatlseed, gdat.numbparastar))
     
     #numpy mask for sources that have been matched
-    mask = np.zeros(len(PCc_stack))
+    mask = np.zeros(numbstarstck)
     
     #first, we iterate over all sources in the seed catalog:
-    for ct in indxsourcatlseed:
-    
-        #print "time elapsed, before tree " + str(ct) + ": " + str(time.clock() - start_time)
+    for k in indxsourcatlseed:
     
         #query ball point at seed catalog
-        matches = tree.query_ball_point(catlseed[ct], radisrch)
-    
-        #print "time elapsed, after tree " + str(ct) + ": " + str(time.clock() - start_time)
+        matches = tree.query_ball_point(catlseed[k], radisrch)
     
         #in each catalog, find first instance of match w/ desired source (-- first instance okay b/c every catalog is sorted brightest to faintest)
         ##this for loop should naturally populate original seed catalog as well! (b/c all distances 0)
-        for i in range(gdat.numbsamp):
+        for i in gdat.indxsamp:
     
             #for specific catalog, find indices of start and end within large tree
-            cat_lo_ndx = np.sum(catlnumb[:i])
-            cat_hi_ndx = np.sum(catlnumb[:i+1])
+            indxstarloww = np.sum(chan['numb'][:i])
+            indxstarhigh = np.sum(chan['numb'][:i+1])
     
             #want in the form of a numpy array so we can use array slicing/masking  
             matches = np.array(matches)
     
-            #find the locations of matches to ct within specific catalog i
-            culled_matches =  matches[np.logical_and(matches >= cat_lo_ndx, matches < cat_hi_ndx)] 
+            #find the locations of matches to star k within specific catalog i
+            culled_matches =  matches[np.logical_and(matches >= indxstarloww, matches < indxstarhigh)] 
     
             if culled_matches.size > 0:
     
@@ -2628,11 +2594,13 @@ def retr_catlcond(rtag, pathdata):
                     mask[match] += 1
     
                     #add information to cluster array
-                    featcond[i, ct, gdat.indxxpos] = catlsort[i, match-cat_lo_ndx, gdat.indxxpos]
-                    featcond[i, ct, gdat.indxypos] = catlsort[i, match-cat_lo_ndx, gdat.indxypos]
-                    featcond[i, ct, gdat.indxflux] = catlsort[i, match-cat_lo_ndx, gdat.indxflux]
+                    featcond[i, k, gdat.indxxpos] = catlsort[i, match-indxstarloww, gdat.indxxpos]
+                    featcond[i, k, gdat.indxypos] = catlsort[i, match-indxstarloww, gdat.indxypos]
+                    featcond[i, k, gdat.indxflux] = catlsort[i, match-indxstarloww, gdat.indxflux]
                     if gdat.booltimebins:
-                        featcond[i, ct, gdat.indxlcpr] = catlsort[i, match-cat_lo_ndx, gdat.indxlcpr]
+                        print 'catlsort[i, match-indxstarloww, gdat.indxlcpr]'
+                        summgene(catlsort[i, match-indxstarloww, gdat.indxlcpr])
+                        featcond[i, k, gdat.indxlcpr] = catlsort[i, match-indxstarloww, gdat.indxlcpr]
     
     # generate condensed catalog from clusters
     numbsourseed = len(catlseed)
@@ -2660,8 +2628,17 @@ def retr_catlcond(rtag, pathdata):
         ypos = featcond[:, i, gdat.indxypos][np.nonzero(featcond[:, i, gdat.indxypos])]
         flux = featcond[:, i, gdat.indxflux][np.nonzero(featcond[:, i, gdat.indxflux])]
         if gdat.booltimebins:
-            lcpr = featcond[:, i, gdat.indxlcpr][np.nonzero(featcond[:, i, gdat.indxlcpr])]
-        
+            print 'featcond[:, i, gdat.indxlcpr]'
+            summgene(featcond[:, i, gdat.indxlcpr])
+            lcpr = np.empty((xpos.size, gdat.numbtime - 1))
+            for k in np.arange(gdat.numblcpr):
+                lcpr[:, k] = featcond[:, i, gdat.indxlcpr[k]][np.nonzero(featcond[:, i, gdat.indxlcpr[k]])]
+            print 'np.nonzero(featcond[:, i, gdat.indxlcpr])[0]'
+            summgene(np.nonzero(featcond[:, i, gdat.indxlcpr])[0])
+            print 'featcond[:, i, gdat.indxlcpr][np.nonzero(featcond[:, i, gdat.indxlcpr])]'
+            summgene(featcond[:, i, gdat.indxlcpr][np.nonzero(featcond[:, i, gdat.indxlcpr])])
+            print
+
         assert xpos.size == ypos.size
         assert xpos.size == flux.size
         
@@ -2672,12 +2649,29 @@ def retr_catlcond(rtag, pathdata):
             yposmean[i] = np.mean(ypos)
             fluxmean[i] = np.mean(flux)
             lcprmean[:, i] = np.mean(lcpr, axis=0)
+            print 'lcpr'
+            summgene(lcpr)
+            for k in range(len(lcpr)):
+                print 'k'
+                print k
+                print 'lcpr[k, :]'
+                summgene(lcpr[k, :])
+                print
+            print 'np.mean(lcpr, axis=0)'
+            summgene(np.mean(lcpr, axis=0))
+            print
+
         if xpos.size > 1:
             stdvxpos[i] = np.percentile(xpos, pctlhigh) - np.percentile(xpos, pctlloww)
             stdvypos[i] = np.percentile(ypos, pctlhigh) - np.percentile(ypos, pctlloww)
             stdvflux[i] = np.percentile(flux, pctlhigh) - np.percentile(flux, pctlloww)
             if gdat.booltimebins:
-                stdvlcpr[:, i] = np.percentile(lcpr, pctlhigh) - np.percentile(lcpr, pctlloww)
+                print ''
+                stdvlcpr[:, i] = np.percentile(lcpr, pctlhigh, axis=0) - np.percentile(lcpr, pctlloww, axis=0)
+                
+                print 'stdvlcpr[:, i]'
+                summgene(stdvlcpr[:, i])
+                print
 
     catlcond = np.zeros((gdat.numbparacatlcond, numbsourseed, 2))
     catlcond[gdat.indxxpos, :, 0] = xposmean
@@ -2702,11 +2696,10 @@ def retr_catlcond(rtag, pathdata):
     return catlcond
 
 
-def retr_path(pathdata=None):
+def retr_path():
     
     pathlion = os.environ['LION_PATH'] + '/'
-    if pathdata == None:
-        pathdata = os.environ['LION_DATA_PATH'] + '/'
+    pathdata = os.environ['LION_DATA_PATH'] + '/'
     
     return pathlion, pathdata
 
@@ -2731,7 +2724,7 @@ def cnfg_defa():
     
     # read the data
     strgdata = 'sdss0921'
-    cntpdata, bias, gain = read_datafromtext(strgdata)
+    cntpdatatemp, bias, gain = read_datafromtext(strgdata)
     
     # read PSF
     pathlion, pathdata = retr_path()
@@ -2740,6 +2733,14 @@ def cnfg_defa():
     filepsfn.close()
     cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
     
+    numbtime = 1
+    numbener = 1
+
+    numbsidexpos = 100
+    numbsideypos = 100
+    cntpdata = np.empty((numbtime, numbsideypos, numbsidexpos, numbener), dtype=np.float32)
+    cntpdata[0, :, :, 0] = cntpdatatemp
+
     print 'cntppsfn'
     summgene(cntppsfn)
     print np.sum(cntppsfn)
@@ -2799,7 +2800,7 @@ def cnfg_defa():
         
          back=back, \
 
-         #numbsamp=200, \
+         #numbswep=200, \
          colrstyl='pcat', \
          #boolplotsave=False, \
          #diagmode=True, \
@@ -2809,7 +2810,7 @@ def cnfg_defa():
          bias=bias, \
          gain=gain, \
          verbtype=1, \
-         numbsamp=5, \
+         numbswep=100, \
          #numbloop=10, \
         )
 
@@ -2834,7 +2835,14 @@ def cnfg_time():
     print 'numbpixl'
     print numbpixl
     for k in indxtime:
-        cntpdata[k, :, :, 0] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
+        cntpdata[k, :, :, 0] += (100 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
+    
+    catlinit = {}
+    catlinit['numb'] = 1
+    catlinit['xpos'] = np.array([0.])
+    catlinit['ypos'] = np.array([0.])
+    catlinit['flux'] = np.array([100.])
+    catlinit['lcpr'] = np.array([[1.] * numbtime])
 
     back = np.float32(179)
     
@@ -2849,14 +2857,15 @@ def cnfg_time():
          cntpdata=cntpdata, \
          cntppsfn=cntppsfn, \
          factusam=factusam, \
-         numbsamp=3, \
+         numbswep=14, \
          numbloop=1000, \
          colrstyl='pcat', \
          #boolplotsave=False, \
          boolplotsave=True, \
          boolplotshow=False, \
          diagmode=True, \
-            
+        
+         #catlinit=catlinit, \
          strgstat='test', \
 
          back=back, \
