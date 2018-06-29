@@ -4,7 +4,6 @@ import numpy as np
 class gdatstrt(object):
 
     def __init__(self):
-        self.boollockmodi = False
         pass
     
     def __setattr__(self, attr, valu):
