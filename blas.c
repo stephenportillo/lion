@@ -55,29 +55,31 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
     alpha = 1.; beta = 0.;
 
     // save time if there are many phonions per pixel by overwriting and shorting the A matrix
-    int hash[NY*NX];
-    for (i=0; i<NY*NX; i++)
-        hash[i] = -1;
-    int numbphonshrt = 0;
-    for (p = 0; p < numbphon; p++){
-        xposthis = x[p];
-        yposthis = y[p];
-        int idx = yposthis*NX+xposthis;
-        if (hash[idx] != -1){
-            for (i=0; i<numbparaspix; i++){
-                A[hash[idx]*numbparaspix+i] += A[p*numbparaspix+i];
+    if (booltimebins == 0){
+        int hash[NY*NX];
+        for (i=0; i<NY*NX; i++)
+            hash[i] = -1;
+        int numbphonshrt = 0;
+        for (p = 0; p < numbphon; p++){
+            xposthis = x[p];
+            yposthis = y[p];
+            int idx = yposthis*NX+xposthis;
+            if (hash[idx] != -1){
+                for (i=0; i<numbparaspix; i++){
+                    A[hash[idx]*numbparaspix+i] += A[p*numbparaspix+i];
+                }
+            }
+            else{
+                hash[idx] = numbphonshrt;
+                for (i=0; i<numbparaspix; i++)
+                    A[numbphonshrt*numbparaspix+i] = A[p*numbparaspix+i];
+                x[numbphonshrt] = x[p];
+                y[numbphonshrt] = y[p];
+                numbphonshrt++;
             }
         }
-        else{
-            hash[idx] = numbphonshrt;
-            for (i=0; i<numbparaspix; i++)
-                A[numbphonshrt*numbparaspix+i] = A[p*numbparaspix+i];
-            x[numbphonshrt] = x[p];
-            y[numbphonshrt] = y[p];
-            numbphonshrt++;
-        }
+        numbphon = numbphonshrt;
     }
-    numbphon = numbphonshrt;
 
     //  matrix multiplication
     //cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, numbphon, numbpixlpsfn, numbparaspix, alpha, A, numbparaspix, B, numbpixlpsfn, beta, C, numbpixlpsfn);
@@ -88,16 +90,9 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
         for (i = 0; i < numbpixlpsfn; i++){
             summ = 0.;
             for (c = 0; c < numbparaspix; c++){
-                //printf("numbphon, numbpixlpsfn, numbparaspix %d %d %d \n", numbphon, numbpixlpsfn, numbparaspix);
-                //printf("numbphon * numbparaspix %d \n", numbphon * numbparaspix);
-                //printf("numbparaspix * numbpixlpsfn %d \n", numbparaspix * numbpixlpsfn);
-                //printf("numbphon*p+c = %d\n", numbphon * p + c);
-                //printf("c*numbpixlpsfn+p = %d\n\n\n", c*numbpixlpsfn+p);
                 summ = summ + A[p*numbparaspix+c] * B[c*numbpixlpsfn+i];
-                //summ = summ + A[p+c*numbphon] * B[c+i*numbpixlpsfn];
             }
             C[p*numbpixlpsfn+i] = summ;
-            //C[p+i*numbpixlpsfn] = summ;
         }
     }
 
@@ -115,7 +110,13 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
                             image[numbpixl*t+j*NX+i] += C[m+r];
                         }
                         else{
-                            image[numbpixl*t+j*NX+i] += C[m+r] * lcpr[t];
+                            //if (p < 20 && i == max(xposthis - rad, 0) && j == max(yposthis-rad, 0)){
+                                //printf("%f ", lcpr[(t-1)*numbphon+p]);
+                                //printf("%g ", lcpr[p*(numbtime-1)+t-1]);
+                            //}
+
+                            image[numbpixl*t+j*NX+i] += C[m+r] * lcpr[(t-1)*numbphon+p];
+                            //image[numbpixl*t+j*NX+i] += C[m+r] * lcpr[p*(numbtime-1)+t];
                         }
                     }
                 }
@@ -124,7 +125,10 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
                 }
             }
         }
+        //if (p < 20){
+        //    printf("\n");
+        //}
     }
-    
+    //printf("%d\n", numbphon); 
     pcat_like_eval(NX, NY, image, ref, weight, diff2, regsize, margin, offsetx, offsety);
 }
