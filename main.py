@@ -959,7 +959,7 @@ def main( \
         
          # string indicating the type of model
          strgmode='pcat', \
-    
+        
          # reference catalog
          catlrefr=[], \
 
@@ -977,6 +977,8 @@ def main( \
          
          # diagnostic mode
          diagmode=False, \
+        
+         boolentibins=False, \
 
          # color style
          colrstyl='lion', \
@@ -1187,6 +1189,9 @@ def main( \
     
     gdat.pathlion, gdat.pathdata = retr_path()
         
+    # setup
+    setp(gdat)
+
     if gdat.strgstat != None:
         gdat.pathstat = gdat.pathdata + 'stat_' + gdat.strgstat + '.h5'
         if os.path.isfile(gdat.pathstat):
@@ -1221,9 +1226,6 @@ def main( \
         print factusam
     coefspix = psf_poly_fit(gdat, cntppsfn, factusam)
   
-    # setup
-    setp(gdat)
-
     # read data
     if not isinstance(gdat.cntpdata, np.ndarray):
         raise Exception('')
@@ -1433,12 +1435,6 @@ def main( \
     def supr_catl(gdat, axis, xpos, ypos, flux, boolcond=False):
         
         for k in gdat.indxrefr:
-            print 'k'
-            print k
-            print 'catlrefr[k]'
-            summgene(catlrefr[k])
-            print
-
             mask = catlrefr[k]['flux'] > 250
             size = sizemrkr * catlrefr[k]['flux'][mask]
             axis.scatter(catlrefr[k]['xpos'][mask], catlrefr[k]['ypos'][mask], marker='+', s=size, color=gdat.colrrefr[k], lw=2, alpha=0.7)
@@ -3089,9 +3085,13 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
         catl = np.zeros((gdat.maxmnumbstar, gdat.numbparastar))
         catl[:, gdat.indxxpos] = chan['xpos'][i, :]
         catl[:, gdat.indxypos] = chan['ypos'][i, :]
-        catl[:, gdat.indxflux] = chan['flux'][i, :] 
-        if gdat.booltimebins:
-            catl[:, gdat.indxlcpr] = chan['lcpr'][i, :, :].T 
+        if gdat.boolentibins:
+            catl[:, gdat.indxflux] = chan['flux'][i, :, :].flatten()
+        else:
+            catl[:, gdat.indxflux] = chan['flux'][i, :] 
+            if gdat.booltimebins:
+                catl[:, gdat.indxlcpr] = chan['lcpr'][i, :, :].T 
+        
         catlsort[i, :, :] = np.flipud(catl[catl[:, gdat.indxflux].argsort(), :])
    
     print "Stacking catalogs..."
@@ -3478,8 +3478,107 @@ def cnfg_time():
          #boolplotsave=True, \
          #boolplotshow=True, \
         )
+         
 
-plot_pcat()
+def cnfg_ener():
+    
+    gdat = gdatstrt()
+    
+    gdat.booltimebins = True
+    
+    gdat.pathlion, pathdata = retr_path()
+    
+    setp(gdat)
+    
+    # read the data
+    strgdata = 'sdsstimevari'
+    #cntpdatatemp, bias, gain = read_datafromtext(strgdata)
+
+    path = pathdata + strgdata + '_mock.h5'
+    print 'Reading %s...' % path
+    filetemp = h5py.File(path, 'r')
+    cntpdata = filetemp['cntpdata'][()]
+    truegain = filetemp['gain'][()]
+    truecatl = read_catl(gdat, path)
+
+
+    numbtime = cntpdata.shape[0]
+    indxtime = np.arange(numbtime)
+
+
+    # perturb the data in each time bin
+    #cntpdata = np.zeros([numbtime] + list(cntpdatatemp.shape) + [1], dtype=np.float32)
+    #for k in indxtime:
+    #    cntpdata[k, :, :, 0] = cntpdatatemp
+    
+    numbsidexpos = cntpdata.shape[2]
+    numbsideypos = cntpdata.shape[1]
+    numbpixl = numbsidexpos * numbsideypos
+    print 'cntpdata'
+    summgene(cntpdata)
+    print 'numbpixl'
+    print numbpixl
+    #for k in indxtime:
+    #    cntpdata[k, :, :, 0] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
+    
+    strgmode = 'pcat'
+
+    strgmodl = 'star'
+    
+    catlrefr = [truecatl]
+    catlinit = truecatl
+
+    #catlinit = retr_catltrue(pathdata, strgmodl, strgdata)
+    #catlinit['lcpr'] = np.ones((numbtime - 1, catlinit['xpos'].size))
+    indx = np.argsort(truecatl['flux'])
+    truecatl['numb'] = 1000
+    truecatl['xpos'] = truecatl['xpos'][indx][:1000]
+    truecatl['ypos'] = truecatl['ypos'][indx][:1000]
+    truecatl['flux'] = truecatl['flux'][indx][:1000]
+    truecatl['lcpr'] = truecatl['lcpr'][:, indx][:, :1000]
+    back = np.float32(179)
+    truebias = 0.
+
+    # read PSF
+    strgdata = 'sdss0921'
+    filepsfn = open(pathdata + strgdata + '_psfn.txt')
+    numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
+    filepsfn.close()
+    cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
+
+    main( \
+         cntpdata=cntpdata, \
+         cntppsfn=cntppsfn, \
+         factusam=factusam, \
+         numbswep=100, \
+         numbloop=1000, \
+         colrstyl='pcat', \
+         #boolplotsave=False, \
+         boolplotsave=True, \
+         boolplotshow=False, \
+         diagmode=True, \
+        
+         strgmode=strgmode, \
+         #maxmnumbstar=7000, \
+
+         catlrefr=catlrefr, \
+         catlinit=catlinit, \
+         #strgstat='test', \
+
+         back=back, \
+         
+         boolentibins=False, \
+
+         bias=truebias, \
+         gain=truegain, \
+         #verbtype=2, \
+         #testpsfn=True, \
+         #boolplotsave=True, \
+         #boolplotshow=True, \
+        )
+         
+
+#plot_pcat()
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:
