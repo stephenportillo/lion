@@ -5,85 +5,92 @@
 #define max(a,b) ({ typeof (a) _a = (a); typeof (b) _b = (b); _a > _b ? _a : _b; })
 #define min(a,b) ({ typeof (a) _a = (a); typeof (b) _b = (b); _a < _b ? _a : _b; })
 
-void pcat_imag_acpt(int NX, int NY, float* image, float* image_acpt, int* reg_acpt, int regsize, int margin, int offsetx, int offsety){
-    int NREGX = (NX / regsize) + 1;
-    int NREGY = (NY / regsize) + 1;
+void clib_updt_modl(int numbsidexpos, int numbsideypos,
+                    float* cntpmodl, float* cntpmodlacpt, int* regiacpt,
+                    int sizeregi, int marg, int offsxpos, int offsypos){
+    
+    int NREGX = (numbsidexpos / sizeregi) + 1;
+    int NREGY = (numbsideypos / sizeregi) + 1;
     int y0, y1, x0, x1, i, j, ii, jj;
     for (j=0 ; j < NREGY ; j++){
-        y0 = max(j*regsize-offsety-margin, 0);
-        y1 = min((j+1)*regsize-offsety+margin, NY);
+        y0 = max(j*sizeregi-offsypos-marg, 0);
+        y1 = min((j+1)*sizeregi-offsypos+marg, numbsideypos);
         for (i=0 ; i < NREGX ; i++){
-                x0 = max(i*regsize-offsetx-margin, 0);
-                x1 = min((i+1)*regsize-offsetx+margin, NX);
-                if (reg_acpt[j*NREGX+i] > 0){
-                    for (jj=y0 ; jj<y1; jj++)
-                     for (ii=x0 ; ii<x1; ii++)
-                        image_acpt[jj*NX+ii] = image[jj*NX+ii];
-                }
-        }
-    }
-}
-
-void pcat_like_eval(int NX, int NY, float* image, float* ref, float* weight, double* diff2, int regsize, int margin, int offsetx, int offsety){
-    int NREGX = (NX / regsize) + 1;
-    int NREGY = (NY / regsize) + 1;
-    int y0, y1, x0, x1, i, j, ii, jj;
-    for (j=0 ; j < NREGY ; j++){
-        y0 = max(j*regsize-offsety-margin, 0);
-        y1 = min((j+1)*regsize-offsety+margin, NY);
-        for (i=0 ; i < NREGX ; i++){
-                x0 = max(i*regsize-offsetx-margin, 0);
-                x1 = min((i+1)*regsize-offsetx+margin, NX);
-                diff2[j*NREGX+i] = 0.;
+            x0 = max(i*sizeregi-offsxpos-marg, 0);
+            x1 = min((i+1)*sizeregi-offsxpos+marg, numbsidexpos);
+            if (regiacpt[j*NREGX+i] > 0){
                 for (jj=y0 ; jj<y1; jj++)
-                 for (ii=x0 ; ii<x1; ii++)
-                    diff2[j*NREGX+i] += (image[jj*NX+ii]-ref[jj*NX+ii])*(image[jj*NX+ii]-ref[jj*NX+ii]) * weight[jj*NX+ii];
+                    for (ii=x0 ; ii<x1; ii++)
+                        cntpmodlacpt[jj*numbsidexpos+ii] = cntpmodl[jj*numbsidexpos+ii];
+            }
         }
     }
 }
 
-//sizeimag[0], sizeimag[1], numbphon, numbpixlpsfnside, numbparaspix
-void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int numbparaspix, float* A, float* B, float* C, int* x,
-	                 int* y, float* image, float* ref, float* weight, double* diff2, int regsize, int margin, int offsetx, int offsety,
-                     int numbtime, int booltimebins, float* lcpr)
+
+void clib_eval_llik(int numbsidexpos, int numbsideypos, 
+                    float* cntpmodl, float* cntpresi, float* weig, double* chi2,
+                    int sizeregi, int marg, int offsxpos, int offsypos){
+    
+    int NREGX = (numbsidexpos / sizeregi) + 1;
+    int NREGY = (numbsideypos / sizeregi) + 1;
+    int y0, y1, x0, x1, i, j, ii, jj;
+    for (j=0 ; j < NREGY ; j++){
+        y0 = max(j*sizeregi-offsypos-marg, 0);
+        y1 = min((j+1)*sizeregi-offsypos+marg, numbsideypos);
+        for (i=0 ; i < NREGX ; i++){
+            x0 = max(i*sizeregi-offsxpos-marg, 0);
+            x1 = min((i+1)*sizeregi-offsxpos+marg, numbsidexpos);
+            chi2[j*NREGX+i] = 0.;
+            for (jj=y0 ; jj<y1; jj++)
+                for (ii=x0 ; ii<x1; ii++)
+                    chi2[j*NREGX+i] += (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * \
+                                       (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * weig[jj*numbsidexpos+ii];
+        }
+    }
+}
+
+void clib_eval_modl(int numbsidexpos, int numbsideypos, int numbphon, int numbpixlpsfnside, int numbparaspix,
+                     float* A, float* B, float* C,
+                     int* x, int* y, 
+                     float* cntpmodl, float* cntpresi, float* weig, double* chi2, 
+                     int sizeregi, int marg, int offsxpos, int offsypos)
 {
     int i, m, t, imax, j, r, jmax, rad, p, xposthis, yposthis;
     float alpha, beta;
     int numbpixlpsfn = numbpixlpsfnside * numbpixlpsfnside;
-    int numbpixl = NX * NY;
+    int numbpixl = numbsidexpos * numbsideypos;
     rad = numbpixlpsfnside / 2;
     alpha = 1.; beta = 0.;
 
     // save time if there are many phonions per pixel by overwriting and shorting the A matrix
-    if (booltimebins == 0){
-        int hash[NY*NX];
-        for (i=0; i<NY*NX; i++)
-            hash[i] = -1;
-        int numbphonshrt = 0;
-        for (p = 0; p < numbphon; p++){
-            xposthis = x[p];
-            yposthis = y[p];
-            int idx = yposthis*NX+xposthis;
-            if (hash[idx] != -1){
-                for (i=0; i<numbparaspix; i++){
-                    A[hash[idx]*numbparaspix+i] += A[p*numbparaspix+i];
-                }
-            }
-            else{
-                hash[idx] = numbphonshrt;
-                for (i=0; i<numbparaspix; i++)
-                    A[numbphonshrt*numbparaspix+i] = A[p*numbparaspix+i];
-                x[numbphonshrt] = x[p];
-                y[numbphonshrt] = y[p];
-                numbphonshrt++;
+    int hash[numbsideypos*numbsidexpos];
+    for (i=0; i<numbsideypos*numbsidexpos; i++)
+        hash[i] = -1;
+    int numbphonshrt = 0;
+    for (p = 0; p < numbphon; p++){
+        xposthis = x[p];
+        yposthis = y[p];
+        int idx = yposthis*numbsidexpos+xposthis;
+        if (hash[idx] != -1){
+            for (i=0; i<numbparaspix; i++){
+                A[hash[idx]*numbparaspix+i] += A[p*numbparaspix+i];
             }
         }
-        numbphon = numbphonshrt;
+        else{
+            hash[idx] = numbphonshrt;
+            for (i=0; i<numbparaspix; i++)
+                A[numbphonshrt*numbparaspix+i] = A[p*numbparaspix+i];
+            x[numbphonshrt] = x[p];
+            y[numbphonshrt] = y[p];
+            numbphonshrt++;
+        }
     }
-
+    numbphon = numbphonshrt;
+    
     //  matrix multiplication
     //cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, numbphon, numbpixlpsfn, numbparaspix, alpha, A, numbparaspix, B, numbpixlpsfn, beta, C, numbpixlpsfn);
-
+    
     int c;
     double summ;
     for (p = 0; p < numbphon; p++){
@@ -95,40 +102,19 @@ void pcat_model_eval(int NX, int NY, int numbphon, int numbpixlpsfnside, int num
             C[p*numbpixlpsfn+i] = summ;
         }
     }
-
-    //  loop over phonions, insert psfs into image    
+    
+    //  loop over phonions, insert psfs into cntpmodl    
     for (p = 0 ; p < numbphon ; p++){
 	    xposthis = x[p];
 	    yposthis = y[p];
-	    imax = min(xposthis+rad, NX-1);
-	    jmax = min(yposthis+rad, NY-1);
+	    imax = min(xposthis+rad, numbsidexpos-1);
+	    jmax = min(yposthis+rad, numbsideypos-1);
 	    for (j = max(yposthis-rad, 0), r = (p*numbpixlpsfnside+j-yposthis+rad)*numbpixlpsfnside ; j <= jmax ; j++, r+=numbpixlpsfnside){
 	        for (i = max(xposthis - rad, 0), m = i-xposthis+rad ; i <= imax ; i++, m++){
-		        if (booltimebins > 0){
-                    for (t = 0; t < numbtime; t++){
-                        if (t == 0){
-                            image[numbpixl*t+j*NX+i] += C[m+r];
-                        }
-                        else{
-                            //if (p < 20 && i == max(xposthis - rad, 0) && j == max(yposthis-rad, 0)){
-                                //printf("%f ", lcpr[(t-1)*numbphon+p]);
-                                //printf("%g ", lcpr[p*(numbtime-1)+t-1]);
-                            //}
-
-                            image[numbpixl*t+j*NX+i] += C[m+r] * lcpr[(t-1)*numbphon+p];
-                            //image[numbpixl*t+j*NX+i] += C[m+r] * lcpr[p*(numbtime-1)+t];
-                        }
-                    }
-                }
-                else{
-                    image[j*NX+i] += C[m+r];
-                }
+                cntpmodl[j*numbsidexpos+i] += C[m+r];
             }
         }
-        //if (p < 20){
-        //    printf("\n");
-        //}
     }
-    //printf("%d\n", numbphon); 
-    pcat_like_eval(NX, NY, image, ref, weight, diff2, regsize, margin, offsetx, offsety);
+    
+    clib_eval_llik(numbsidexpos, numbsideypos, cntpmodl, cntpresi, weig, chi2, sizeregi, marg, offsxpos, offsypos);
 }

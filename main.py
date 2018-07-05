@@ -37,7 +37,6 @@ def plot_pcat():
     gdat = gdatstrt()
     
     gdat.pathlion, pathdata = retr_path()
-    gdat.booltimebins = True
 
     setp(gdat)
     
@@ -540,28 +539,27 @@ def plot_pcat():
      plt.clf()
 
 
-def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, lcpreval, \
-                                            sizeregi=None, margin=0, offsetx=0, offsety=0, weig=None, ref=None, lib=None, sizeimag=None):
+def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0, offsxpos=0, offsypos=0, weig=None, cntprefr=None, clib=None, sizeimag=None):
     
     assert x.dtype == np.float32
     assert y.dtype == np.float32
     assert f.dtype == np.float32
     assert coefspix.dtype == np.float32
-    if ref is not None:
-        assert ref.dtype == np.float32
+    if cntprefr is not None:
+        assert cntprefr.dtype == np.float32
+        boolretrdoub = True
+    else:
+        boolretrdoub = False
     
     if sizeimag == None:
         sizeimag = gdat.sizeimag
 
     numbpixlpsfn = numbsidepsfn**2
 
-    numbparaspix = coefspix.shape[0]
+    numbparaspix = coefspix.shape[1]
 
     if weig is None:
-        if gdat.booltimebins:
-            weig = np.full([gdat.numbtime] + sizeimag, 1., dtype=np.float32)
-        else:
-            weig = np.full(sizeimag, 1., dtype=np.float32)
+        weig = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
     if sizeregi is None:
         sizeregi = max(sizeimag[0], sizeimag[1])
 
@@ -569,119 +567,122 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, lcpreval, \
     goodsrc = (x > 0) * (x < sizeimag[0] - 1) * (y > 0) * (y < sizeimag[1] - 1)
     x = x.compress(goodsrc)
     y = y.compress(goodsrc)
-    f = f.compress(goodsrc)
-    if gdat.booltimebins:
-        lcpreval = lcpreval.compress(goodsrc, axis=1)
+    f = f.compress(goodsrc, axis=2)
 
     numbphon = x.size
     rad = numbsidepsfn / 2 # 12 for numbsidepsfn = 25
 
     numbregiyaxi = sizeimag[1] / sizeregi + 1 # assumes sizeimag % sizeregi = 0?
     numbregixaxi = sizeimag[0] / sizeregi + 1
+    
+    if gdat.verbtype > 1:
+        print 'x'
+        for xt in x:
+            print xt
 
     ix = np.ceil(x).astype(np.int32)
     dx = ix - x
     iy = np.ceil(y).astype(np.int32)
     dy = iy - y
 
-    dd = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32) * f[:, None]
-
-    if lib is None:
+    if clib is None:
         
         modl = np.full((sizeimag[1]+2*rad+1,sizeimag[0]+2*rad+1), back, dtype=np.float32)
         
         if gdat.verbtype > 1:
-            print 'dd'
-            summgene(dd)
             print 'coefspix'
             summgene(coefspix)
             print 'numbphon'
             print numbphon
             print 'numbsidepsfn'
             print numbsidepsfn
-        recon2 = np.dot(dd, coefspix).reshape((numbphon,numbsidepsfn,numbsidepsfn))
-        recon = np.zeros((numbphon,numbsidepsfn,numbsidepsfn), dtype=np.float32)
-        recon[:,:,:] = recon2[:,:,:]
+        cntpmodlstmp2 = np.dot(dd, coefspix).reshape((numbphon, numbsidepsfn, numbsidepsfn))
+        cntpmodlstmp = np.zeros((numbphon,numbsidepsfn,numbsidepsfn), dtype=np.float32)
+        cntpmodlstmp[:,:,:] = cntpmodlstmp2[:,:,:]
         for i in xrange(numbphon):
-            modl[iy[i]:iy[i]+rad+rad+1,ix[i]:ix[i]+rad+rad+1] += recon[i,:,:]
+            modl[iy[i]:iy[i]+rad+rad+1,ix[i]:ix[i]+rad+rad+1] += cntpmodlstmp[i,:,:]
 
         modl = modl[rad:sizeimag[1]+rad,rad:sizeimag[0]+rad]
 
-        if ref is not None:
-            diff = ref - modl
-        diff2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
+        if cntprefr is not None:
+            diff = cntprefr - modl
+        chi2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
         for i in xrange(numbregiyaxi):
-            y0 = max(i*sizeregi - offsety - margin, 0)
-            y1 = min((i+1)*sizeregi - offsety + margin, sizeimag[1])
+            y0 = max(i*sizeregi - offsypos - marg, 0)
+            y1 = min((i+1)*sizeregi - offsypos + marg, sizeimag[1])
             for j in xrange(numbregixaxi):
-                x0 = max(j*sizeregi - offsetx - margin, 0)
-                x1 = min((j+1)*sizeregi - offsetx + margin, sizeimag[0])
+                x0 = max(j*sizeregi - offsxpos - marg, 0)
+                x1 = min((j+1)*sizeregi - offsxpos + marg, sizeimag[0])
                 subdiff = diff[y0:y1,x0:x1]
-                diff2[i,j] = np.sum(subdiff*subdiff*weig[y0:y1,x0:x1])
+                chi2[i,j] = np.sum(subdiff*subdiff*weig[y0:y1,x0:x1])
     else:
-        recon = np.zeros((numbphon, numbpixlpsfn), dtype=np.float32)
-        reftemp = ref
-        if ref is None:
-            if gdat.booltimebins:
-                reftemp = np.zeros((gdat.numbtime, sizeimag[1], sizeimag[0]), dtype=np.float32)
-            else:
-                reftemp = np.zeros((sizeimag[1], sizeimag[0]), dtype=np.float32)
-        if gdat.booltimebins:
-            modl = np.full((gdat.numbtime, sizeimag[1], sizeimag[0]), back, dtype=np.float32)
-        else:
-            modl = np.full((sizeimag[1], sizeimag[0]), back, dtype=np.float32)
-        diff2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
+        # counts per pixel of model evaluated over postage stamps
+        cntpmodlstmp = np.zeros((numbphon, numbpixlpsfn), dtype=np.float32)
+        
+        # counts per pixel reference
+        if cntprefr is None:
+            cntprefr = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
+        
+        cntpmodl = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32) + back
+        #cntpmodl = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32) + back
+        
+        chi2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
         
         if gdat.verbtype > 1:
-            print 'dd'
-            summgene(dd)
+            print 'f'
+            summgene(f)
+            print 'numbregiyaxi'
+            print numbregiyaxi
+            print 'numbregixaxi'
+            print numbregixaxi
             print 'coefspix'
             summgene(coefspix)
-            print 'recon'
-            summgene(recon)
             print 'iy'
-            print iy
-            print 'modl'
-            summgene(modl)
-            print 'reftemp'
-            summgene(reftemp)
+            summgene(iy)
+            print 'cntpmodl'
+            summgene(cntpmodl)
+            print 'cntprefr'
+            summgene(cntprefr)
             print 'weig'
             print weig.shape
-            print 'diff2'
-            print diff2.shape
+            print 'chi2'
+            print chi2.shape
             print 'gdat.numbtime'
             print gdat.numbtime
-            print 'gdat.booltimebins'
-            print gdat.booltimebins
-            print 'lcpreval'
-            summgene(lcpreval)
-            print
       
-        if False:
-            print 'HACK'
-            print 'x.size'
-            print x.size
-            print 'lcpreval'
-            summgene(lcpreval)
-            #lcpreval = np.arange(gdat.numblcpr * x.size, dtype=np.float32).reshape((gdat.numblcpr, x.size))
-            print 'lcpreval'
-            summgene(lcpreval)
-            for k in range(lcpreval.shape[1]):
-                print 'k'
-                print k
-                print 'lcpreval[:, k]'
-                print lcpreval[:, k]
-                print
-                if k == 20:
-                    break
+        for i in gdat.indxener:
+            for t in gdat.indxtime:
+                cntpmodltemp = np.zeros(sizeimag, dtype=np.float32) + back
+                cntprefrtemp = cntprefr[i, :, :, t]
+                #cntpmodltemp = cntpmodl[i, :, :, t]
+                weigtemp = weig[i, :, :, t]
+                #if gdat.verbtype > 1:
+                #    print 'before'
+                #    print 'cntpmodlstmp'
+                #    print cntpmodlstmp
+                #    summgene(cntpmodlstmp)
+                desimatr = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, \
+                                                                                                dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32) * f[i, t, :, None]
+                clib(sizeimag[0], sizeimag[1], numbphon, numbsidepsfn, numbparaspix, desimatr, coefspix[i, :, :], cntpmodlstmp, ix, iy, cntpmodltemp, \
+                                                cntprefrtemp, weigtemp, chi2, sizeregi, marg, offsxpos, offsypos)
         
-        lib(sizeimag[0], sizeimag[1], numbphon, numbsidepsfn, numbparaspix, dd, coefspix, recon, ix, iy, modl, \
-                                                reftemp, weig, diff2, sizeregi, margin, offsetx, offsety, gdat.numbtime, gdat.booltimebins, lcpreval)
-
-    if ref is not None:
-        return modl, diff2
+                cntpmodl[i, :, :, t] = cntpmodltemp
+                if gdat.verbtype > 1:
+                    #print 'after'
+                    print 'cntpmodlstmp'
+                    #print cntpmodlstmp
+                    summgene(cntpmodlstmp)
+                    print 'cntpmodltemp'
+                    summgene(cntpmodltemp)
+        if gdat.verbtype > 1:
+            print 'cntpmodl'
+            summgene(cntpmodl)
+            print 'Ended eval_modl()'
+                
+    if boolretrdoub:#cntprefr is not None:
+        return cntpmodl, chi2
     else:
-        return modl
+        return cntpmodl
 
 
 def retr_dtre(spec):
@@ -698,8 +699,8 @@ def psf_poly_fit(gdat, psfnusam, factusam):
     numbsidepsfnusam = psfnusam.shape[0]
 
     # pad by one row and one column
-    psfnusampadd = np.zeros((numbsidepsfnusam+1, numbsidepsfnusam+1), dtype=np.float32)
-    psfnusampadd[0:numbsidepsfnusam, 0:numbsidepsfnusam] = psfnusam
+    psfnusampadd = np.zeros((gdat.numbener, numbsidepsfnusam+1, numbsidepsfnusam+1), dtype=np.float32)
+    psfnusampadd[:, 0:numbsidepsfnusam, 0:numbsidepsfnusam] = psfnusam
 
     # make design matrix for each factusam x factusam region
     numbsidepsfn = numbsidepsfnusam / factusam # dimension of original psf
@@ -713,19 +714,20 @@ def psf_poly_fit(gdat, psfnusam, factusam):
     numbparaspix = A.shape[1]
 
     # output array of coefficients
-    coefspix = np.zeros((numbparaspix, numbsidepsfn, numbsidepsfn), dtype=np.float32)
+    coefspix = np.zeros((gdat.numbener, numbparaspix, numbsidepsfn, numbsidepsfn), dtype=np.float32)
 
     # loop over original psf pixels and get fit coefficients
-    for i in xrange(numbsidepsfn):
-        for j in xrange(numbsidepsfn):
-            # solve p = A coefspix for coefspix
-            p = psfnusampadd[i*factusam:(i+1)*factusam+1, j*factusam:(j+1)*factusam+1].flatten()
-            coefspix[:, i, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
-    coefspix = coefspix.reshape(coefspix.shape[0], coefspix.shape[1] * coefspix.shape[2])
+    for i in gdat.indxener:
+        for a in xrange(numbsidepsfn):
+            for j in xrange(numbsidepsfn):
+                # solve p = A coefspix for coefspix
+                p = psfnusampadd[i, a*factusam:(a+1)*factusam+1, j*factusam:(j+1)*factusam+1].flatten()
+                coefspix[i, :, a, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
+    coefspix = coefspix.reshape(gdat.numbener, numbparaspix, numbsidepsfn**2)
     
     if gdat.boolplotsave:
         figr, axis = plt.subplots()
-        axis.imshow(psfnusampadd, interpolation='none')
+        axis.imshow(psfnusampadd[i, :, :], interpolation='none')
         plt.savefig(gdat.pathdatartag + '%s_psfnusampadd.' % gdat.rtag + gdat.strgplotfile)
         plt.close()
 
@@ -749,8 +751,8 @@ def neighbours(x,y,neigh,i,generate=False):
         return neighbours
 
 
-def get_region(x, offsetx, sizeregi):
-    return np.floor(x + offsetx).astype(np.int) / sizeregi
+def get_region(x, offsxpos, sizeregi):
+    return np.floor(x + offsxpos).astype(np.int) / sizeregi
 
 
 # visualization-related functions
@@ -760,9 +762,9 @@ def setp_imaglimt(gdat, axis):
     axis.set_ylim(-0.5, gdat.sizeimag[1] - 0.5)
                     
     
-def idx_parity(x, y, n, offsetx, offsety, parity_x, parity_y, sizeregi):
-    match_x = (get_region(x[0:n], offsetx, sizeregi) % 2) == parity_x
-    match_y = (get_region(y[0:n], offsety, sizeregi) % 2) == parity_y
+def idx_parity(x, y, n, offsxpos, offsypos, parity_x, parity_y, sizeregi):
+    match_x = (get_region(x[0:n], offsxpos, sizeregi) % 2) == parity_x
+    match_y = (get_region(y[0:n], offsypos, sizeregi) % 2) == parity_y
     return np.flatnonzero(np.logical_and(match_x, match_y))
 
 
@@ -805,7 +807,12 @@ def writ_catl(gdat, catl, path):
     print 'Writing to %s...' % path
     filetemp.create_dataset('numb', data=catl['numb'])
     for strgfeat in gdat.liststrgfeatstar:
+        if strgfeat == 'flux' and 'catlseed' in path:
+            continue
         filetemp.create_dataset(strgfeat, data=catl[strgfeat])
+    if 'catlseed' in path:
+        filetemp.create_dataset('degr', data=catl['degr'])
+        
     filetemp.close()
 
 
@@ -816,7 +823,11 @@ def read_catl(gdat, path):
     catl = {}
     catl['numb'] = filetemp['numb'][()]
     for strgfeat in gdat.liststrgfeatstar:
+        if strgfeat == 'flux' and 'catlseed' in path:
+            continue
         catl[strgfeat] = filetemp[strgfeat][()] 
+    if 'catlseed' in path:
+        catl['degr'] = filetemp['degr'][()] 
     filetemp.close()
    
     return catl
@@ -825,56 +836,8 @@ def read_catl(gdat, path):
 def setp(gdat):
     
     gdat.liststrgfeatstar = ['xpos', 'ypos', 'flux']
-    if gdat.booltimebins:
-        gdat.liststrgfeatstar += ['lcpr']
-    
     gdat.liststrgparastar = list(gdat.liststrgfeatstar)
     gdat.liststrgparastar += ['numb']
-
-    # construct C library
-    array_2d_float = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
-    array_3d_float = npct.ndpointer(dtype=np.float32, ndim=3, flags="C_CONTIGUOUS")
-    array_1d_int = npct.ndpointer(dtype=np.int32, ndim=1, flags="C_CONTIGUOUS")
-    array_1d_float = npct.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
-    array_2d_double = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
-    array_2d_int = npct.ndpointer(dtype=np.int32, ndim=2, flags="C_CONTIGUOUS")
-    gdat.libmmult = npct.load_library(gdat.pathlion + 'blas', '.')
-    gdat.libmmult.pcat_model_eval.restype = None
-    
-    #void pcat_model_eval(int NX, int NY, int maxmnumbstar, int numbsidepsfn, int k, float* A, float* B, float* C, int* x,
-	#int* y, float* image, float* ref, float* weig, double* diff2, int sizeregi, int margin, int offsetx, int offsety)
-    #lib(gdat.sizeimag[0], gdat.sizeimag[1], maxmnumbstar, numbsidepsfn, coefspix.shape[0], dd, coefspix, recon, 
-    #ix, iy, image, reftemp, weig, diff2, sizeregi, margin, offsetx, offsety)
-    #gdat.libmmult.pcat_model_eval.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int maxmnumbstar, c_int numbsidepsfn, c_int k coefspix.shape[0]
-    # array_2d_float A dd, array_2d_float B coefspix, array_2d_float C recon
-    # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double diff2, c_int sizeregi, 
-    # c_int margin, c_int offsetx, c_int offsety]
-    
-    gdat.libmmult.pcat_imag_acpt.restype = None
-    gdat.libmmult.pcat_like_eval.restype = None
-    gdat.libmmult.pcat_model_eval.argtypes = [c_int, c_int, c_int, c_int, c_int]
-    gdat.libmmult.pcat_imag_acpt.argtypes = [c_int, c_int]
-    gdat.libmmult.pcat_like_eval.argtypes = [c_int, c_int]
-    
-    gdat.libmmult.pcat_model_eval.argtypes += [array_2d_float, array_2d_float, array_2d_float]
-    
-    gdat.libmmult.pcat_model_eval.argtypes += [array_1d_int, array_1d_int]
-    
-    if gdat.booltimebins:
-        gdat.libmmult.pcat_imag_acpt.argtypes += [array_3d_float, array_3d_float]
-        gdat.libmmult.pcat_model_eval.argtypes += [array_3d_float, array_3d_float, array_3d_float]
-        gdat.libmmult.pcat_like_eval.argtypes += [array_3d_float, array_3d_float, array_3d_float]
-    else:
-        gdat.libmmult.pcat_imag_acpt.argtypes += [array_2d_float, array_2d_float]
-        gdat.libmmult.pcat_model_eval.argtypes += [array_2d_float, array_2d_float, array_2d_float]
-        gdat.libmmult.pcat_like_eval.argtypes += [array_2d_float, array_2d_float, array_2d_float]
-    
-    gdat.libmmult.pcat_model_eval.argtypes += [array_2d_double]
-    gdat.libmmult.pcat_like_eval.argtypes += [array_2d_double]
-    
-    gdat.libmmult.pcat_model_eval.argtypes += [c_int, c_int, c_int, c_int, c_int, c_int, array_2d_float]
-    gdat.libmmult.pcat_imag_acpt.argtypes += [array_2d_int, c_int, c_int, c_int, c_int]
-    gdat.libmmult.pcat_like_eval.argtypes += [c_int, c_int, c_int, c_int]
 
 
 def make_cmap(seq):
@@ -890,6 +853,98 @@ def make_cmap(seq):
             colrdict['blue'].append([item, blu1, blu2])
    
     return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
+
+
+def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, clib=None):
+    
+    xpos = np.array([12. - ix / 5.], dtype=np.float32)
+    ypos = np.array([12. - iy / 5.], dtype=np.float32)
+    flux = np.array([[[1.]]], dtype=np.float32)
+    back = 0.
+    sizeimag = [25, 25]
+    psf0 = eval_modl(gdat, xpos, ypos, flux, back, numbsidepsfn, coefspix, clib=clib, sizeimag=sizeimag)
+    print 'numbsidepsfn'
+    print numbsidepsfn
+    print 'coefspix'
+    summgene(coefspix)
+    print 'sizeimag'
+    print sizeimag
+    print 'psf0'
+    summgene(psf0)
+    plt.subplot(2,2,1)
+    temp = psf0[0, :, :, 0]
+    plt.imshow(temp, interpolation='none', origin='lower')
+    plt.title('matrix multiply PSF')
+    plt.subplot(2,2,2)
+    iix = int(np.floor(ix))
+    iiy = int(np.floor(iy))
+    dix = ix - iix
+    diy = iy - iiy
+    f00 = psf[iiy:125:5,  iix:125:5]
+    f01 = psf[iiy+1:125:5,iix:125:5]
+    f10 = psf[iiy:125:5,  iix+1:125:5]
+    f11 = psf[iiy+1:125:5,iix+1:125:5]
+    realpsf = f00*(1.-dix)*(1.-diy) + f10*dix*(1.-diy) + f01*(1.-dix)*diy + f11*dix*diy
+    plt.imshow(realpsf, interpolation='none', origin='lower')
+    plt.title('bilinear interpolate PSF')
+    invrealpsf = np.zeros((25,25))
+    mask = realpsf > 1e-3
+    invrealpsf[mask] = 1./realpsf[mask]
+    plt.subplot(2, 2, 3)
+    plt.title('absolute difference')
+    plt.imshow(temp - realpsf, interpolation='none', origin='lower')
+    plt.colorbar()
+    plt.subplot(2,2,4)
+    plt.imshow((temp - realpsf) * invrealpsf, interpolation='none', origin='lower')
+    plt.colorbar()
+    plt.title('fractional difference')
+    if gdat.boolplotsave:
+        plt.savefig(gdat.pathdatartag + '%s_psfn.' % gdat.rtag + gdat.strgplotfile)
+    else:
+        plt.show()
+
+
+def plot_lcur(gdat):
+   
+    cntr = 0
+    numblcurplot = 1
+    for k in gdat.indxsourcond:
+        
+        #print 'k'
+        #print k
+        #print 'catlcond[gdat.indxflux, k, 0]'
+        #print catlcond[gdat.indxflux, k, 0]
+        #print 
+        meanlcur = np.mean(catlcond[gdat.indxflux, k, 0], axis=0)
+        errrlcur = np.empty((2, gdat.numbtime))
+        for i in range(2):
+            errrlcur[i, :] = np.mean(catlcond[gdat.indxflux, k, 1], axis=0)
+
+        #errrlcurdtre = retr_dtre(errrlcur)
+        #medimeanlcurdtre = np.median(errrlcurdtre[0, :])
+        #stdvflux = np.sqrt((errrlcurdtre[0, :] - medimeanlcurdtre)**2)
+        
+        if k % numblcurplot == 0:
+            figr, axis = plt.subplots()
+       
+        #print 'gdat.indxtime'
+        #summgene(gdat.indxtime)
+        #print 'meanlcur'
+        #summgene(meanlcur)
+        #print meanlcur
+        #print 'errrlcur'
+        #summgene(errrlcur)
+        #print errrlcur[0, :]
+        #print errrlcur[1, :]
+        #print
+
+        axis.errorbar(gdat.indxtime, meanlcur, yerr=errrlcur, ls='', marker='o', markersize=10)
+        
+        if (k + 1) % numblcurplot == 0 or k == gdat.numbsourcond - 1:
+            #axis.set_title(stdvflux)
+            plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
+            plt.close()
+            cntr += 1
 
 
 def main( \
@@ -933,7 +988,9 @@ def main( \
          numbswep=100, \
     
          # size of the regions in number of pixels
+         # temp
          sizeregi=20, \
+         #sizeregi=300, \
          
          # string indicating type of plot file
          strgplotfile='pdf', \
@@ -964,10 +1021,10 @@ def main( \
          catlrefr=[], \
 
          # labels for reference catalogs
-         lablrefr=[], \
+         lablrefr=None, \
 
          # colors for reference catalogs
-         colrrefr=[], \
+         colrrefr=None, \
 
          # a string extension to the run tag
          rtagextn=None, \
@@ -978,8 +1035,6 @@ def main( \
          # diagnostic mode
          diagmode=False, \
         
-         boolentibins=False, \
-
          # color style
          colrstyl='lion', \
 
@@ -993,23 +1048,20 @@ def main( \
 
     # construct the global object 
     gdat = gdatstrt()
+    ## not picklable
     
     # load arguments into the global object
     for attr, valu in locals().iteritems():
         if '__' not in attr and attr != 'gdat':
             setattr(gdat, attr, valu)
+    
+    gdatnotp = gdatstrt()
 
-    #np.seterr(all='raise')
+    np.seterr(all='warn')
     
     # check inputs
     if gdat.cntpdata.ndim != 4:
         raise Exception('Input image should be four dimensional.')
-
-    # a Boolean flag indicating whether the data is time-binned
-    if gdat.cntpdata.shape[0] != 1:
-        gdat.booltimebins = True
-    else:
-        gdat.booltimebins = False
 
     # defaults
     ## time stamp string
@@ -1053,6 +1105,10 @@ def main( \
         sizemrkr = 1. / 1360.
         colrbrgt = 'lime'
     
+    gdat.numbtime = gdat.cntpdata.shape[3]
+    gdat.numbener = gdat.cntpdata.shape[0]
+    gdat.indxtime = np.arange(gdat.numbtime)
+    gdat.indxener = np.arange(gdat.numbener)
     #if boolplotshow:
     #    matplotlib.use('TkAgg')
     #else:
@@ -1079,10 +1135,8 @@ def main( \
 
     if strgmode == 'pcat':
         
-        if gdat.booltimebins:
-            probprop = np.array([80., 40., 0.])
-        else:
-            probprop = np.array([80., 40., 40.])
+        probprop = np.array([80., 40., 40.])
+        #probprop = np.array([80., 0., 0.])
             
         if strgmodl == 'galx':
             probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
@@ -1090,108 +1144,64 @@ def main( \
         probprop = np.array([80., 0., 0.])
     probprop /= np.sum(probprop)
     
-    # ix, iy = 0. to 3.999
-    def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, lib=None):
-        
-        lcpreval = np.array([[0.]], dtype=np.float32)
-        xpos = np.array([12. - ix / 5.], dtype=np.float32)
-        ypos = np.array([12. - iy / 5.], dtype=np.float32)
-        flux = np.array([1.], dtype=np.float32)
-        back = 0.
-        sizeimag = [25, 25]
-        psf0 = eval_modl(gdat, xpos, ypos, flux, back, numbsidepsfn, coefspix, lcpreval, lib=lib, sizeimag=sizeimag)
-        plt.subplot(2,2,1)
-        if gdat.booltimebins:
-            temp = psf0[0, :, :]
-        else:
-            temp = psf0
-        plt.imshow(temp, interpolation='none', origin='lower')
-        plt.title('matrix multiply PSF')
-        plt.subplot(2,2,2)
-        iix = int(np.floor(ix))
-        iiy = int(np.floor(iy))
-        dix = ix - iix
-        diy = iy - iiy
-        f00 = psf[iiy:125:5,  iix:125:5]
-        f01 = psf[iiy+1:125:5,iix:125:5]
-        f10 = psf[iiy:125:5,  iix+1:125:5]
-        f11 = psf[iiy+1:125:5,iix+1:125:5]
-        realpsf = f00*(1.-dix)*(1.-diy) + f10*dix*(1.-diy) + f01*(1.-dix)*diy + f11*dix*diy
-        plt.imshow(realpsf, interpolation='none', origin='lower')
-        plt.title('bilinear interpolate PSF')
-        invrealpsf = np.zeros((25,25))
-        mask = realpsf > 1e-3
-        invrealpsf[mask] = 1./realpsf[mask]
-        plt.subplot(2, 2, 3)
-        plt.title('absolute difference')
-        plt.imshow(temp - realpsf, interpolation='none', origin='lower')
-        plt.colorbar()
-        plt.subplot(2,2,4)
-        plt.imshow((temp - realpsf) * invrealpsf, interpolation='none', origin='lower')
-        plt.colorbar()
-        plt.title('fractional difference')
-        if gdat.boolplotsave:
-            plt.savefig(gdat.pathdatartag + '%s_psfn.' % gdat.rtag + gdat.strgplotfile)
-        else:
-            plt.show()
-    
-    def plot_lcur(gdat):
-       
-        cntr = 0
-        numblcurplot = 1
-        for k in gdat.indxsourcond:
-            
-            #print 'k'
-            #print k
-            #print 'catlcond[gdat.indxflux, k, 0]'
-            #print catlcond[gdat.indxflux, k, 0]
-            #print 'catlcond[gdat.indxlcpr, k, 0]'
-            #print catlcond[gdat.indxlcpr, k, 0]
-            #print 'catlcond[gdat.indxflux, k, 1]'
-            #print catlcond[gdat.indxflux, k, 1]
-            #print 'catlcond[gdat.indxlcpr, k, 1]'
-            #print catlcond[gdat.indxlcpr, k, 1]
-            #print 
-            meanspec = np.empty(gdat.numbtime)
-            meanspec[0] = catlcond[gdat.indxflux, k, 0]
-            meanspec[1:] = catlcond[gdat.indxflux, k, 0] * catlcond[gdat.indxlcpr, k, 0]
-            errrspec = np.empty((2, gdat.numbtime))
-            for i in range(2):
-                errrspec[i, 0]  = catlcond[gdat.indxflux, k, 1]
-                errrspec[i, 1:] = meanspec[1:] * np.sqrt((catlcond[gdat.indxflux, k, 1] / catlcond[gdat.indxflux, k, 0])**2 + \
-                                                                                                (catlcond[gdat.indxlcpr, k, 1] / catlcond[gdat.indxlcpr, k, 0])**2)
-
-            #errrspecdtre = retr_dtre(errrspec)
-            #medimeanspecdtre = np.median(errrspecdtre[0, :])
-            #stdvflux = np.sqrt((errrspecdtre[0, :] - medimeanspecdtre)**2)
-            
-            if k % numblcurplot == 0:
-                figr, axis = plt.subplots()
-           
-            #print 'gdat.indxtime'
-            #summgene(gdat.indxtime)
-            #print 'meanspec'
-            #summgene(meanspec)
-            #print meanspec
-            #print 'errrspec'
-            #summgene(errrspec)
-            #print errrspec[0, :]
-            #print errrspec[1, :]
-            #print
-
-            axis.errorbar(gdat.indxtime, meanspec, yerr=errrspec, ls='', marker='o', markersize=10)
-            
-            if (k + 1) % numblcurplot == 0 or k == gdat.numbsourcond - 1:
-                #axis.set_title(stdvflux)
-                plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
-                plt.close()
-                cntr += 1
-    
     gdat.pathlion, gdat.pathdata = retr_path()
         
     # setup
     setp(gdat)
-
+    
+    # construct C library
+    
+    array_2d_float    = npct.ndpointer(dtype=np.float32, ndim=2)
+    array_1d_int      = npct.ndpointer(dtype=np.int32  , ndim=1)
+    array_1d_float    = npct.ndpointer(dtype=np.float32, ndim=1)
+    array_2d_double   = npct.ndpointer(dtype=np.float64, ndim=2)
+    array_2d_int      = npct.ndpointer(dtype=np.int32,   ndim=2)
+    
+    #array_2d_float    = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
+    #array_1d_int      = npct.ndpointer(dtype=np.int32  , ndim=1, flags="C_CONTIGUOUS")
+    #array_1d_float    = npct.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
+    #array_2d_double   = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
+    #array_2d_int      = npct.ndpointer(dtype=np.int32,   ndim=2, flags="C_CONTIGUOUS")
+    
+    gdatnotp.clib = npct.load_library(gdat.pathlion + 'blas', '.')
+    gdatnotp.clib.clib_eval_modl.restype = None
+    
+    #void clib_eval_modl(int NX, int NY, int maxmnumbstar, int numbsidepsfn, int k, float* A, float* B, float* C, int* x,
+	#int* y, float* image, float* ref, float* weig, double* chi2, int sizeregi, int marg, int offsxpos, int offsypos)
+    #lib(gdat.sizeimag[0], gdat.sizeimag[1], maxmnumbstar, numbsidepsfn, coefspix.shape[0], dd, coefspix, cntpmodlstmp, 
+    #ix, iy, image, reftemp, weig, chi2, sizeregi, marg, offsxpos, offsypos)
+    #gdatnotp.clib.clib_eval_modl.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int maxmnumbstar, c_int numbsidepsfn, c_int k coefspix.shape[0]
+    # array_2d_float A dd, array_2d_float B coefspix, array_2d_float C cntpmodlstmp
+    # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double chi2, c_int sizeregi, 
+    # c_int marg, c_int offsxpos, c_int offsypos]
+    
+    gdatnotp.clib.clib_updt_modl.restype = None
+    gdatnotp.clib.clib_eval_llik.restype = None
+    gdatnotp.clib.clib_eval_modl.argtypes = [c_int, c_int, c_int, c_int, c_int]
+    gdatnotp.clib.clib_updt_modl.argtypes = [c_int, c_int]
+    gdatnotp.clib.clib_eval_llik.argtypes = [c_int, c_int]
+    
+    gdatnotp.clib.clib_eval_modl.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    
+    gdatnotp.clib.clib_eval_modl.argtypes += [array_1d_int, array_1d_int]
+    
+    if False and gdat.numbtime > 1:
+        gdatnotp.clib.clib_eval_modl.argtypes += [array_3d_float, array_3d_float, array_3d_float]
+    else:
+        gdatnotp.clib.clib_eval_modl.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    gdatnotp.clib.clib_updt_modl.argtypes += [array_2d_float, array_2d_float]
+    gdatnotp.clib.clib_eval_llik.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    
+    gdatnotp.clib.clib_eval_modl.argtypes += [array_2d_double]
+    gdatnotp.clib.clib_eval_llik.argtypes += [array_2d_double]
+    
+    gdatnotp.clib.clib_eval_modl.argtypes += [c_int, c_int, c_int, c_int]
+    gdatnotp.clib.clib_updt_modl.argtypes += [array_2d_int, c_int, c_int, c_int, c_int]
+    gdatnotp.clib.clib_eval_llik.argtypes += [c_int, c_int, c_int, c_int]
+    
+    if gdat.strgmode != 'pcat':
+        gdat.catlinit = gdat.catlrefr[0]
+    
     if gdat.strgstat != None:
         gdat.pathstat = gdat.pathdata + 'stat_' + gdat.strgstat + '.h5'
         if os.path.isfile(gdat.pathstat):
@@ -1203,7 +1213,8 @@ def main( \
 
     # check if source has been changed after compilation
     if os.path.getmtime(gdat.pathlion + 'blas.c') > os.path.getmtime(gdat.pathlion + 'blas.so'):
-        warnings.warn('blas.c modified after compiled blas.so', Warning)
+        raise Exception('blas.c modified after compiled blas.so')
+        #warnings.warn('blas.c modified after compiled blas.so', Warning)
     
     if gdat.pathdatartag == None:
         gdat.pathdatartag = gdat.pathdata + gdat.rtag + '/'
@@ -1211,7 +1222,6 @@ def main( \
 
     # constants
     ## number of bands (i.e., energy bins)
-    numbener = 1
     
     boolplot = boolplotshow or boolplotsave
 
@@ -1233,18 +1243,10 @@ def main( \
     numbsideypos = gdat.cntpdata.shape[1]
     numbsidexpos = gdat.cntpdata.shape[2]
 
-    gdat.sizeimag = (numbsidexpos, numbsideypos)
+    gdat.sizeimag = [numbsidexpos, numbsideypos]
     numbpixl = numbsidexpos * numbsideypos
 
-    if gdat.booltimebins:
-        if gdat.cntpdata.ndim == 2:
-            raise Exception('')
-        gdat.numbtime = gdat.cntpdata.shape[0]
-        gdat.numblcpr = gdat.numbtime - 1
-        indxtime = np.arange(gdat.numbtime)
-    else:
-        gdat.numbtime = 1
-    gdat.indxtime = np.arange(gdat.numbtime)
+    gdat.numbflux = gdat.numbener * gdat.numbtime
 
     print 'Image width and height: %d %d pixels' % (numbsidexpos, numbsideypos)
     
@@ -1253,13 +1255,13 @@ def main( \
     # plots
     ## PSF
     if boolplot and testpsfn:
-        plot_psfn(gdat, numbsidepsfn, coefspix, cntppsfn, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), gdat.libmmult.pcat_model_eval)
+        print 'cntppsfn'
+        summgene(cntppsfn)
+        plot_psfn(gdat, numbsidepsfn, coefspix, cntppsfn, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), gdatnotp.clib.clib_eval_modl)
     
-    stdvproplcpr = 1e-5
-
     ## data
-    if gdat.booltimebins:
-    #if False: 
+    #if gdat.numbtime > 1:
+    if False: 
         for k in gdat.indxtime:
             figr, axis = plt.subplots()
             axis.imshow(gdat.cntpdata[k, :, :, 0], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
@@ -1273,25 +1275,16 @@ def main( \
         os.system(cmnd)
         print 'Done.'
     
-    if gdat.booltimebins:
-        variance = gdat.cntpdata[:, :, :, 0] / gain
-    else:
-        variance = gdat.cntpdata[0, :, :, 0]
+    variance = gdat.cntpdata / gain
     weig = 1. / variance # inverse variance
     
     cntr = cntrstrt()
     gdat.indxxpos = cntr.incr()
     gdat.indxypos = cntr.incr()
-    gdat.indxflux = cntr.incr()
-    if gdat.booltimebins:
-        gdat.indxlcpr = np.zeros(gdat.numblcpr, dtype=int)
-        for k in range(gdat.numblcpr):
-            gdat.indxlcpr[k] = cntr.incr()
-        if gdat.verbtype > 1:
-            print 'gdat.indxlcpr'
-            print gdat.indxlcpr
-            summgene(gdat.indxlcpr)
-            print
+    gdat.indxflux = np.zeros((gdat.numbener, gdat.numbtime), dtype=int)
+    for k in gdat.indxener:
+        for l in gdat.indxtime:
+            gdat.indxflux[k, l] = cntr.incr()
 
     if 'galx' in strgmodl:
         _XX = cntr.incr()
@@ -1318,9 +1311,7 @@ def main( \
     
             self.xphon = np.array([], dtype=np.float32)
             self.yphon = np.array([], dtype=np.float32)
-            self.fphon = np.array([], dtype=np.float32)
-            self.lcprphon = np.array([[]], dtype=np.float32)
-            
+            self.fphon = np.array([[[]]], dtype=np.float32)
             #self.back = None
 
         
@@ -1336,15 +1327,12 @@ def main( \
         
         def __add_phonions_stars(self, stars, remove=False):
             fluxmult = -1 if remove else 1
-            self.xphon = np.append(self.xphon, stars[gdat.indxxpos,:])
-            self.yphon = np.append(self.yphon, stars[gdat.indxypos,:])
-            self.fphon = np.append(self.fphon, fluxmult*stars[gdat.indxflux,:])
-            
-            if gdat.booltimebins:
-                if self.lcprphon.size == 0:
-                    self.lcprphon = np.copy(stars[gdat.indxlcpr, :])
-                else:
-                    self.lcprphon = np.append(self.lcprphon, stars[gdat.indxlcpr, :], axis=1)
+            self.xphon = np.append(self.xphon, stars[gdat.indxxpos, :])
+            self.yphon = np.append(self.yphon, stars[gdat.indxypos, :])
+            if self.fphon.size == 0:
+                self.fphon = np.copy(fluxmult*stars[gdat.indxflux, :])
+            else:
+                self.fphon = np.append(self.fphon, fluxmult*stars[gdat.indxflux, :], axis=2)
             self.assert_types()
     
         
@@ -1490,13 +1478,6 @@ def main( \
                 print 'Initializing fluxes from the catalog...'
                 self.stars[gdat.indxflux, :gdat.catlinit['numb']] = gdat.catlinit['flux']
 
-            if gdat.booltimebins:
-                if gdat.catlinit == None:
-                    self.stars[gdat.indxlcpr, :self.n] = 1e-6 * np.random.randn(self.n * gdat.numblcpr).reshape((gdat.numblcpr, self.n)) + 1.
-                else:
-                    print 'Initializing LC parameters from the catalog...'
-                    self.stars[gdat.indxlcpr, :gdat.catlinit['numb']] = gdat.catlinit['lcpr']
-            
             if gdat.verbtype > 1:
                 print 'numb'
                 print self.n
@@ -1520,7 +1501,7 @@ def main( \
             self.back = gdat.back
 
         
-        # should offsetx/y, parity_x/y be instance variables?
+        # should offsxpos/y, parity_x/y be instance variables?
         def moments_from_prior(self, truermin_g, ngalx, slope=np.float32(4)):
             rg = truermin_g*np.exp(np.random.exponential(scale=1./(slope-1.),size=ngalx)).astype(np.float32)
             ug = np.random.uniform(low=3e-4, high=1., size=ngalx).astype(np.float32) #3e-4 for numerics
@@ -1551,66 +1532,64 @@ def main( \
             dt2 = np.zeros(gdat.numbloop)
             dt3 = np.zeros(gdat.numbloop)
     
-            self.offsetx = np.random.randint(sizeregi)
-            self.offsety = np.random.randint(sizeregi)
+            self.offsxpos = np.random.randint(sizeregi)
+            self.offsypos = np.random.randint(sizeregi)
             if gdat.verbtype > 1:
-                print 'self.offsetx'
-                print self.offsetx
-                print 'self.offsety'
-                print self.offsety
+                print 'self.offsxpos'
+                print self.offsxpos
+                print 'self.offsypos'
+                print self.offsypos
                 print 'sizeregi'
                 print sizeregi
             self.nregx = gdat.sizeimag[0] / sizeregi + 1
             self.nregy = gdat.sizeimag[1] / sizeregi + 1
-    
-            if gdat.booltimebins:
-                resid = gdat.cntpdata[:, :, :, 0].copy() # residual for zero image is data
-            else:
-                resid = gdat.cntpdata[0, :, :, 0].copy() # residual for zero image is data
-            lcpreval = np.array([[0.]], dtype=np.float32)
+            
+            if gdat.verbtype > 1:
+                print 'self.nregx'
+                print self.nregx
+                print 'self.nregy'
+                print self.nregy
+            cntpresi = gdat.cntpdata.copy() # residual for zero image is data
             if strgmodl == 'star':
                 xposeval = self.stars[gdat.indxxpos,0:self.n]
                 yposeval = self.stars[gdat.indxypos,0:self.n]
                 fluxeval = self.stars[gdat.indxflux,0:self.n]
-                if gdat.booltimebins:
-                    lcpreval = self.stars[gdat.indxlcpr, :self.n]
-
-                    if gdat.diagmode:
-                        chec_lcpr(lcpreval)
             else:
                 xposphon, yposphon, specphon = retr_tranphon(self.gridphon, self.amplphon, self.galaxies[:,0:self.ng])
                 xposeval = np.concatenate([self.stars[gdat.indxxpos,0:self.n], xposphon]).astype(np.float32)
                 yposeval = np.concatenate([self.stars[gdat.indxypos,0:self.n], yposphon]).astype(np.float32)
                 fluxeval = np.concatenate([self.stars[gdat.indxflux,0:self.n], specphon]).astype(np.float32)
             numbphon = xposeval.size
-            model, diff2 = eval_modl(gdat, xposeval, yposeval, fluxeval, self.back, numbsidepsfn, coefspix, lcpreval, \
-                                                               weig=weig, ref=resid, lib=gdat.libmmult.pcat_model_eval, \
-                                                               sizeregi=sizeregi, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
-            logL = -0.5*diff2
-            resid -= model
+            cntpmodl, chi2 = eval_modl(gdat, xposeval, yposeval, fluxeval, self.back, numbsidepsfn, coefspix, \
+                                                               weig=weig, cntprefr=cntpresi, clib=gdatnotp.clib.clib_eval_modl, \
+                                                               sizeregi=sizeregi, marg=gdat.marg, offsxpos=self.offsxpos, offsypos=self.offsypos)
+            llik = -0.5 * chi2
             if gdat.verbtype > 1:
-                print 'model'
-                summgene(model)
-                print 'diff2'
-                summgene(diff2)
-                print 'logL'
-                summgene(logL)
-                print 'resid'
-                summgene(resid)
+                print 'cntpmodl'
+                summgene(cntpmodl)
+                print 'chi2'
+                summgene(chi2)
+                print 'llik'
+                summgene(llik)
+                print 'gdat.cntpdata'
+                summgene(gdat.cntpdata)
+                print 'cntpresi'
+                summgene(cntpresi)
                 print 
+            cntpresi -= cntpmodl
             
             if gdat.diagmode:
-                if not np.isfinite(resid).all():
+                if not np.isfinite(cntpresi).all():
                     raise Exception('')
 
-            for i in xrange(gdat.numbloop):
+            for a in xrange(gdat.numbloop):
 
                 if gdat.verbtype > 1:
-                    print 'Loop %d started.' % i
-                
+                    print 'Loop %d started.' % a 
+
                 t1 = time.clock()
                 rtype = np.random.choice(probprop.size, p=probprop)
-                movetype[i] = rtype
+                movetype[a] = rtype
                 # defaults
                 pn = self.n
                 dback = np.float32(0.)
@@ -1630,67 +1609,72 @@ def main( \
                     print 'rtype'
                     print rtype
                 
-                dt1[i] = time.clock() - t1
+                dt1[a] = time.clock() - t1
     
                 if proposal.goodmove:
                     t2 = time.clock()
-                    dmodel, diff2 = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, numbsidepsfn, coefspix, proposal.lcprphon, \
-                                weig=weig, ref=resid, lib=gdat.libmmult.pcat_model_eval, sizeregi=sizeregi, margin=margin, offsetx=self.offsetx, offsety=self.offsety)
-                    plogL = -0.5*diff2
-                    dt2[i] = time.clock() - t2
+                    cntpmodldiff, chi2prop = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, dback, numbsidepsfn, coefspix, \
+                           weig=weig, cntprefr=cntpresi, clib=gdatnotp.clib.clib_eval_modl, sizeregi=sizeregi, marg=gdat.marg, offsxpos=self.offsxpos, offsypos=self.offsypos)
+                    llikprop = -0.5 * chi2prop
+                    dt2[a] = time.clock() - t2
     
                     t3 = time.clock()
                     refx, refy = proposal.get_ref_xy()
                     
                     if gdat.verbtype > 1:
                         print 'refx'
-                        print refx
+                        summgene(refx)
                         print 'refy'
-                        print refy
-                        print 'self.offsetx'
-                        print self.offsetx
-                        print 'self.offsety'
-                        print self.offsety
-                    regionx = get_region(refx, self.offsetx, sizeregi)
-                    regiony = get_region(refy, self.offsety, sizeregi)
+                        summgene(refy)
+                        print 'self.offsxpos'
+                        print self.offsxpos
+                        print 'self.offsypos'
+                        print self.offsypos
+                    regionx = get_region(refx, self.offsxpos, sizeregi)
+                    regiony = get_region(refy, self.offsypos, sizeregi)
     
                     ###
                     '''
                     if i == 0:
                         yy, xx = np.mgrid[0:100,0:100]
-                        rxx = get_region(xx, self.offsetx, sizeregi) % 2
-                        ryy = get_region(yy, self.offsety, sizeregi) % 2
+                        rxx = get_region(xx, self.offsxpos, sizeregi) % 2
+                        ryy = get_region(yy, self.offsypos, sizeregi) % 2
                         rrr = rxx*2 + ryy
                         plt.figure(2)
                         plt.imshow(rrr, interpolation='none', origin='lower', cmap='Accent')
                         plt.savefig('region-'+str(int(time.clock()*10))+'.pdf')
                         plt.show()
                         plt.figure(3)
-                        vmax=np.max(np.abs(dmodel))
-                        plt.imshow(dmodel, interpolation='none', origin='lower', cmap='bwr', vmin=-vmax, vmax=vmax)
-                        plt.savefig('dmodel-'+str(int(time.clock()*10))+'.pdf')
+                        vmax=np.max(np.abs(cntpmodldiff))
+                        plt.imshow(cntpmodldiff, interpolation='none', origin='lower', cmap='bwr', vmin=-vmax, vmax=vmax)
+                        plt.savefig('cntpmodldiff-'+str(int(time.clock()*10))+'.pdf')
                         plt.show()
                     '''
                     ###
     
-                    plogL[(1-self.parity_y)::2,:] = float('-inf') # don't accept off-parity regions
-                    plogL[:,(1-self.parity_x)::2] = float('-inf')
-                    dlogP = (plogL - logL) / temperature
+                    llikprop[(1-self.parity_y)::2,:] = float('-inf') # don't accept off-parity regions
+                    llikprop[:,(1-self.parity_x)::2] = float('-inf')
+                    dlogP = (llikprop - llik) / temperature
                     if proposal.factor is not None:
                         dlogP[regiony, regionx] += proposal.factor
-                    acceptreg = (np.log(np.random.uniform(size=(self.nregy, self.nregx))) < dlogP).astype(np.int32)
-                    acceptprop = acceptreg[regiony, regionx]
+                    boolregiacpt = (np.log(np.random.uniform(size=(self.nregy, self.nregx))) < dlogP).astype(np.int32)
+                    acceptprop = boolregiacpt[regiony, regionx]
                     numaccept = np.count_nonzero(acceptprop)
     
-                    # only keep dmodel in accepted regions+margins
-                    dmodel_acpt = np.zeros_like(dmodel)
-                    gdat.libmmult.pcat_imag_acpt(gdat.sizeimag[0], gdat.sizeimag[1], dmodel, dmodel_acpt, acceptreg, sizeregi, margin, self.offsetx, self.offsety)
-                    # using this dmodel containing only accepted moves, update logL
-                    diff2.fill(0)
-                    gdat.libmmult.pcat_like_eval(gdat.sizeimag[0], gdat.sizeimag[1], dmodel_acpt, resid, weig, diff2, sizeregi, margin, self.offsetx, self.offsety)
-                    logL = -0.5*diff2
-                    resid -= dmodel_acpt # has to occur after pcat_like_eval, because resid is used as ref
-                    model += dmodel_acpt
+                    # only keep cntpmodldiff in accepted regions+margins
+                    for i in gdat.indxener:
+                        for t in gdat.indxtime:
+                            cntpmodldiffacpt = np.zeros_like(cntpmodldiff[i, :, :, t])
+                            gdatnotp.clib.clib_updt_modl(gdat.sizeimag[0], gdat.sizeimag[1], cntpmodldiff[i, :, :, t], cntpmodldiffacpt, boolregiacpt, sizeregi, \
+                                                                                                                                        gdat.marg, self.offsxpos, self.offsypos)
+                            # using this cntpmodldiff containing only accepted moves, update llik
+                            chi2prop.fill(0)
+                            gdatnotp.clib.clib_eval_llik(gdat.sizeimag[0], gdat.sizeimag[1], cntpmodldiffacpt, cntpresi[i, :, :, t], weig[i, :, :, t], chi2prop, sizeregi, \
+                                                                                                                                        gdat.marg, self.offsxpos, self.offsypos)
+                            cntpresi[i, :, :, t] -= cntpmodldiffacpt # has to occur after clib_eval_llik, because cntpresi is used as cntprefr
+                            cntpmodl[i, :, :, t] += cntpmodldiffacpt
+                    
+                    llik = -0.5 * chi2prop
                     
                     # implement accepted moves
                     if proposal.idx_move is not None:
@@ -1754,39 +1738,37 @@ def main( \
                         self.galaxies[:, 0:self.ngalx-num_kill] = np.delete(self.galaxies, idx_kill_a, axis=1)
                         self.galaxies[:, self.ngalx-num_kill:] = 0
                         self.ng -= num_kill
-                    dt3[i] = time.clock() - t3
+                    dt3[a] = time.clock() - t3
     
                     if acceptprop.size > 0: 
-                        accept[i] = np.count_nonzero(acceptprop) / float(acceptprop.size)
+                        accept[a] = np.count_nonzero(acceptprop) / float(acceptprop.size)
                     else:
-                        accept[i] = 0
+                        accept[a] = 0
                 else:
-                    outbounds[i] = 1
+                    outbounds[a] = 1
             
             
                 if gdat.verbtype > 1:
-                    print 'diff2'
-                    print diff2
-                    print 'logL'
-                    print logL
+                    print 'chi2'
+                    summgene(chi2)
+                    print 'llik'
+                    summgene(llik)
                     if proposal.goodmove:
-                        print 'dmodel'
-                        summgene(dmodel)
-                    print 'accept[i]'
-                    print accept[i]
-                    print 'outbounds[i]'
-                    print outbounds[i]
-                    print 'Loop %d ended.' % i
+                        for i in gdat.indxener:
+                            for t in gdat.indxtime:
+                                print 'cntpmodldiff[i, :, :, t]'
+                                summgene(cntpmodldiff[i, :, :, t])
+                    print 'accept[a]'
+                    print accept[a]
+                    print 'outbounds[a]'
+                    print outbounds[a]
+                    print 'Loop %d ended.' % a
                     print
                     print
                     print
 
-            numbpara = retr_numbpara(self.n, self.ng, numbener)
-            if gdat.booltimebins:
-                cntpdatatemp = cntpdata[:, :, :, 0]
-            else:
-                cntpdatatemp = cntpdata[0, :, :, 0]
-            chi2 = np.sum(weig * (cntpdatatemp - model) * (cntpdatatemp - model))
+            numbpara = retr_numbpara(self.n, self.ng, gdat.numbener)
+            chi2 = np.sum(weig * (gdat.cntpdata - cntpmodl) * (gdat.cntpdata - cntpmodl))
                 
             numbdoff = gdat.numbdata - numbpara
             chi2doff = chi2 / numbdoff
@@ -1850,7 +1832,7 @@ def main( \
                         cmap = cmapresi
                     else:
                         cmap = 'bwr'
-                    plt.imshow(resid*np.sqrt(weig), origin='lower', interpolation='none', cmap=cmap, vmin=gdat.minmcntpresi, vmax=gdat.maxmcntpresi)
+                    plt.imshow(cntpresi*np.sqrt(weig), origin='lower', interpolation='none', cmap=cmap, vmin=gdat.minmcntpresi, vmax=gdat.maxmcntpresi)
                     if j == 0:
                         plt.tight_layout()
                     
@@ -1892,11 +1874,8 @@ def main( \
                     
                     # count map
                     figr, axis = plt.subplots(figsize=(20, 20))
-                    if gdat.booltimebins:
-                        temp = gdat.cntpdata[0, :, :, 0]
-                    else:
-                        temp = gdat.cntpdata[0, :, :, 0]
-                    axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
+                    # temp
+                    axis.imshow(gdat.cntpdata[0, :, :, 0], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
                     ## overplot point sources
                     supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                     ## limits
@@ -1906,10 +1885,8 @@ def main( \
 
                     # residual map
                     figr, axis = plt.subplots()
-                    if gdat.booltimebins:
-                        temp = resid[0, :, :] * np.sqrt(weig[0, :, :])
-                    else:
-                        temp = resid * np.sqrt(weig)
+                    # temp
+                    temp = cntpresi[0, :, :, 0] * np.sqrt(weig[0, :, :, 0])
                     axis.imshow(temp, origin='lower', interpolation='none', cmap=cmapresi, vmin=gdat.minmcntpresi, vmax=gdat.maxmcntpresi)
                     ## overplot point sources
                     supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
@@ -1938,11 +1915,11 @@ def main( \
     
         
         def idx_parity_stars(self):
-            return idx_parity(self.stars[gdat.indxxpos,:], self.stars[gdat.indxypos,:], self.n, self.offsetx, self.offsety, self.parity_x, self.parity_y, sizeregi)
+            return idx_parity(self.stars[gdat.indxxpos,:], self.stars[gdat.indxypos,:], self.n, self.offsxpos, self.offsypos, self.parity_x, self.parity_y, sizeregi)
     
         
         def idx_parity_galaxies(self):
-            return idx_parity(self.galaxies[gdat.indxxpos,:], self.galaxies[gdat.indxypos,:], self.ng, self.offsetx, self.offsety, self.parity_x, self.parity_y, sizeregi)
+            return idx_parity(self.galaxies[gdat.indxxpos,:], self.galaxies[gdat.indxypos,:], self.ng, self.offsxpos, self.offsypos, self.parity_x, self.parity_y, sizeregi)
     
         
         def bounce_off_edges(self, catalogue): # works on both stars and galaxies
@@ -1975,7 +1952,7 @@ def main( \
             logdf = np.float32(0.01/np.sqrt(25.))
             ff = np.log(logdf*logdf*f0 + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0*f0)) / logdf
             ffmin = np.log(logdf*logdf*self.trueminf + logdf*np.sqrt(lindf*lindf + logdf*logdf*self.trueminf*self.trueminf)) / logdf
-            dff = np.random.normal(size=nw).astype(np.float32)
+            dff = np.random.normal(size=nw*gdat.numbflux).astype(np.float32).reshape((gdat.numbener, gdat.numbtime, nw))
             aboveffmin = ff - ffmin
             oob_flux = (-dff > aboveffmin)
             dff[oob_flux] = -2*aboveffmin[oob_flux] - dff[oob_flux]
@@ -1983,10 +1960,9 @@ def main( \
             pf = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
             # calculate flux distribution prior factor
             dlogf = np.log(pf/f0)
-            factor = -self.truealpha*dlogf
-    
+            factor = np.sum(-self.truealpha * dlogf) 
             if not gdat.strgmode == 'forc':
-                dpos_rms = np.float32(60./np.sqrt(25.))/(np.maximum(f0, pf))#134
+                dpos_rms = 12. / np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
                 dpos_rms[dpos_rms < 1e-3] = 1e-3
                 dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
                 dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
@@ -1996,8 +1972,6 @@ def main( \
                 starsp[gdat.indxxpos,:] = stars0[gdat.indxxpos,:]
                 starsp[gdat.indxypos,:] = stars0[gdat.indxypos,:]
             starsp[gdat.indxflux,:] = pf
-            if gdat.booltimebins:
-                starsp[gdat.indxlcpr,:] = stars0[gdat.indxlcpr, :] + np.random.normal(size=nw).astype(np.float32) * stdvproplcpr
             self.bounce_off_edges(starsp)
     
             proposal = Proposal()
@@ -2018,17 +1992,14 @@ def main( \
                 mregx = ((gdat.sizeimag[0] / sizeregi + 1) + 1) / 2 # assumes that sizeimag are multiples of sizeregi
                 mregy = ((gdat.sizeimag[1] / sizeregi + 1) + 1) / 2
                 starsb = np.empty((gdat.numbparastar, nbd), dtype=np.float32)
-                starsb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*sizeregi - self.offsetx
-                starsb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsety
+                starsb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*sizeregi - self.offsxpos
+                starsb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsypos
                 starsb[gdat.indxflux,:] = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=nbd))
-                if gdat.booltimebins:
-                    starsb[gdat.indxlcpr, :] = np.random.randn(nbd) * 1e-6 + 1.
     
                 # some sources might be generated outside image
                 inbounds = self.in_bounds(starsb)
                 starsb = starsb.compress(inbounds, axis=1)
                 factor = np.full(starsb.shape[1], -self.penalty)
-    
                 proposal.add_birth_stars(starsb)
                 proposal.set_factor(factor)
             # death
@@ -2041,7 +2012,6 @@ def main( \
                     idx_kill = np.random.choice(idx_reg, size=nbd, replace=False)
                     starsk = self.stars.take(idx_kill, axis=1)
                     factor = np.full(nbd, self.penalty)
-    
                     proposal.add_death_stars(idx_kill, starsk)
                     proposal.set_factor(factor)
             return proposal
@@ -2071,34 +2041,21 @@ def main( \
                     summgene(stars0)
                 x0 = stars0[gdat.indxxpos, :]
                 y0 = stars0[gdat.indxypos, :]
-                if gdat.booltimebins:
-                    spec = np.empty((gdat.numbtime, stars0.shape[1]))
-                    spec[0] = stars0[gdat.indxflux, :]
-                    spec[1:] = spec[0] * stars0[gdat.indxlcpr, :]
-                    f0 = np.mean(spec)
-                    lcpr0 = stars0[gdat.indxlcpr, :]
-                else:
-                    f0 = stars0[gdat.indxflux, :]
-                    x0, y0, f0 = stars0
+                f0 = stars0[gdat.indxflux, :]
                 fminratio = f0 / self.trueminf
                 frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
                 
+                # temp
+                frac = np.mean(np.mean(frac, axis=0), axis=0)
+
                 starsp = np.empty_like(stars0)
                 starsp[gdat.indxxpos,:] = x0 + ((1-frac)*dx)
                 starsp[gdat.indxypos,:] = y0 + ((1-frac)*dy)
-                if gdat.booltimebins:
-                    starsp[gdat.indxlcpr, :] = f0 * frac * (1. + np.random.rand(gdat.numblcpr) * 1e-6) / gdat.numbtime
-                    starsp[gdat.indxflux, :] = f0 * frac - sum(starsp[gdat.indxlcpr, :])
-                else:
-                    starsp[gdat.indxflux,:] = f0 * frac
+                starsp[gdat.indxflux,:] = f0 * frac
                 starsb = np.empty_like(stars0)
                 starsb[gdat.indxxpos,:] = x0 - frac*dx
                 starsb[gdat.indxypos,:] = y0 - frac*dy
-                if gdat.booltimebins:
-                    starsb[gdat.indxlcpr, :] = fluxtotl[1:] - starsp[gdat.indxlcpr, :]
-                    starsb[gdat.indxflux, :] = f0 * (1. - frac) - sum(starsp[gdat.indxlcpr, :])
-                else:
-                    starsb[gdat.indxflux,:] = f0 * (1-frac)
+                starsb[gdat.indxflux,:] = f0 * (1-frac)
     
                 # don't want to think about how to bounce split-merge
                 # don't need to check if above fmin, because of how frac is decided
@@ -2169,6 +2126,11 @@ def main( \
                 sum_f = f0 + fk
                 fminratio = sum_f / self.trueminf
                 frac = f0 / sum_f
+                frac = f0 / sum_f
+                
+                # temp
+                frac = np.mean(np.mean(frac, axis=0), axis=0)
+
                 starsp = np.empty_like(stars0)
                 starsp[gdat.indxxpos,:] = frac*stars0[gdat.indxxpos,:] + (1-frac)*starsk[gdat.indxxpos,:]
                 starsp[gdat.indxypos,:] = frac*stars0[gdat.indxypos,:] + (1-frac)*starsk[gdat.indxypos,:]
@@ -2187,7 +2149,7 @@ def main( \
                     factor += self.penalty
                 else:
                     factor -= self.penalty
-                proposal.set_factor(factor)
+                proposal.set_factor(np.sum(factor))
             return proposal
     
         
@@ -2262,8 +2224,8 @@ def main( \
                 mregx = ((gdat.sizeimag[0] / sizeregi + 1) + 1) / 2 # assumes that sizeimag are multiples of sizeregi
                 mregy = ((gdat.sizeimag[1] / sizeregi + 1) + 1) / 2
                 galaxiesb = np.empty((6,nbd))
-                galaxiesb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*sizeregi - self.offsetx
-                galaxiesb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsety
+                galaxiesb[gdat.indxxpos,:] = (np.random.randint(mregx, size=nbd)*2 + self.parity_x + np.random.uniform(size=nbd))*sizeregi - self.offsxpos
+                galaxiesb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsypos
                 galaxiesb[gdat.indxflux,:] = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=nbd))
                 galaxiesb[[self._XX, self._XY, self._YY],:] = self.moments_from_prior(self.truermin_g, nbd)
     
@@ -2765,17 +2727,8 @@ def main( \
     
     assert gdat.sizeimag[0] % sizeregi == 0
     assert gdat.sizeimag[1] % sizeregi == 0
-    margin = 10
+    gdat.marg = 10
    
-    # temp
-    #numbstarsamp = np.zeros(gdat.numbsamp, dtype=np.int32)
-    #xpossamp = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-    #ypossamp = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-    #fluxsamp = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-    #
-    #if gdat.booltimebins:
-    #    lcprsamp = np.zeros((gdat.numbsamp, gdat.numblcpr, gdat.maxmnumbstar), dtype=np.float32)
-    
     ngsample = np.zeros(gdat.numbsamp, dtype=np.int32)
     xgsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
     ygsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
@@ -2785,7 +2738,7 @@ def main( \
     yygsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
     
     # construct model for each temperature
-    models = [Model() for k in xrange(ntemps)]
+    listobjtmodl = [Model() for k in xrange(ntemps)]
     
     # write the chain
     ## h5 file path
@@ -2800,16 +2753,13 @@ def main( \
         gdat.catlmlik = {}
         gdat.catlmlik['numb'] = 0
         for strgfeat in gdat.liststrgfeatstar:
-            if strgfeat == 'lcpr':
-                gdat.catlmlik[strgfeat] = np.zeros((gdat.numblcpr, gdat.maxmnumbstar), dtype=np.float32)
-            else:
-                gdat.catlmlik[strgfeat] = np.zeros((gdat.maxmnumbstar), dtype=np.float32)
+            gdat.catlmlik[strgfeat] = np.zeros((gdat.maxmnumbstar), dtype=np.float32)
 
     chan = {}
     chan['numb'] = np.zeros(gdat.numbsamp, dtype=np.int32)
     for strgfeat in gdat.liststrgfeatstar:
-        if strgfeat == 'lcpr':
-            chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.numblcpr, gdat.maxmnumbstar), dtype=np.float32)
+        if strgfeat == 'flux':
+            chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.numbener, gdat.numbtime, gdat.maxmnumbstar), dtype=np.float32)
         else:
             chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
     
@@ -2820,7 +2770,7 @@ def main( \
         #temptemp = max(50 - 0.1*j, 1)
         temptemp = 1.
         for k in xrange(ntemps):
-            _, _, chi2_all[k] = models[k].run_sampler(gdat, temptemp, j, boolplotshow=(k==0)*boolplotshow)
+            _, _, chi2_all[k] = listobjtmodl[k].run_sampler(gdat, temptemp, j, boolplotshow=(k==0)*boolplotshow)
     
         llik = -0.5 * chi2_all[0]
 
@@ -2828,20 +2778,16 @@ def main( \
             logfac = (chi2_all[k-1] - chi2_all[k]) * (1./temps[k-1] - 1./temps[k]) / 2.
             if np.log(np.random.uniform()) < logfac:
                 print 'swapped', k-1, k
-                models[k-1], models[k] = models[k], models[k-1]
-        
-        if gdat.booltimebins:
-            if gdat.diagmode:
-                chec_lcpr(models[0].stars[gdat.indxlcpr, :])
+                listobjtmodl[k-1], listobjtmodl[k] = listobjtmodl[k], listobjtmodl[k-1]
         
         if gdat.strgstat != None:
             # temp -- assumes single temperature
             # save the sample and record the likelihood
             if llik > mlik:
-                gdat.catlmlik['numb'] = models[0].n
+                gdat.catlmlik['numb'] = listobjtmodl[0].n
                 for strgfeat in gdat.liststrgfeatstar:
                     indx = getattr(gdat, 'indx' + strgfeat)
-                    gdat.catlmlik[strgfeat] = models[0].stars[indx, :]
+                    gdat.catlmlik[strgfeat] = listobjtmodl[0].stars[indx, :]
                 mlik = llik
                 writ_catl(gdat, gdat.catlmlik, gdat.pathstat)
             print 'llik'
@@ -2850,30 +2796,37 @@ def main( \
             print mlik
 
         if gdat.boolsaveswep[j]:
-            chan['numb'][j-gdat.numbswepburn] = models[0].n
+            chan['numb'][j-gdat.numbswepburn] = listobjtmodl[0].n
             for strgfeat in gdat.liststrgfeatstar:
                 indx = getattr(gdat, 'indx' + strgfeat)
-                chan[strgfeat][j-gdat.numbswepburn, :] = models[0].stars[indx, :]
+                chan[strgfeat][j-gdat.numbswepburn, :] = listobjtmodl[0].stars[indx, :]
 
             if strgmodl == 'galx':
-                ngsample[j] = models[0].ng
-                xgsample[j,:] = models[0].galaxies[gdat.indxxpos, :]
-                ygsample[j,:] = models[0].galaxies[gdat.indxypos, :]
-                fgsample[j,:] = models[0].galaxies[gdat.indxflux, :]
-                xxgsample[j,:] = models[0].galaxies[Model._XX, :]
-                xygsample[j,:] = models[0].galaxies[Model._XY, :]
-                yygsample[j,:] = models[0].galaxies[Model._YY, :]
+                ngsample[j] = listobjtmodl[0].ng
+                xgsample[j,:] = listobjtmodl[0].galaxies[gdat.indxxpos, :]
+                ygsample[j,:] = listobjtmodl[0].galaxies[gdat.indxypos, :]
+                fgsample[j,:] = listobjtmodl[0].galaxies[gdat.indxflux, :]
+                xxgsample[j,:] = listobjtmodl[0].galaxies[Model._XX, :]
+                xygsample[j,:] = listobjtmodl[0].galaxies[Model._XY, :]
+                yygsample[j,:] = listobjtmodl[0].galaxies[Model._YY, :]
         print
    
     writ_catl(gdat, chan, pathh5py)
     
-    if gdat.booltimebins:
-        if gdat.diagmode:
-            chec_lcpr(chan['lcpr'])
-
     path = gdat.pathdatartag + 'gdat.p'
     filepick = open(path, 'wb')
     print 'Writing to %s...' % path
+    
+    #for attr, valu in gdat.__dict__.iteritems():
+    #    print 'attr'
+    #    print attr
+    #    print 'valu'
+    #    print valu
+    #    gdattemp = gdatstrt()
+    #    gdattemp.temp = valu
+    #    filepick = open(path, 'wb')
+    #    cPickle.dump(gdattemp, filepick, protocol=cPickle.HIGHEST_PROTOCOL)
+    #    filepick.close()
     cPickle.dump(gdat, filepick, protocol=cPickle.HIGHEST_PROTOCOL)
     filepick.close()
  
@@ -2883,7 +2836,7 @@ def main( \
     gdat.numbsourcond = catlcond.shape[1]
     gdat.indxsourcond = np.arange(gdat.numbsourcond)
     
-    if gdat.booltimebins:
+    if gdat.numbtime > 1:
         print 'Plotting light curves...'
         plot_lcur(gdat)
 
@@ -2894,11 +2847,7 @@ def main( \
             print 'Plotting the condensed catalog...'
 
             figr, axis = plt.subplots()
-            if gdat.booltimebins:
-                temp = gdat.cntpdata[0, :, :, 0]
-            else:
-                temp = gdat.cntpdata[0, :, :, 0]
-            axis.imshow(temp, origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
+            axis.imshow(gdat.cntpdata[0, :, :, 0], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
             numbsampplot = min(gdat.numbsamp - gdat.numbswepburn, 10)
             indxsampplot = np.random.choice(np.arange(gdat.numbswepburn, gdat.numbsamp, dtype=int), size=numbsampplot, replace=False) 
             for k in range(numbsampplot):
@@ -2918,24 +2867,6 @@ def main( \
         os.system(cmnd)
         print 'Done.'
     
-
-def chec_lcpr(lcpr):
-
-    if lcpr.size > 0:
-        if np.amax(np.abs(lcpr)) > 1e3 or np.isnan(lcpr).any():
-            if np.amax(np.abs(lcpr)) > 1e3:
-                print 'if np.amax(np.abs(lcpr)) > 1e3'
-            if np.isnan(lcpr).any():
-                print 'np.isnan(lcpr).any()'
-                for k in range(lcpr.shape[1]):
-                    print lcpr[:, k]
-            print 'lcpr'
-            summgene(lcpr)
-            print lcpr
-            print 
-
-            raise Exception('')
-
 
 def retr_catlseed(rtag, pathdata, pathdatartag=None):
     
@@ -2964,7 +2895,8 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None):
     
     PCi, junk = np.mgrid[:numbsampseed, :gdat.maxmnumbstar]
     
-    mask = chan['flux'] > 0
+    # temp
+    mask = chan['flux'][:, 0, 0] > 0
     PCc_all = np.zeros((np.sum(mask), 2))
     PCc_all[:, 0] = chan['xpos'][mask].flatten()
     PCc_all[:, 1] = chan['ypos'][mask].flatten()
@@ -3041,9 +2973,19 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None):
         G.remove_node(i)
         G.remove_nodes_from(neighbors)
     
-    catlseed = np.array(catlseed)
+    catlseedtemp = np.array(catlseed)
+    
+    catlseed = {}
+    print 'catlseedtemp'
+    summgene(catlseedtemp)
+    gdat.numbsourseed = catlseedtemp.size
 
-    np.savetxt(gdat.pathdatartag + rtag + '_catlseed.txt', catlseed)
+    catlseed['numb'] = gdat.numbsourseed
+    catlseed['xpos'] = catlseedtemp[0, :]
+    catlseed['ypos'] = catlseedtemp[1, :]
+    catlseed['degr'] = catlseedtemp[2, :]
+    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed.h5'
+    writ_catl(gdat, catlseed, pathcatlseed)
 
 
 def retr_catlcond(rtag, pathdata, pathdatartag=None):
@@ -3063,7 +3005,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     radisrch = 0.75
     
     # confidence cut
-    cut = 2 
+    minmdegr = 2 
     
     # gain
     gain = 0.00546689
@@ -3074,6 +3016,8 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     gdat = cPickle.load(filepick)
     filepick.close()
     
+    setp(gdat)
+
     # read the chain
     print 'Reading the chain...'    
     pathchan = pathdatartag + rtag + '_chan.h5'
@@ -3081,18 +3025,13 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
 
     # sort the catalog in decreasing flux
     catlsort = np.zeros((gdat.numbsamp, gdat.maxmnumbstar, gdat.numbparastar))
-    for i in gdat.indxsamp:
+    for b in gdat.indxsamp:
         catl = np.zeros((gdat.maxmnumbstar, gdat.numbparastar))
-        catl[:, gdat.indxxpos] = chan['xpos'][i, :]
-        catl[:, gdat.indxypos] = chan['ypos'][i, :]
-        if gdat.boolentibins:
-            catl[:, gdat.indxflux] = chan['flux'][i, :, :].flatten()
-        else:
-            catl[:, gdat.indxflux] = chan['flux'][i, :] 
-            if gdat.booltimebins:
-                catl[:, gdat.indxlcpr] = chan['lcpr'][i, :, :].T 
-        
-        catlsort[i, :, :] = np.flipud(catl[catl[:, gdat.indxflux].argsort(), :])
+        catl[:, gdat.indxxpos] = chan['xpos'][b, :]
+        catl[:, gdat.indxypos] = chan['ypos'][b, :]
+        catl[:, gdat.indxflux.flatten()] = chan['flux'][b, :].reshape((gdat.maxmnumbstar, gdat.numbflux))
+        # temp
+        catlsort[b, :, :] = np.flipud(catl[catl[:, gdat.indxflux[0, 0]].argsort(), :])
    
     print "Stacking catalogs..."
     
@@ -3102,44 +3041,45 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     # create array for KD tree creation
     catlstck = np.zeros((numbstarstck, 2))
     cntr = 0
-    for i in gdat.indxsamp:
-        catlstck[cntr:cntr+chan['numb'][i], 0] = catlsort[i, :chan['numb'][i], gdat.indxxpos]
-        catlstck[cntr:cntr+chan['numb'][i], 1] = catlsort[i, :chan['numb'][i], gdat.indxypos]
-        cntr += chan['numb'][i]
+    for b in gdat.indxsamp:
+        catlstck[cntr:cntr+chan['numb'][b], 0] = catlsort[b, :chan['numb'][b], gdat.indxxpos]
+        catlstck[cntr:cntr+chan['numb'][b], 1] = catlsort[b, :chan['numb'][b], gdat.indxypos]
+        cntr += chan['numb'][b]
 
     retr_catlseed(rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag)
     
     # seed catalog
     ## load the catalog
-    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed.txt'
-    data = np.loadtxt(pathcatlseed)
+    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed.h5'
+    catlseed = read_catl(gdat, pathcatlseed)
     
     ## perform confidence cut
-    seedxpos = data[:,0][data[:,2] >= cut]
-    seedypos = data[:,1][data[:,2] >= cut]
-    seednumb = data[:,2][data[:,2] >= cut]
     
-    assert seedxpos.size == seedypos.size
-    assert seedxpos.size == seednumb.size
+    # temp
+    indxstar = np.where(catlseed['degr'] >= minmdegr)[0]
+    catlseed['xpos'] = catlseed['xpos'][indxstar]
+    catlseed['ypos'] = catlseed['ypos'][indxstar]
+    catlseed['degr'] = catlseed['degr'][indxstar]
     
-    catlseed = np.zeros((seedxpos.size, 2))
-    catlseed[:, 0] = seedxpos
-    catlseed[:, 1] = seedypos
-    numbsourseed = seedxpos.size
-    numbsourcatlseed = len(catlseed)
-    indxsourcatlseed = np.arange(numbsourcatlseed)
+    numbsourseed = catlseed['xpos'].size
+    indxsourseed = np.arange(numbsourseed)
+    catlseedtemp = np.empty((numbsourseed, 2)) 
+    catlseedtemp[:, 0] = catlseed['xpos']
+    catlseedtemp[:, 1] = catlseed['ypos']
+    #catlseedtemp[:, 2] = catlseed['degr']
+    catlseed = catlseedtemp
     
     #creates tree, where tree is Pcc_stack
     tree = scipy.spatial.KDTree(catlstck)
     
     # features of the condensed sources
-    featcond = np.zeros((gdat.numbsamp, numbsourcatlseed, gdat.numbparastar))
+    featcond = np.zeros((gdat.numbsamp, numbsourseed, gdat.numbparastar))
     
     #numpy mask for sources that have been matched
     mask = np.zeros(numbstarstck)
     
     #first, we iterate over all sources in the seed catalog:
-    for k in indxsourcatlseed:
+    for k in indxsourseed:
     
         #query ball point at seed catalog
         matches = tree.query_ball_point(catlseed[k], radisrch)
@@ -3176,8 +3116,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
                     featcond[i, k, gdat.indxxpos] = catlsort[i, match-indxstarloww, gdat.indxxpos]
                     featcond[i, k, gdat.indxypos] = catlsort[i, match-indxstarloww, gdat.indxypos]
                     featcond[i, k, gdat.indxflux] = catlsort[i, match-indxstarloww, gdat.indxflux]
-                    if gdat.booltimebins:
-                        featcond[i, k, gdat.indxlcpr] = catlsort[i, match-indxstarloww, gdat.indxlcpr]
     
     # generate condensed catalog from clusters
     numbsourseed = len(catlseed)
@@ -3187,28 +3125,19 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     yposmean = np.zeros(numbsourseed)
     fluxmean = np.zeros(numbsourseed)
     magtmean = np.zeros(numbsourseed)
-    if gdat.booltimebins:
-        lcprmean = np.zeros((gdat.numblcpr, numbsourseed))
     stdvxpos = np.zeros(numbsourseed)
     stdvypos = np.zeros(numbsourseed)
     stdvflux = np.zeros(numbsourseed)
-    if gdat.booltimebins:
-        stdvlcpr = np.zeros((gdat.numblcpr, numbsourseed))
     stdvmagt = np.zeros(numbsourseed)
     conf = np.zeros(numbsourseed)
     
     # confidence interval defined for err_(x,y,f)
     pctlhigh = 84
     pctlloww = 16
-    for i in indxsourcatlseed:
+    for i in indxsourseed:
         xpos = featcond[:, i, gdat.indxxpos][np.nonzero(featcond[:, i, gdat.indxxpos])]
         ypos = featcond[:, i, gdat.indxypos][np.nonzero(featcond[:, i, gdat.indxypos])]
         flux = featcond[:, i, gdat.indxflux][np.nonzero(featcond[:, i, gdat.indxflux])]
-
-        if gdat.booltimebins:
-            lcpr = np.empty((xpos.size, gdat.numbtime - 1))
-            for k in np.arange(gdat.numblcpr):
-                lcpr[:, k] = featcond[:, i, gdat.indxlcpr[k]][np.nonzero(featcond[:, i, gdat.indxlcpr[k]])]
 
         assert xpos.size == ypos.size
         assert xpos.size == flux.size
@@ -3218,15 +3147,11 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
         xposmean[i] = np.mean(xpos)
         yposmean[i] = np.mean(ypos)
         fluxmean[i] = np.mean(flux)
-        if gdat.booltimebins and lcpr.size > 0:
-            lcprmean[:, i] = np.mean(lcpr, axis=0)
 
         if xpos.size > 1:
             stdvxpos[i] = np.percentile(xpos, pctlhigh) - np.percentile(xpos, pctlloww)
             stdvypos[i] = np.percentile(ypos, pctlhigh) - np.percentile(ypos, pctlloww)
             stdvflux[i] = np.percentile(flux, pctlhigh) - np.percentile(flux, pctlloww)
-            if gdat.booltimebins:
-                stdvlcpr[:, i] = np.percentile(lcpr, pctlhigh, axis=0) - np.percentile(lcpr, pctlloww, axis=0)
 
     catlcond = np.zeros((gdat.numbparacatlcond, numbsourseed, 2))
     catlcond[gdat.indxxpos, :, 0] = xposmean
@@ -3235,9 +3160,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     catlcond[gdat.indxypos, :, 1] = stdvypos
     catlcond[gdat.indxflux, :, 0] = fluxmean
     catlcond[gdat.indxflux, :, 1] = stdvflux
-    if gdat.booltimebins:
-        catlcond[gdat.indxlcpr, :, 0] = lcprmean
-        catlcond[gdat.indxlcpr, :, 1] = stdvlcpr
     catlcond[gdat.indxconf, :, 0] = conf
     
     #magt = 22.5 - 2.5 * np.log10(flux * gain)
@@ -3346,10 +3268,10 @@ def cnfg_defa():
     strgmodl = 'star'
     datatype = 'mock'
     
-    catlrefr = [{}]
+    catlrefr = []
 
     if datatype == 'mock':
-        catlrefr.append(pathdata, retr_catltrue(strgmodl), strgdata)
+        catlrefr.append(retr_catltrue(pathdata, strgmodl, strgdata))
         
         lablrefr = ['True']
         colrrefr = ['g']
@@ -3357,7 +3279,6 @@ def cnfg_defa():
         lablrefr = ['HST 606W']
         colrrefr = ['m']
     
-
     main( \
          cntpdata=cntpdata, \
          cntppsfn=cntppsfn, \
@@ -3378,17 +3299,15 @@ def cnfg_defa():
          testpsfn=True, \
          bias=bias, \
          gain=gain, \
-         verbtype=1, \
+         #verbtype=2, \
          numbswep=100, \
-         #numbloop=10, \
+         numbloop=1000, \
         )
 
 
 def cnfg_time():
     
     gdat = gdatstrt()
-    
-    gdat.booltimebins = True
     
     gdat.pathlion, pathdata = retr_path()
     
@@ -3405,8 +3324,8 @@ def cnfg_time():
     truegain = filetemp['gain'][()]
     truecatl = read_catl(gdat, path)
 
-
-    numbtime = cntpdata.shape[0]
+    cntpdata = np.swapaxes(cntpdata, 0, 3)
+    numbtime = cntpdata.shape[3]
     indxtime = np.arange(numbtime)
 
 
@@ -3425,6 +3344,7 @@ def cnfg_time():
     #for k in indxtime:
     #    cntpdata[k, :, :, 0] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
     
+    #strgmode = 'pcat'
     strgmode = 'forc'
 
     strgmodl = 'star'
@@ -3433,13 +3353,11 @@ def cnfg_time():
     catlinit = truecatl
 
     #catlinit = retr_catltrue(pathdata, strgmodl, strgdata)
-    #catlinit['lcpr'] = np.ones((numbtime - 1, catlinit['xpos'].size))
     indx = np.argsort(truecatl['flux'])
     truecatl['numb'] = 1000
     truecatl['xpos'] = truecatl['xpos'][indx][:1000]
     truecatl['ypos'] = truecatl['ypos'][indx][:1000]
     truecatl['flux'] = truecatl['flux'][indx][:1000]
-    truecatl['lcpr'] = truecatl['lcpr'][:, indx][:, :1000]
     back = np.float32(179)
     truebias = 0.
 
@@ -3454,26 +3372,28 @@ def cnfg_time():
          cntpdata=cntpdata, \
          cntppsfn=cntppsfn, \
          factusam=factusam, \
-         numbswep=100, \
-         numbloop=1000, \
+         numbswep=1, \
+         numbloop=10, \
+         diagmode=True, \
+         verbtype=2, \
          colrstyl='pcat', \
          #boolplotsave=False, \
          boolplotsave=True, \
          boolplotshow=False, \
-         diagmode=True, \
         
          strgmode=strgmode, \
-         #maxmnumbstar=7000, \
+         #maxmnumbstar=7, \
 
          catlrefr=catlrefr, \
-         catlinit=catlinit, \
+         #catlinit=catlinit, \
+         colrrefr=['g'], \
+         lablrefr=['Mock'], \
          #strgstat='test', \
 
          back=back, \
 
          bias=truebias, \
          gain=truegain, \
-         #verbtype=2, \
          #testpsfn=True, \
          #boolplotsave=True, \
          #boolplotshow=True, \
@@ -3483,8 +3403,6 @@ def cnfg_time():
 def cnfg_ener():
     
     gdat = gdatstrt()
-    
-    gdat.booltimebins = True
     
     gdat.pathlion, pathdata = retr_path()
     
@@ -3500,20 +3418,17 @@ def cnfg_ener():
     cntpdata = filetemp['cntpdata'][()]
     truegain = filetemp['gain'][()]
     truecatl = read_catl(gdat, path)
-
-
-    numbtime = cntpdata.shape[0]
-    indxtime = np.arange(numbtime)
-
+    
+    cntpdata = cntpdata[:3, :, :, :]
 
     # perturb the data in each time bin
-    #cntpdata = np.zeros([numbtime] + list(cntpdatatemp.shape) + [1], dtype=np.float32)
     #for k in indxtime:
     #    cntpdata[k, :, :, 0] = cntpdatatemp
     
     numbsidexpos = cntpdata.shape[2]
     numbsideypos = cntpdata.shape[1]
     numbpixl = numbsidexpos * numbsideypos
+    #cntpdata = np.swapaxes(cntpdata, 0, 3)
     print 'cntpdata'
     summgene(cntpdata)
     print 'numbpixl'
@@ -3529,13 +3444,11 @@ def cnfg_ener():
     catlinit = truecatl
 
     #catlinit = retr_catltrue(pathdata, strgmodl, strgdata)
-    #catlinit['lcpr'] = np.ones((numbtime - 1, catlinit['xpos'].size))
     indx = np.argsort(truecatl['flux'])
     truecatl['numb'] = 1000
     truecatl['xpos'] = truecatl['xpos'][indx][:1000]
     truecatl['ypos'] = truecatl['ypos'][indx][:1000]
     truecatl['flux'] = truecatl['flux'][indx][:1000]
-    truecatl['lcpr'] = truecatl['lcpr'][:, indx][:, :1000]
     back = np.float32(179)
     truebias = 0.
 
@@ -3550,28 +3463,28 @@ def cnfg_ener():
          cntpdata=cntpdata, \
          cntppsfn=cntppsfn, \
          factusam=factusam, \
-         numbswep=100, \
-         numbloop=1000, \
+         numbswep=2, \
+         numbloop=10, \
+         diagmode=True, \
+         verbtype=2, \
          colrstyl='pcat', \
          #boolplotsave=False, \
          boolplotsave=True, \
          boolplotshow=False, \
-         diagmode=True, \
         
          strgmode=strgmode, \
-         #maxmnumbstar=7000, \
+         maxmnumbstar=7, \
 
          catlrefr=catlrefr, \
-         catlinit=catlinit, \
+         #catlinit=catlinit, \
          #strgstat='test', \
+         colrrefr=['g'], \
+         lablrefr=['Mock'], \
 
          back=back, \
          
-         boolentibins=False, \
-
          bias=truebias, \
          gain=truegain, \
-         #verbtype=2, \
          #testpsfn=True, \
          #boolplotsave=True, \
          #boolplotshow=True, \
