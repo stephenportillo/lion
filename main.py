@@ -8,7 +8,7 @@ sns.set(context='poster', style='ticks', color_codes=True)
 
 import matplotlib.pyplot as plt
 
-import cPickle
+import cPickle, inspect
 
 import scipy.spatial
 import networkx
@@ -571,7 +571,7 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
 
     numbphon = x.size
     rad = numbsidepsfn / 2 # 12 for numbsidepsfn = 25
-
+    
     numbregiyaxi = sizeimag[1] / sizeregi + 1 # assumes sizeimag % sizeregi = 0?
     numbregixaxi = sizeimag[0] / sizeregi + 1
     
@@ -624,7 +624,6 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
             cntprefr = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
         
         cntpmodl = np.empty([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
-        #cntpmodl = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32) + back
 
         chi2 = np.zeros((numbregiyaxi, numbregixaxi), dtype=np.float64)
         
@@ -661,12 +660,18 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
                 #    print 'cntpmodlstmp'
                 #    print cntpmodlstmp
                 #    summgene(cntpmodlstmp)
-
+                print 'coefspix[i, :, :]'
+                summgene(coefspix[i, :, :])
                 desimatr = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, \
                                                                                                 dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32) * f[i, t, :, None]
+                print 'desimatr'
+                summgene(desimatr)
                 clib(sizeimag[0], sizeimag[1], numbphon, numbsidepsfn, numbparaspix, desimatr, coefspix[i, :, :], cntpmodlstmp, ix, iy, cntpmodltemp, \
                                                 cntprefrtemp, weigtemp, chi2, sizeregi, marg, offsxpos, offsypos)
         
+                print 'cntpmodltemp'
+                summgene(cntpmodltemp)
+
                 cntpmodl[i, :, :, t] = cntpmodltemp
                 if gdat.verbtype > 1:
                     #print 'after'
@@ -693,10 +698,14 @@ def retr_dtre(spec):
 
 
 def psf_poly_fit(gdat, psfnusam, factusam):
-    
+   
+    assert psfnusam.ndim == 2
+    # temp
+    #assert psfnusam.shape[1] == psfnusam.shape[2] # assert PSF is square
     assert psfnusam.shape[0] == psfnusam.shape[1] # assert PSF is square
     
     # number of pixels along the side of the upsampled PSF
+    #numbsidepsfnusam = psfnusam.shape[1]
     numbsidepsfnusam = psfnusam.shape[0]
 
     # pad by one row and one column
@@ -863,46 +872,53 @@ def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, clib=None):
     flux = np.ones((gdat.numbener, gdat.numbtime, 1), dtype=np.float32)
     back = 0.
     sizeimag = [25, 25]
-    psf0 = eval_modl(gdat, xpos, ypos, flux, back, numbsidepsfn, coefspix, clib=clib, sizeimag=sizeimag)
-    print 'numbsidepsfn'
-    print numbsidepsfn
     print 'coefspix'
     summgene(coefspix)
-    print 'sizeimag'
-    print sizeimag
-    print 'psf0'
-    summgene(psf0)
-    plt.subplot(2,2,1)
-    temp = psf0[0, :, :, 0]
-    plt.imshow(temp, interpolation='none', origin='lower')
-    plt.title('matrix multiply PSF')
-    plt.subplot(2,2,2)
-    iix = int(np.floor(ix))
-    iiy = int(np.floor(iy))
-    dix = ix - iix
-    diy = iy - iiy
-    f00 = psf[iiy:125:5,  iix:125:5]
-    f01 = psf[iiy+1:125:5,iix:125:5]
-    f10 = psf[iiy:125:5,  iix+1:125:5]
-    f11 = psf[iiy+1:125:5,iix+1:125:5]
-    realpsf = f00*(1.-dix)*(1.-diy) + f10*dix*(1.-diy) + f01*(1.-dix)*diy + f11*dix*diy
-    plt.imshow(realpsf, interpolation='none', origin='lower')
-    plt.title('bilinear interpolate PSF')
-    invrealpsf = np.zeros((25,25))
-    mask = realpsf > 1e-3
-    invrealpsf[mask] = 1./realpsf[mask]
-    plt.subplot(2, 2, 3)
-    plt.title('absolute difference')
-    plt.imshow(temp - realpsf, interpolation='none', origin='lower')
-    plt.colorbar()
-    plt.subplot(2,2,4)
-    plt.imshow((temp - realpsf) * invrealpsf, interpolation='none', origin='lower')
-    plt.colorbar()
-    plt.title('fractional difference')
-    if gdat.boolplotsave:
-        plt.savefig(gdat.pathdatartag + '%s_psfn.' % gdat.rtag + gdat.strgplotfile)
-    else:
-        plt.show()
+    
+    cntpmodlpsfn = eval_modl(gdat, xpos, ypos, flux, back, numbsidepsfn, coefspix, clib=clib, sizeimag=sizeimag)
+    
+    for i in gdat.indxener:
+        print 'i'
+        print i
+        print 'cntpmodlpsfn[i, :, :, 0]'
+        summgene(cntpmodlpsfn[i, :, :, 0])
+        print
+
+        plt.subplot(2,2,1)
+        plt.imshow(cntpmodlpsfn[i, :, :, 0], interpolation='none', origin='lower')
+        plt.title('Model PSF, Matrix')
+        
+        plt.subplot(2,2,2)
+        iix = int(np.floor(ix))
+        iiy = int(np.floor(iy))
+        dix = ix - iix
+        diy = iy - iiy
+        f00 = psf[iiy:125:5,  iix:125:5]
+        f01 = psf[iiy+1:125:5,iix:125:5]
+        f10 = psf[iiy:125:5,  iix+1:125:5]
+        f11 = psf[iiy+1:125:5,iix+1:125:5]
+        #f00 = psf[i, iiy:125:5,  iix:125:5]
+        #f01 = psf[i, iiy+1:125:5,iix:125:5]
+        #f10 = psf[i, iiy:125:5,  iix+1:125:5]
+        #f11 = psf[i, iiy+1:125:5,iix+1:125:5]
+        realpsf = f00*(1.-dix)*(1.-diy) + f10*dix*(1.-diy) + f01*(1.-dix)*diy + f11*dix*diy
+        plt.imshow(realpsf, interpolation='none', origin='lower')
+        plt.title('Model PSF, Bilinear')
+        invrealpsf = np.zeros((25,25))
+        mask = realpsf > 1e-3
+        invrealpsf[mask] = 1./realpsf[mask]
+        
+        plt.subplot(2, 2, 3)
+        plt.title('absolute difference')
+        plt.imshow(cntpmodlpsfn[i, :, :, 0] - realpsf, interpolation='none', origin='lower')
+        plt.colorbar()
+        
+        plt.subplot(2,2,4)
+        plt.imshow((cntpmodlpsfn[i, :, :, 0] - realpsf) * invrealpsf, interpolation='none', origin='lower')
+        plt.colorbar()
+        plt.title('fractional difference')
+        
+        plt.savefig(gdat.pathdatartag + '%s_psfn%04d.%s' % (gdat.rtag, i, gdat.strgplotfile))
 
 
 def plot_lcur(gdat):
@@ -948,6 +964,39 @@ def plot_lcur(gdat):
             cntr += 1
 
 
+def setp_clib(gdat, pathlion):
+
+    array_2d_float    = npct.ndpointer(dtype=np.float32, ndim=2)
+    array_1d_int      = npct.ndpointer(dtype=np.int32  , ndim=1)
+    array_1d_float    = npct.ndpointer(dtype=np.float32, ndim=1)
+    array_2d_double   = npct.ndpointer(dtype=np.float64, ndim=2)
+    array_2d_int      = npct.ndpointer(dtype=np.int32,   ndim=2)
+    
+    #array_2d_float    = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
+    #array_1d_int      = npct.ndpointer(dtype=np.int32  , ndim=1, flags="C_CONTIGUOUS")
+    #array_1d_float    = npct.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
+    #array_2d_double   = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
+    #array_2d_int      = npct.ndpointer(dtype=np.int32,   ndim=2, flags="C_CONTIGUOUS")
+    
+    gdat.clib = npct.load_library(pathlion + 'blas', '.')
+    gdat.clib.clib_eval_modl.restype = None
+    gdat.clib.clib_updt_modl.restype = None
+    gdat.clib.clib_eval_llik.restype = None
+    gdat.clib.clib_eval_modl.argtypes = [c_int, c_int, c_int, c_int, c_int]
+    gdat.clib.clib_updt_modl.argtypes = [c_int, c_int]
+    gdat.clib.clib_eval_llik.argtypes = [c_int, c_int]
+    gdat.clib.clib_eval_modl.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    gdat.clib.clib_eval_modl.argtypes += [array_1d_int, array_1d_int]
+    gdat.clib.clib_eval_modl.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    gdat.clib.clib_updt_modl.argtypes += [array_2d_float, array_2d_float]
+    gdat.clib.clib_eval_llik.argtypes += [array_2d_float, array_2d_float, array_2d_float]
+    gdat.clib.clib_eval_modl.argtypes += [array_2d_double]
+    gdat.clib.clib_eval_llik.argtypes += [array_2d_double]
+    gdat.clib.clib_eval_modl.argtypes += [c_int, c_int, c_int, c_int]
+    gdat.clib.clib_updt_modl.argtypes += [array_2d_int, c_int, c_int, c_int, c_int]
+    gdat.clib.clib_eval_llik.argtypes += [c_int, c_int, c_int, c_int]
+
+
 def main( \
          # string characterizing the type of data
          strgdata='sdss0921', \
@@ -976,6 +1025,9 @@ def main( \
          # maximum number of stars
          maxmnumbstar=2000, \
     
+         # configuration string
+         strgcnfg=None, \
+
          # level of background 
          back=None, \
         
@@ -1060,6 +1112,10 @@ def main( \
 
     np.seterr(all='warn')
     
+    ## name of the configuration function
+    if gdat.strgcnfg == None:
+        gdat.strgcnfg = inspect.stack()[1][3]
+
     # check inputs
     if gdat.cntpdata.ndim != 4:
         raise Exception('Input image should be four dimensional.')
@@ -1076,7 +1132,7 @@ def main( \
     gdat.numbsamp = gdat.numbswep - gdat.numbswepburn
 
     # run tag
-    gdat.rtag = 'pcat_' + gdat.strgtimestmp + '_%06d' % gdat.numbswep
+    gdat.rtag = 'pcat_' + gdat.strgtimestmp + '_' + gdat.strgcnfg + '_%06d' % gdat.numbswep
     
     if gdat.rtagextn != None:
         gdat.rtag += '_' + gdat.rtagextn
@@ -1136,13 +1192,13 @@ def main( \
 
     if strgmode == 'pcat':
         
-        probprop = np.array([80., 0., 40.])
+        probprop = np.array([80., 40., 40.])
         #probprop = np.array([0., 1., 0.])
             
         if strgmodl == 'galx':
             probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
     else:
-        probprop = np.array([80., 0., 0.])
+        probprop = np.array([80., 40., 0.])
     probprop /= np.sum(probprop)
     
     gdat.pathlion, gdat.pathdata = retr_path()
@@ -1151,55 +1207,8 @@ def main( \
     setp(gdat)
     
     # construct C library
-    
-    array_2d_float    = npct.ndpointer(dtype=np.float32, ndim=2)
-    array_1d_int      = npct.ndpointer(dtype=np.int32  , ndim=1)
-    array_1d_float    = npct.ndpointer(dtype=np.float32, ndim=1)
-    array_2d_double   = npct.ndpointer(dtype=np.float64, ndim=2)
-    array_2d_int      = npct.ndpointer(dtype=np.int32,   ndim=2)
-    
-    #array_2d_float    = npct.ndpointer(dtype=np.float32, ndim=2, flags="C_CONTIGUOUS")
-    #array_1d_int      = npct.ndpointer(dtype=np.int32  , ndim=1, flags="C_CONTIGUOUS")
-    #array_1d_float    = npct.ndpointer(dtype=np.float32, ndim=1, flags="C_CONTIGUOUS")
-    #array_2d_double   = npct.ndpointer(dtype=np.float64, ndim=2, flags="C_CONTIGUOUS")
-    #array_2d_int      = npct.ndpointer(dtype=np.int32,   ndim=2, flags="C_CONTIGUOUS")
-    
-    gdatnotp.clib = npct.load_library(gdat.pathlion + 'blas', '.')
-    gdatnotp.clib.clib_eval_modl.restype = None
-    
-    #void clib_eval_modl(int NX, int NY, int maxmnumbstar, int numbsidepsfn, int k, float* A, float* B, float* C, int* x,
-	#int* y, float* image, float* ref, float* weig, double* chi2, int sizeregi, int marg, int offsxpos, int offsypos)
-    #lib(gdat.sizeimag[0], gdat.sizeimag[1], maxmnumbstar, numbsidepsfn, coefspix.shape[0], dd, coefspix, cntpmodlstmp, 
-    #ix, iy, image, reftemp, weig, chi2, sizeregi, marg, offsxpos, offsypos)
-    #gdatnotp.clib.clib_eval_modl.argtypes = [c_int NX gdat.sizeimag[0], c_int NY gdat.sizeimag[1], c_int maxmnumbstar, c_int numbsidepsfn, c_int k coefspix.shape[0]
-    # array_2d_float A dd, array_2d_float B coefspix, array_2d_float C cntpmodlstmp
-    # array_1d_int x ix, array_1d_int y iy, array_2d_float image, array_2d_float ref reftemp, array_2d_float weig weig, array_2d_double chi2, c_int sizeregi, 
-    # c_int marg, c_int offsxpos, c_int offsypos]
-    
-    gdatnotp.clib.clib_updt_modl.restype = None
-    gdatnotp.clib.clib_eval_llik.restype = None
-    gdatnotp.clib.clib_eval_modl.argtypes = [c_int, c_int, c_int, c_int, c_int]
-    gdatnotp.clib.clib_updt_modl.argtypes = [c_int, c_int]
-    gdatnotp.clib.clib_eval_llik.argtypes = [c_int, c_int]
-    
-    gdatnotp.clib.clib_eval_modl.argtypes += [array_2d_float, array_2d_float, array_2d_float]
-    
-    gdatnotp.clib.clib_eval_modl.argtypes += [array_1d_int, array_1d_int]
-    
-    if False and gdat.numbtime > 1:
-        gdatnotp.clib.clib_eval_modl.argtypes += [array_3d_float, array_3d_float, array_3d_float]
-    else:
-        gdatnotp.clib.clib_eval_modl.argtypes += [array_2d_float, array_2d_float, array_2d_float]
-    gdatnotp.clib.clib_updt_modl.argtypes += [array_2d_float, array_2d_float]
-    gdatnotp.clib.clib_eval_llik.argtypes += [array_2d_float, array_2d_float, array_2d_float]
-    
-    gdatnotp.clib.clib_eval_modl.argtypes += [array_2d_double]
-    gdatnotp.clib.clib_eval_llik.argtypes += [array_2d_double]
-    
-    gdatnotp.clib.clib_eval_modl.argtypes += [c_int, c_int, c_int, c_int]
-    gdatnotp.clib.clib_updt_modl.argtypes += [array_2d_int, c_int, c_int, c_int, c_int]
-    gdatnotp.clib.clib_eval_llik.argtypes += [c_int, c_int, c_int, c_int]
-    
+    setp_clib(gdatnotp, gdat.pathlion)
+
     if gdat.strgmode != 'pcat':
         gdat.catlinit = gdat.catlrefr[0]
     
@@ -1227,6 +1236,7 @@ def main( \
     boolplot = boolplotshow or boolplotsave
 
     # parse PSF
+    #numbsidepsfnusam = cntppsfn.shape[1]
     numbsidepsfnusam = cntppsfn.shape[0]
     numbsidepsfn = numbsidepsfnusam / factusam
     
@@ -1287,6 +1297,10 @@ def main( \
     cntr = cntrstrt()
     gdat.indxxpos = cntr.incr()
     gdat.indxypos = cntr.incr()
+    print 'gdat.numbener'
+    print gdat.numbener
+    print 'gdat.numbtime'
+    print gdat.numbtime
     gdat.indxflux = np.zeros((gdat.numbener, gdat.numbtime), dtype=int)
     for k in gdat.indxener:
         for l in gdat.indxtime:
@@ -1429,10 +1443,14 @@ def main( \
     def supr_catl(gdat, axis, xpos, ypos, flux, boolcond=False):
         
         for k in gdat.indxrefr:
-            mask = catlrefr[k]['flux'] > 250
-            size = sizemrkr * catlrefr[k]['flux'][mask]
+            
+            # temp
+            mask = catlrefr[k]['flux'][0, 0, :] < 250
+            
+            size = sizemrkr * catlrefr[k]['flux'][0, 0, mask]
             axis.scatter(catlrefr[k]['xpos'][mask], catlrefr[k]['ypos'][mask], marker='+', s=size, color=gdat.colrrefr[k], lw=2, alpha=0.7)
             mask = np.logical_not(mask)
+            size = sizemrkr * catlrefr[k]['flux'][0, 0, mask]
             axis.scatter(catlrefr[k]['xpos'][mask], catlrefr[k]['ypos'][mask], marker='+', s=size, color=colrbrgt, lw=2, alpha=0.7)
         if boolcond:
             colr = 'yellow'
@@ -1482,12 +1500,19 @@ def main( \
                 self.stars[gdat.indxflux, :self.n] *= self.trueminf
             else:
                 print 'Initializing fluxes from the catalog...'
+                print 'gdat.indxflux'
+                summgene(gdat.indxflux)
+                print 'self.stars'
+                summgene(self.stars)
+                print 'self.stars[gdat.indxflux, :gdat.catlinit[numb]'
+                summgene(self.stars[gdat.indxflux, :gdat.catlinit['numb']])
                 self.stars[gdat.indxflux, :gdat.catlinit['numb']] = gdat.catlinit['flux']
 
             if gdat.verbtype > 1:
                 print 'numb'
                 print self.n
                 for strgfeat in gdat.liststrgfeatstar:
+                    
                     indx = getattr(gdat, 'indx' + strgfeat)
                     print strgfeat
                     summgene(self.stars[indx, :self.n])
@@ -1668,19 +1693,22 @@ def main( \
                     numaccept = np.count_nonzero(acceptprop)
                 
                     
-                    chi2proptemp = np.zeros_like(chi2prop)
+                    chi2proptemp = np.empty_like(chi2prop)
                     # only keep cntpmodldiff in accepted regions+margins
+                    chi2prop.fill(0)
                     for i in gdat.indxener:
                         for t in gdat.indxtime:
                             cntpmodldiffacpt = np.zeros_like(cntpmodldiff[i, :, :, t])
                             gdatnotp.clib.clib_updt_modl(gdat.sizeimag[0], gdat.sizeimag[1], cntpmodldiff[i, :, :, t], cntpmodldiffacpt, boolregiacpt, sizeregi, \
                                                                                                                                         gdat.marg, self.offsxpos, self.offsypos)
                             # using this cntpmodldiff containing only accepted moves, update llik
-                            #chi2prop.fill(0)
                             gdatnotp.clib.clib_eval_llik(gdat.sizeimag[0], gdat.sizeimag[1], cntpmodldiffacpt, cntpresi[i, :, :, t], weig[i, :, :, t], chi2proptemp, sizeregi, \
                                                                                                                                         gdat.marg, self.offsxpos, self.offsypos)
                             cntpresi[i, :, :, t] -= cntpmodldiffacpt # has to occur after clib_eval_llik, because cntpresi is used as cntprefr
                             cntpmodl[i, :, :, t] += cntpmodldiffacpt
+                            if gdat.verbtype > 1:
+                                print 'chi2proptemp'
+                                summgene(chi2proptemp)
                             chi2prop += chi2proptemp
                     
                     # update chi2
@@ -1889,7 +1917,8 @@ def main( \
                             #    break
                             
                             # count map
-                            figr, axis = plt.subplots(figsize=(20, 20))
+                            #figr, axis = plt.subplots(figsize=(20, 20))
+                            figr, axis = plt.subplots()
                             # temp
                             axis.imshow(gdat.cntpdata[i, :, :, t], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
                             ## overplot point sources
@@ -1927,7 +1956,7 @@ def main( \
                     plt.savefig(gdat.pathdatartag + '%s_histflux_fram%04d.' % (gdat.rtag, jj) + gdat.strgplotfile)
                     plt.close()
 
-            return self.n, self.ng, chi2
+            return self.n, self.ng, chi2totl
     
         
         def idx_parity_stars(self):
@@ -2012,15 +2041,13 @@ def main( \
                 starsb[gdat.indxypos,:] = (np.random.randint(mregy, size=nbd)*2 + self.parity_y + np.random.uniform(size=nbd))*sizeregi - self.offsypos
                 
                 # temp -- entimodi
-                #starsb[gdat.indxflux,:] = self.trueminf * np.exp(np.random.exponential(scale=1./(self.truealpha-1.),size=nbd))
-                
                 colr = np.empty((gdat.numbener - 1, nbd))
                 lcpr = np.empty((gdat.numbtime - 1, nbd))
                 if gdat.numbener > 1:
                     for i in range(gdat.numbener - 1):
                         colr[i, :] = np.random.normal(loc=gdat.meancolr[i], scale=gdat.stdvcolr[i], size=nbd)
                 if gdat.numbtime > 1:
-                    for t in gdat.indxtime:
+                    for t in range(gdat.numbtime - 1):
                         lcpr[t, :] = np.random.normal(loc=0., scale=gdat.stdvlcpr, size=nbd)
                 for i in gdat.indxener:
                     for t in gdat.indxtime:
@@ -3180,7 +3207,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
         flux = featcond[:, i, gdat.indxflux][np.nonzero(featcond[:, i, gdat.indxflux])]
 
         assert xpos.size == ypos.size
-        assert xpos.size == flux.size
         
         conf[i] = xpos.size / gdat.numbsamp
             
@@ -3287,7 +3313,8 @@ def cnfg_defa():
     numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
     filepsfn.close()
     cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
-    
+    # temp
+    #cntppsfn = cntppsfn[None, :, :] 
     numbtime = 1
     numbener = 1
 
@@ -3313,6 +3340,7 @@ def cnfg_defa():
     if datatype == 'mock':
         catlrefr.append(retr_catltrue(pathdata, strgmodl, strgdata))
         
+        catlrefr[0]['flux'] = catlrefr[0]['flux'][None, None, :]
         lablrefr = ['True']
         colrrefr = ['g']
     else:
@@ -3354,8 +3382,7 @@ def cnfg_time():
     setp(gdat)
     
     # read the data
-    strgdata = 'sdsstimevari'
-    #cntpdatatemp, bias, gain = read_datafromtext(strgdata)
+    strgdata = 'sdsstimevari_00010010'
 
     path = pathdata + strgdata + '_mock.h5'
     print 'Reading %s...' % path
@@ -3363,17 +3390,13 @@ def cnfg_time():
     cntpdata = filetemp['cntpdata'][()]
     truegain = filetemp['gain'][()]
     truecatl = read_catl(gdat, path)
-
-    cntpdata = np.swapaxes(cntpdata, 0, 3)
+    
+    print 'truecatl[flux]'
+    summgene(truecatl['flux'])
+    print
     numbtime = cntpdata.shape[3]
     indxtime = np.arange(numbtime)
 
-
-    # perturb the data in each time bin
-    #cntpdata = np.zeros([numbtime] + list(cntpdatatemp.shape) + [1], dtype=np.float32)
-    #for k in indxtime:
-    #    cntpdata[k, :, :, 0] = cntpdatatemp
-    
     numbsidexpos = cntpdata.shape[2]
     numbsideypos = cntpdata.shape[1]
     numbpixl = numbsidexpos * numbsideypos
@@ -3381,11 +3404,9 @@ def cnfg_time():
     summgene(cntpdata)
     print 'numbpixl'
     print numbpixl
-    #for k in indxtime:
-    #    cntpdata[k, :, :, 0] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
     
-    #strgmode = 'pcat'
-    strgmode = 'forc'
+    strgmode = 'pcat'
+    #strgmode = 'forc'
 
     strgmodl = 'star'
     
@@ -3393,11 +3414,12 @@ def cnfg_time():
     catlinit = truecatl
 
     #catlinit = retr_catltrue(pathdata, strgmodl, strgdata)
-    indx = np.argsort(truecatl['flux'])
-    truecatl['numb'] = 1000
-    truecatl['xpos'] = truecatl['xpos'][indx][:1000]
-    truecatl['ypos'] = truecatl['ypos'][indx][:1000]
-    truecatl['flux'] = truecatl['flux'][indx][:1000]
+    # temp
+    #indx = np.argsort(truecatl['flux'][0, 0, :])
+    #truecatl['numb'] = 1000
+    #truecatl['xpos'] = truecatl['xpos'][indx][:1000]
+    #truecatl['ypos'] = truecatl['ypos'][indx][:1000]
+    #truecatl['flux'] = truecatl['flux'][:, :, indx][:, :, :1000]
     back = np.float32(179)
     truebias = 0.
 
@@ -3407,6 +3429,8 @@ def cnfg_time():
     numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
     filepsfn.close()
     cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
+    # temp
+    cntppsfn = cntppsfn[None, :, :] 
 
     main( \
          cntpdata=cntpdata, \
@@ -3449,8 +3473,7 @@ def cnfg_ener():
     setp(gdat)
     
     # read the data
-    strgdata = 'sdsstimevari'
-    #cntpdatatemp, bias, gain = read_datafromtext(strgdata)
+    strgdata = 'sdsstimevari_00030001'
 
     path = pathdata + strgdata + '_mock.h5'
     print 'Reading %s...' % path
@@ -3459,36 +3482,27 @@ def cnfg_ener():
     truegain = filetemp['gain'][()]
     truecatl = read_catl(gdat, path)
     
-    cntpdata = cntpdata[:3, :, :, :]
-
-    # perturb the data in each time bin
-    #for k in indxtime:
-    #    cntpdata[k, :, :, 0] = cntpdatatemp
-    
     numbsidexpos = cntpdata.shape[2]
     numbsideypos = cntpdata.shape[1]
     numbpixl = numbsidexpos * numbsideypos
-    #cntpdata = np.swapaxes(cntpdata, 0, 3)
     print 'cntpdata'
     summgene(cntpdata)
     print 'numbpixl'
     print numbpixl
-    #for k in indxtime:
-    #    cntpdata[k, :, :, 0] += (4 * np.random.randn(numbpixl).reshape((numbsidexpos, numbsideypos))).astype(int)
     
     strgmode = 'pcat'
-
     strgmodl = 'star'
     
     catlrefr = [truecatl]
     catlinit = truecatl
 
     #catlinit = retr_catltrue(pathdata, strgmodl, strgdata)
-    indx = np.argsort(truecatl['flux'])
-    truecatl['numb'] = 1000
-    truecatl['xpos'] = truecatl['xpos'][indx][:1000]
-    truecatl['ypos'] = truecatl['ypos'][indx][:1000]
-    truecatl['flux'] = truecatl['flux'][indx][:1000]
+    # temp
+    #indx = np.argsort(truecatl['flux'][0, 0, :])
+    #truecatl['numb'] = 1000
+    #truecatl['xpos'] = truecatl['xpos'][indx][:1000]
+    #truecatl['ypos'] = truecatl['ypos'][indx][:1000]
+    #truecatl['flux'] = truecatl['flux'][:, :, indx][:, :, :1000]
     back = np.float32(179)
     truebias = 0.
 
@@ -3498,6 +3512,8 @@ def cnfg_ener():
     numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
     filepsfn.close()
     cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
+    # temp
+    cntppsfn = cntppsfn[None, :, :] 
 
     main( \
          cntpdata=cntpdata, \
@@ -3505,9 +3521,9 @@ def cnfg_ener():
          factusam=factusam, \
          #numbswep=1, \
          #numbloop=2, \
-         maxmnumbstar=2, \
-         numbswep=100, \
-         numbloop=1, \
+         #maxmnumbstar=2, \
+         numbswep=10, \
+         numbloop=1000, \
          diagmode=True, \
          #verbtype=2, \
          colrstyl='pcat', \
