@@ -653,25 +653,12 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
             for t in gdat.indxtime:
                 cntpmodltemp = np.zeros(sizeimag, dtype=np.float32) + back
                 cntprefrtemp = cntprefr[i, :, :, t]
-                #cntpmodltemp = cntpmodl[i, :, :, t]
                 weigtemp = weig[i, :, :, t]
-                #if gdat.verbtype > 1:
-                #    print 'before'
-                #    print 'cntpmodlstmp'
-                #    print cntpmodlstmp
-                #    summgene(cntpmodlstmp)
-                print 'coefspix[i, :, :]'
-                summgene(coefspix[i, :, :])
                 desimatr = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, \
                                                                                                 dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32) * f[i, t, :, None]
-                print 'desimatr'
-                summgene(desimatr)
                 clib(sizeimag[0], sizeimag[1], numbphon, numbsidepsfn, numbparaspix, desimatr, coefspix[i, :, :], cntpmodlstmp, ix, iy, cntpmodltemp, \
                                                 cntprefrtemp, weigtemp, chi2, sizeregi, marg, offsxpos, offsypos)
         
-                print 'cntpmodltemp'
-                summgene(cntpmodltemp)
-
                 cntpmodl[i, :, :, t] = cntpmodltemp
                 if gdat.verbtype > 1:
                     #print 'after'
@@ -691,22 +678,13 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
         return cntpmodl
 
 
-def retr_dtre(spec):
-    
-    # temp
-    return spec
-
-
 def psf_poly_fit(gdat, psfnusam, factusam):
    
-    assert psfnusam.ndim == 2
-    # temp
-    #assert psfnusam.shape[1] == psfnusam.shape[2] # assert PSF is square
-    assert psfnusam.shape[0] == psfnusam.shape[1] # assert PSF is square
+    assert psfnusam.ndim == 3
+    assert psfnusam.shape[1] == psfnusam.shape[2] # assert PSF is square
     
     # number of pixels along the side of the upsampled PSF
-    #numbsidepsfnusam = psfnusam.shape[1]
-    numbsidepsfnusam = psfnusam.shape[0]
+    numbsidepsfnusam = psfnusam.shape[1]
 
     # pad by one row and one column
     psfnusampadd = np.zeros((gdat.numbener, numbsidepsfnusam+1, numbsidepsfnusam+1), dtype=np.float32)
@@ -736,10 +714,11 @@ def psf_poly_fit(gdat, psfnusam, factusam):
     coefspix = coefspix.reshape(gdat.numbener, numbparaspix, numbsidepsfn**2)
     
     if gdat.boolplotsave:
-        figr, axis = plt.subplots()
-        axis.imshow(psfnusampadd[i, :, :], interpolation='none')
-        plt.savefig(gdat.pathdatartag + '%s_psfnusampadd.' % gdat.rtag + gdat.strgplotfile)
-        plt.close()
+        for i in gdat.indxener:
+            figr, axis = plt.subplots()
+            axis.imshow(psfnusampadd[i, :, :], interpolation='none')
+            plt.savefig(gdat.pathdatartag + '%s_psfnusamp%04d.%s' % (gdat.rtag, i, gdat.strgplotfile))
+            plt.close()
 
     return coefspix
    
@@ -872,17 +851,10 @@ def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, clib=None):
     flux = np.ones((gdat.numbener, gdat.numbtime, 1), dtype=np.float32)
     back = 0.
     sizeimag = [25, 25]
-    print 'coefspix'
-    summgene(coefspix)
     
     cntpmodlpsfn = eval_modl(gdat, xpos, ypos, flux, back, numbsidepsfn, coefspix, clib=clib, sizeimag=sizeimag)
     
     for i in gdat.indxener:
-        print 'i'
-        print i
-        print 'cntpmodlpsfn[i, :, :, 0]'
-        summgene(cntpmodlpsfn[i, :, :, 0])
-        print
 
         plt.subplot(2,2,1)
         plt.imshow(cntpmodlpsfn[i, :, :, 0], interpolation='none', origin='lower')
@@ -893,32 +865,29 @@ def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, clib=None):
         iiy = int(np.floor(iy))
         dix = ix - iix
         diy = iy - iiy
-        f00 = psf[iiy:125:5,  iix:125:5]
-        f01 = psf[iiy+1:125:5,iix:125:5]
-        f10 = psf[iiy:125:5,  iix+1:125:5]
-        f11 = psf[iiy+1:125:5,iix+1:125:5]
-        #f00 = psf[i, iiy:125:5,  iix:125:5]
-        #f01 = psf[i, iiy+1:125:5,iix:125:5]
-        #f10 = psf[i, iiy:125:5,  iix+1:125:5]
-        #f11 = psf[i, iiy+1:125:5,iix+1:125:5]
+        f00 = psf[i, iiy:125:5,  iix:125:5]
+        f01 = psf[i, iiy+1:125:5,iix:125:5]
+        f10 = psf[i, iiy:125:5,  iix+1:125:5]
+        f11 = psf[i, iiy+1:125:5,iix+1:125:5]
         realpsf = f00*(1.-dix)*(1.-diy) + f10*dix*(1.-diy) + f01*(1.-dix)*diy + f11*dix*diy
         plt.imshow(realpsf, interpolation='none', origin='lower')
         plt.title('Model PSF, Bilinear')
+        
+        plt.subplot(2, 2, 3)
+        plt.imshow(cntpmodlpsfn[i, :, :, 0] - realpsf, interpolation='none', origin='lower')
+        plt.colorbar()
+        plt.title('absolute difference')
+        
+        plt.subplot(2,2,4)
         invrealpsf = np.zeros((25,25))
         mask = realpsf > 1e-3
         invrealpsf[mask] = 1./realpsf[mask]
-        
-        plt.subplot(2, 2, 3)
-        plt.title('absolute difference')
-        plt.imshow(cntpmodlpsfn[i, :, :, 0] - realpsf, interpolation='none', origin='lower')
-        plt.colorbar()
-        
-        plt.subplot(2,2,4)
         plt.imshow((cntpmodlpsfn[i, :, :, 0] - realpsf) * invrealpsf, interpolation='none', origin='lower')
         plt.colorbar()
         plt.title('fractional difference')
         
         plt.savefig(gdat.pathdatartag + '%s_psfn%04d.%s' % (gdat.rtag, i, gdat.strgplotfile))
+        plt.close()
 
 
 def plot_lcur(gdat):
@@ -1192,8 +1161,8 @@ def main( \
 
     if strgmode == 'pcat':
         
-        probprop = np.array([80., 40., 40.])
-        #probprop = np.array([0., 1., 0.])
+        #probprop = np.array([80., 0., 0.])
+        probprop = np.array([0., 1., 0.])
             
         if strgmodl == 'galx':
             probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
@@ -1236,8 +1205,9 @@ def main( \
     boolplot = boolplotshow or boolplotsave
 
     # parse PSF
-    #numbsidepsfnusam = cntppsfn.shape[1]
-    numbsidepsfnusam = cntppsfn.shape[0]
+    # temp
+    numbsidepsfnusam = cntppsfn.shape[1]
+    #numbsidepsfnusam = cntppsfn.shape[0]
     numbsidepsfn = numbsidepsfnusam / factusam
     
     if gdat.verbtype > 1:
@@ -1276,17 +1246,19 @@ def main( \
         plot_psfn(gdat, numbsidepsfn, coefspix, cntppsfn, np.float32(np.random.uniform()*4), np.float32(np.random.uniform()*4), gdatnotp.clib.clib_eval_modl)
     
     ## data
-    #if gdat.numbtime > 1:
-    if False: 
-        for k in gdat.indxtime:
-            figr, axis = plt.subplots()
-            axis.imshow(gdat.cntpdata[k, :, :, 0], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
-            ## limits
-            setp_imaglimt(gdat, axis)
-            plt.savefig(gdat.pathdatartag + '%s_cntpdatatime_fram%04d.' % (gdat.rtag, k) + gdat.strgplotfile)
-            plt.close()
+    if gdat.numbener > 1 or gdat.numbtime > 1:
+    #if False: 
+        for i in gdat.indxener:
+            for t in gdat.indxtime:
+                figr, axis = plt.subplots()
+                axis.imshow(gdat.cntpdata[i, :, :, t], origin='lower', interpolation='none', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
+                ## limits
+                setp_imaglimt(gdat, axis)
+                plt.savefig(gdat.pathdatartag + '%s_cntpdataenti_fram%04d%04d.%s' % (gdat.rtag, i, t, gdat.strgplotfile))
+                plt.close()
         print 'Making animations of cadence images...'
-        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdatatime*.%s %s/%s_cntpdatatime.gif' % (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
+        cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdataenti_fram*.%s %s/%s_cntpdataenti.gif' % \
+                                                                        (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
         print cmnd
         os.system(cmnd)
         print 'Done.'
@@ -3305,23 +3277,42 @@ def cnfg_defa():
     
     # read the data
     strgdata = 'sdss0921'
-    cntpdatatemp, bias, gain = read_datafromtext(strgdata)
+    #cntpdatatemp, bias, gain = read_datafromtext(strgdata)
     
-    # read PSF
-    pathlion, pathdata = retr_path()
+    gdat = gdatstrt()
+    
+    gdat.pathlion, pathdata = retr_path()
+    
+    # setup
+    setp(gdat)
+    
+    # read the data
+    strgdata = 'sdss0921_00010001'
+    path = pathdata + strgdata + '_mock.h5'
+    print 'Reading %s...' % path
+    filetemp = h5py.File(path, 'r')
+    cntpdata = filetemp['cntpdata'][()]
+    gain = filetemp['gain'][()]
+    truecatl = read_catl(gdat, path)
+    bias = 0.
+    
+    liststrgener = ['rbnd']
+    #read_psfn(pathdata, strgdata, liststrgener)
+    strgdata = 'sdss0921'
     filepsfn = open(pathdata + strgdata + '_psfn.txt')
     numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
     filepsfn.close()
     cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
+    
     # temp
-    #cntppsfn = cntppsfn[None, :, :] 
+    cntppsfn = cntppsfn[None, :, :] 
     numbtime = 1
     numbener = 1
 
     numbsidexpos = 100
     numbsideypos = 100
-    cntpdata = np.empty((numbtime, numbsideypos, numbsidexpos, numbener), dtype=np.float32)
-    cntpdata[0, :, :, 0] = cntpdatatemp
+    #cntpdata = np.empty((numbtime, numbsideypos, numbsidexpos, numbener), dtype=np.float32)
+    #cntpdata[0, :, :, 0] = cntpdatatemp
 
     print 'cntppsfn'
     summgene(cntppsfn)
@@ -3338,9 +3329,8 @@ def cnfg_defa():
     catlrefr = []
 
     if datatype == 'mock':
-        catlrefr.append(retr_catltrue(pathdata, strgmodl, strgdata))
-        
-        catlrefr[0]['flux'] = catlrefr[0]['flux'][None, None, :]
+        catlrefr.append(truecatl)
+        #catlrefr[0]['flux'] = catlrefr[0]['flux'][None, None, :]
         lablrefr = ['True']
         colrrefr = ['g']
     else:
@@ -3362,8 +3352,6 @@ def cnfg_defa():
          colrstyl='pcat', \
          #boolplotsave=False, \
          #diagmode=True, \
-         boolplotshow=False, \
-         boolplotsave=True, \
          testpsfn=True, \
          bias=bias, \
          gain=gain, \
@@ -3382,7 +3370,7 @@ def cnfg_time():
     setp(gdat)
     
     # read the data
-    strgdata = 'sdsstimevari_00010010'
+    strgdata = 'sdss0921_00010010'
 
     path = pathdata + strgdata + '_mock.h5'
     print 'Reading %s...' % path
@@ -3442,8 +3430,6 @@ def cnfg_time():
          #verbtype=2, \
          colrstyl='pcat', \
          #boolplotsave=False, \
-         boolplotsave=True, \
-         boolplotshow=False, \
         
          strgmode=strgmode, \
          #maxmnumbstar=7, \
@@ -3459,8 +3445,6 @@ def cnfg_time():
          bias=truebias, \
          gain=truegain, \
          #testpsfn=True, \
-         #boolplotsave=True, \
-         #boolplotshow=True, \
         )
          
 
@@ -3473,7 +3457,7 @@ def cnfg_ener():
     setp(gdat)
     
     # read the data
-    strgdata = 'sdsstimevari_00030001'
+    strgdata = 'sdss0921_00030001'
 
     path = pathdata + strgdata + '_mock.h5'
     print 'Reading %s...' % path
@@ -3482,6 +3466,7 @@ def cnfg_ener():
     truegain = filetemp['gain'][()]
     truecatl = read_catl(gdat, path)
     
+    gdat.numbener = cntpdata.shape[0]
     numbsidexpos = cntpdata.shape[2]
     numbsideypos = cntpdata.shape[1]
     numbpixl = numbsidexpos * numbsideypos
@@ -3507,13 +3492,14 @@ def cnfg_ener():
     truebias = 0.
 
     # read PSF
-    strgdata = 'sdss0921'
-    filepsfn = open(pathdata + strgdata + '_psfn.txt')
+    filepsfn = open(pathdata + 'idR-002583-2-0136-psfg.txt')
     numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
     filepsfn.close()
-    cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1).astype(np.float32)
-    # temp
-    cntppsfn = cntppsfn[None, :, :] 
+    numbsidepsfnusam = numbsidepsfn * factusam
+    cntppsfn = np.empty((gdat.numbener, numbsidepsfnusam, numbsidepsfnusam))
+    cntppsfn[0, :, :] = np.loadtxt(pathdata + 'idR-002583-2-0136-psfg.txt', skiprows=1).astype(np.float32)
+    cntppsfn[1, :, :] = np.loadtxt(pathdata + 'idR-002583-2-0136-psfr.txt', skiprows=1).astype(np.float32)
+    cntppsfn[2, :, :] = np.loadtxt(pathdata + 'idR-002583-2-0136-psfi.txt', skiprows=1).astype(np.float32)
 
     main( \
          cntpdata=cntpdata, \
@@ -3527,9 +3513,8 @@ def cnfg_ener():
          diagmode=True, \
          #verbtype=2, \
          colrstyl='pcat', \
+         
          #boolplotsave=False, \
-         boolplotsave=True, \
-         boolplotshow=False, \
         
          strgmode=strgmode, \
 
@@ -3544,8 +3529,6 @@ def cnfg_ener():
          bias=truebias, \
          gain=truegain, \
          #testpsfn=True, \
-         #boolplotsave=True, \
-         #boolplotshow=True, \
         )
          
 

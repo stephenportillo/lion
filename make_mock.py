@@ -10,8 +10,8 @@ np.random.seed(0)
 print 'Generating mock data...'
 
 gdat.stdvlcpr = 1e-6
-gdat.stdvcolr = np.array([0.5, 0.5])
-gdat.meancolr = np.array([0.25, 0.1])
+gdat.stdvcolr = np.array([0.05, 0.05])
+gdat.meancolr = np.array([0., 0.])
 
 strgdata = 'sdss0921'
 strgpsfn = 'sdss0921'
@@ -76,21 +76,35 @@ for numbener, numbtime in [[1, 1], [3, 1], [1, 10]]:
     if gdat.numbener > 1:
         # temporal parameters
         colr = gdat.stdvcolr[:, None] * np.random.randn(gdat.numbcolr * gdat.numbstar).reshape((gdat.numbcolr, gdat.numbstar)).astype(np.float32) + gdat.meancolr[:, None]
+        flux[1:, :, :] = fluxsumm[None, None, :] * 10**(0.4*colr[:, None, :])
     
     if gdat.numbtime > 1:
         # temporal parameters
-        lcpr = gdat.stdvlcpr * np.random.randn((gdat.numblcpr * gdat.numbstar)).reshape((gdat.numblcpr, gdat.numbstar)).astype(np.float32) + 1.
+        temp = np.random.random((gdat.numblcpr * gdat.numbstar)).reshape((gdat.numblcpr, gdat.numbstar)).astype(np.float32)
+        temp = np.sort(temp, axis=0)
+        temptemp = np.concatenate([np.zeros((1, gdat.numbstar), dtype=np.float32)] + [temp] + [np.ones((1, gdat.numbstar), dtype=np.float32)], axis=0)
+        difftemp = temptemp[1:, :] - temptemp[:-1, :]
+        for k in range(10):
+            if (np.sum(difftemp[:, k]) != 1).any():
+                print 'temp[:, k]'
+                print temp[:, k]
+                print 'temptemp[:, k]'
+                print temptemp[:, k]
+                print 'np.sum(difftemp[:, k])'
+                print np.sum(difftemp[:, k])
+        
+        #assert (np.sum(difftemp, axis=0) == 1.).all()
+
+        flux[:, :, :] = fluxsumm[None, None, :] * difftemp[None, :, :]
         
         # inject transits
         indxstartran = np.random.choice(indxstar, size=gdat.numbstar/2, replace=False)
         for k in indxstartran:
             indxinit = np.random.choice(gdat.indxtime)
-            lcpr[indxinit:indxinit+4, k] = 0.
+            indxtemp = np.arange(indxinit, indxinit + 4) % gdat.numblcpr
+            flux[:, indxtemp, k] = np.random.rand()
     
-    if gdat.numbener > 1:
-        flux[1:, :, :] = flux[None, None, 0, 0, :] * 10**(0.4*colr[:, None, :])
-    if gdat.numbtime > 1:
-        flux[:, 1:, :] = flux[None, None, 0, 0, :] * lcpr[None, :, :]
+        #flux[:, 1:, :] = fluxsumm[None, None, :] * lcpr[None, :, :]
     
     print 'flux'
     summgene(flux)
