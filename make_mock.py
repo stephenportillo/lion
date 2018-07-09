@@ -7,12 +7,21 @@ gdat = gdatstrt()
 
 np.random.seed(0)
 
+gdat.diagmode = False
+
 print 'Generating mock data...'
 
 gdat.stdvlcpr = 1e-6
+#gdat.stdvcolr = np.array([0.05])
+#gdat.meancolr = np.array([0.])
 gdat.stdvcolr = np.array([0.05, 0.05])
 gdat.meancolr = np.array([0., 0.])
+slop = np.float32(2.0)
+minf = np.float32(100.)
+gdat.numbstar = 200
+sizeimag = [40, 40]
 
+listdims = [[1, 1], [3, 1], [1, 10]]
 strgdata = 'sdss0921'
 strgpsfn = 'sdss0921'
 gdat.pathlion = os.environ['LION_PATH'] + '/'
@@ -24,7 +33,7 @@ setp(gdat)
 setp_clib(gdat, gdat.pathlion)
 gdat.verbtype = 1
     
-for numbener, numbtime in [[1, 1], [3, 1], [1, 10]]:
+for numbener, numbtime in listdims:
     
     gdat.numbener = numbener
     gdat.numbtime = numbtime
@@ -49,8 +58,6 @@ for numbener, numbtime in [[1, 1], [3, 1], [1, 10]]:
     print 'coefspix'
     summgene(coefspix)
 
-    sizeimag = [100, 100] # image size width, height
-    gdat.numbstar = 9000
     indxstar = np.arange(gdat.numbstar)
     
     # background
@@ -64,8 +71,6 @@ for numbener, numbtime in [[1, 1], [3, 1], [1, 10]]:
     ypos = (np.random.uniform(size=gdat.numbstar)*(sizeimag[1]-1)).astype(np.float32)
     
     # flux
-    slop = np.float32(2.0)
-    minf = np.float32(250.)
     fluxsumm = minf * np.exp(np.random.exponential(scale=1./(slop-1.), size=gdat.numbstar).astype(np.float32))
     
     flux = np.empty((gdat.numbener, gdat.numbtime, gdat.numbstar), dtype=np.float32)
@@ -84,15 +89,16 @@ for numbener, numbtime in [[1, 1], [3, 1], [1, 10]]:
         temp = np.sort(temp, axis=0)
         temptemp = np.concatenate([np.zeros((1, gdat.numbstar), dtype=np.float32)] + [temp] + [np.ones((1, gdat.numbstar), dtype=np.float32)], axis=0)
         difftemp = temptemp[1:, :] - temptemp[:-1, :]
-        for k in range(10):
-            if (np.sum(difftemp[:, k]) != 1).any():
-                print 'temp[:, k]'
-                print temp[:, k]
-                print 'temptemp[:, k]'
-                print temptemp[:, k]
-                print 'np.sum(difftemp[:, k])'
-                print np.sum(difftemp[:, k])
         
+        #for k in range(10):
+        #    if (np.sum(difftemp[:, k]) != 1).any():
+        #        print 'temp[:, k]'
+        #        print temp[:, k]
+        #        print 'temptemp[:, k]'
+        #        print temptemp[:, k]
+        #        print 'np.sum(difftemp[:, k])'
+        #        print np.sum(difftemp[:, k])
+        #
         #assert (np.sum(difftemp, axis=0) == 1.).all()
 
         flux[:, :, :] = fluxsumm[None, None, :] * difftemp[None, :, :]
