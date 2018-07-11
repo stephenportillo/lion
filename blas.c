@@ -7,10 +7,17 @@
 
 void clib_updt_modl(int numbsidexpos, int numbsideypos,
                     float* cntpmodl, float* cntpmodlacpt, int* regiacpt,
-                    int sizeregi, int marg, int offsxpos, int offsypos){
+                    int sizeregi, int marg, int offsxpos, int offsypos, int booltile){
     
-    int NREGX = (numbsidexpos / sizeregi) + 1;
-    int NREGY = (numbsideypos / sizeregi) + 1;
+    int NREGY, NREGX;
+    if (booltile > 0){
+        NREGX = (numbsidexpos / sizeregi) + 1;
+        NREGY = (numbsideypos / sizeregi) + 1;
+    }
+    else {
+        NREGX = (numbsidexpos / sizeregi);
+        NREGY = (numbsideypos / sizeregi);
+    }
     int y0, y1, x0, x1, i, j, ii, jj;
     for (j=0 ; j < NREGY ; j++){
         y0 = max(j*sizeregi-offsypos-marg, 0);
@@ -30,10 +37,18 @@ void clib_updt_modl(int numbsidexpos, int numbsideypos,
 
 void clib_eval_llik(int numbsidexpos, int numbsideypos, 
                     float* cntpmodl, float* cntpresi, float* weig, double* chi2,
-                    int sizeregi, int marg, int offsxpos, int offsypos){
+                    int sizeregi, int marg, int offsxpos, int offsypos, int booltile){
     
-    int NREGX = (numbsidexpos / sizeregi) + 1;
-    int NREGY = (numbsideypos / sizeregi) + 1;
+   
+    int NREGY, NREGX;
+    if (booltile > 0){
+        NREGX = (numbsidexpos / sizeregi) + 1;
+        NREGY = (numbsideypos / sizeregi) + 1;
+    }
+    else {
+        NREGX = (numbsidexpos / sizeregi);
+        NREGY = (numbsideypos / sizeregi);
+    }
     int y0, y1, x0, x1, i, j, ii, jj;
     for (j=0 ; j < NREGY ; j++){
         y0 = max(j*sizeregi-offsypos-marg, 0);
@@ -42,10 +57,17 @@ void clib_eval_llik(int numbsidexpos, int numbsideypos,
             x0 = max(i*sizeregi-offsxpos-marg, 0);
             x1 = min((i+1)*sizeregi-offsxpos+marg, numbsidexpos);
             chi2[j*NREGX+i] = 0.;
-            for (jj=y0 ; jj<y1; jj++)
-                for (ii=x0 ; ii<x1; ii++)
+            for (jj=y0 ; jj<y1; jj++){
+                for (ii=x0 ; ii<x1; ii++){
                     chi2[j*NREGX+i] += (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * \
                                        (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * weig[jj*numbsidexpos+ii];
+                    //printf("jj ii: %d %d\n", jj, ii);
+                    //if (jj < 10 && ii < 10){
+                    //    printf("x0 x1 y0 y1: %d %d %d %d\n", x0, x1, y0, y1);
+                    //    printf("chi2: %g\n\n", chi2[j*NREGX+i]);
+                    //}
+                }
+            }
         }
     }
 }
@@ -54,8 +76,10 @@ void clib_eval_modl(int numbsidexpos, int numbsideypos, int numbphon, int numbpi
                      float* A, float* B, float* C,
                      int* x, int* y, 
                      float* cntpmodl, float* cntpresi, float* weig, double* chi2, 
-                     int sizeregi, int marg, int offsxpos, int offsypos)
+                     int sizeregi, int marg, int offsxpos, int offsypos, int booltile)
 {
+    
+
     int i, m, t, imax, j, r, jmax, rad, p, xposthis, yposthis;
     float alpha, beta;
     int numbpixlpsfn = numbpixlpsfnside * numbpixlpsfnside;
@@ -67,6 +91,7 @@ void clib_eval_modl(int numbsidexpos, int numbsideypos, int numbphon, int numbpi
     int hash[numbsideypos*numbsidexpos];
     for (i=0; i<numbsideypos*numbsidexpos; i++)
         hash[i] = -1;
+
     int numbphonshrt = 0;
     for (p = 0; p < numbphon; p++){
         xposthis = x[p];
@@ -116,5 +141,5 @@ void clib_eval_modl(int numbsidexpos, int numbsideypos, int numbphon, int numbpi
         }
     }
     
-    clib_eval_llik(numbsidexpos, numbsideypos, cntpmodl, cntpresi, weig, chi2, sizeregi, marg, offsxpos, offsypos);
+    clib_eval_llik(numbsidexpos, numbsideypos, cntpmodl, cntpresi, weig, chi2, sizeregi, marg, offsxpos, offsypos, booltile);
 }
