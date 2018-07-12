@@ -39,7 +39,6 @@ void clib_eval_llik(int numbsidexpos, int numbsideypos,
                     float* cntpmodl, float* cntpresi, float* weig, double* chi2,
                     int sizeregi, int marg, int offsxpos, int offsypos, int booltile){
     
-   
     int NREGY, NREGX;
     if (booltile > 0){
         NREGX = (numbsidexpos / sizeregi) + 1;
@@ -49,6 +48,7 @@ void clib_eval_llik(int numbsidexpos, int numbsideypos,
         NREGX = (numbsidexpos / sizeregi);
         NREGY = (numbsideypos / sizeregi);
     }
+    
     int y0, y1, x0, x1, i, j, ii, jj;
     for (j=0 ; j < NREGY ; j++){
         y0 = max(j*sizeregi-offsypos-marg, 0);
@@ -61,11 +61,6 @@ void clib_eval_llik(int numbsidexpos, int numbsideypos,
                 for (ii=x0 ; ii<x1; ii++){
                     chi2[j*NREGX+i] += (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * \
                                        (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * weig[jj*numbsidexpos+ii];
-                    //printf("jj ii: %d %d\n", jj, ii);
-                    //if (jj < 10 && ii < 10){
-                    //    printf("x0 x1 y0 y1: %d %d %d %d\n", x0, x1, y0, y1);
-                    //    printf("chi2: %g\n\n", chi2[j*NREGX+i]);
-                    //}
                 }
             }
         }

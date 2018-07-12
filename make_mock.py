@@ -8,7 +8,7 @@ gdatnotp = gdatstrt()
 
 gdat.boolspre = True
 np.random.seed(0)
-
+gdat.sizeregi = None
 gdat.diagmode = False
 gdat.booltile = True
 
@@ -22,15 +22,17 @@ for strgtype in ['sing', 'nomi']:
         gdat.numbstar = 1
     else:
         boolcent = False
-        minf = np.float32(200.)
-        gdat.numbstar = 200
+        minf = np.float32(1000.)
+        gdat.numbstar = 20
     gdat.stdvlcpr = 1e-6
     #gdat.stdvcolr = np.array([0.05])
     #gdat.meancolr = np.array([0.])
     gdat.stdvcolr = np.array([0.05, 0.05])
     gdat.meancolr = np.array([0., 0.])
     slop = np.float32(2.0)
-    sizeimag = [100, 100]
+    gdat.sizeimag = [100, 100]
+    gdat.numbsidexpos = gdat.sizeimag[0] 
+    gdat.numbsideypos = gdat.sizeimag[1] 
     
     if boolcent and gdat.numbstar != 1:
         raise Exception('')
@@ -91,11 +93,11 @@ for strgtype in ['sing', 'nomi']:
         
         # position
         if boolcent:
-            xpos = (np.array([0.5]) * (sizeimag[0] - 1)).astype(np.float32)
-            ypos = (np.array([0.5]) * (sizeimag[0] - 1)).astype(np.float32)
+            xpos = (np.array([0.5]) * (gdat.sizeimag[0] - 1)).astype(np.float32)
+            ypos = (np.array([0.5]) * (gdat.sizeimag[0] - 1)).astype(np.float32)
         else:
-            xpos = (np.random.uniform(size=gdat.numbstar)*(sizeimag[0]-1)).astype(np.float32)
-            ypos = (np.random.uniform(size=gdat.numbstar)*(sizeimag[1]-1)).astype(np.float32)
+            xpos = (np.random.uniform(size=gdat.numbstar)*(gdat.sizeimag[0]-1)).astype(np.float32)
+            ypos = (np.random.uniform(size=gdat.numbstar)*(gdat.sizeimag[1]-1)).astype(np.float32)
         
         # flux
         fluxsumm = minf * np.exp(np.random.exponential(scale=1./(slop-1.), size=gdat.numbstar).astype(np.float32))
@@ -157,7 +159,7 @@ for strgtype in ['sing', 'nomi']:
             #flux[:, 1:, :] = fluxsumm[None, None, :] * lcpr[None, :, :]
         
         # evaluate model
-        cntpdata = eval_modl(gdat, xpos, ypos, flux, trueback, numbsidepsfn, coefspix, clib=gdatnotp.clib.clib_eval_modl, sizeimag=sizeimag)
+        cntpdata = eval_modl(gdat, xpos, ypos, flux, trueback, numbsidepsfn, coefspix, clib=gdatnotp.clib.clib_eval_modl, sizeimag=gdat.sizeimag)
         
         if not np.isfinite(cntpdata).all():
             raise Exception('')
@@ -166,7 +168,7 @@ for strgtype in ['sing', 'nomi']:
         
         # add noise
         vari = cntpdata / gain
-        cntpdata += (np.sqrt(vari) * np.random.normal(size=(gdat.numbener, sizeimag[1], sizeimag[0], gdat.numbtime))).astype(np.float32)
+        cntpdata += (np.sqrt(vari) * np.random.normal(size=(gdat.numbener, gdat.sizeimag[1], gdat.sizeimag[0], gdat.numbtime))).astype(np.float32)
         
         if not np.isfinite(cntpdata).all():
             raise Exception('')
