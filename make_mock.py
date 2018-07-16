@@ -14,16 +14,20 @@ gdat.booltile = True
 
 print 'Generating mock data...'
 
-for strgtype in ['sing', 'nomi']:
+for strgtype in ['sing', 'nomi', 'feww']:
     
     if strgtype == 'sing':
         boolcent = True
         minf = np.float32(10000.)
         gdat.numbstar = 1
-    else:
+    elif strgtype == 'nomi':
         boolcent = False
         minf = np.float32(1000.)
         gdat.numbstar = 20
+    elif strgtype == 'nomi':
+        boolcent = False
+        minf = np.float32(1000.)
+        gdat.numbstar = 4
     gdat.stdvlcpr = 1e-6
     #gdat.stdvcolr = np.array([0.05])
     #gdat.meancolr = np.array([0.])
@@ -37,7 +41,8 @@ for strgtype in ['sing', 'nomi']:
     if boolcent and gdat.numbstar != 1:
         raise Exception('')
     
-    listdims = [[1, 1], [3, 1], [1, 3], [2, 2]]
+    #listdims = [[1, 1], [3, 1], [1, 3], [2, 2]]
+    listdims = [[1, 3]]
     strgdata = 'sdss0921'
     strgpsfn = 'sdss0921'
     gdat.pathlion = os.environ['LION_PATH'] + '/'
@@ -111,26 +116,29 @@ for strgtype in ['sing', 'nomi']:
             # spectral parameters
             colr = gdat.stdvcolr[:gdat.numbener-1, None] * np.random.randn(gdat.numbcolr * gdat.numbstar).reshape((gdat.numbcolr, gdat.numbstar)).astype(np.float32) + \
                                                                                                                                             gdat.meancolr[:gdat.numbener-1, None]
-            print 'colr'
-            summgene(colr)
-            print 'gdat.numbener'
-            print gdat.numbener
-            print 'fluxsumm'
-            summgene(fluxsumm)
-            print 'flux'
-            summgene(flux)
-            print 'colr[:, None, :]'
-            summgene(colr[:, None, :])
-            print 'flux[1:, :, :]'
-            summgene(flux[1:, :, :])
+            #print 'colr'
+            #summgene(colr)
+            #print 'gdat.numbener'
+            #print gdat.numbener
+            #print 'fluxsumm'
+            #summgene(fluxsumm)
+            #print 'flux'
+            #summgene(flux)
+            #print 'colr[:, None, :]'
+            #summgene(colr[:, None, :])
+            #print 'flux[1:, :, :]'
+            #summgene(flux[1:, :, :])
             # temp
             for t in gdat.indxtime:
-                print 'flux[1:, t, :]'
-                summgene(flux[1:, t, :])
                 flux[1:, t, :] *= 10**(0.4*colr)
         
         if gdat.numbtime > 1:
             # temporal parameters
+            
+            #arry = np.linspace(0., 1. - 1. / gdat.numblcpr, gdat.numblcpr)
+            #temp = np.hstack(arry, gdat.numblcpr)
+            #temp = (1e-6 * np.random.randn((gdat.numblcpr * gdat.numbstar)) + np.tile(np.linspace(0., 1. - 1. / gdat.numblcpr, gdat.numblcpr), (1, gdat.numbstar))) % 1.
+            #temp = temp.reshape((gdat.numblcpr, gdat.numbstar)).astype(np.float32)
             temp = np.random.random((gdat.numblcpr * gdat.numbstar)).reshape((gdat.numblcpr, gdat.numbstar)).astype(np.float32)
             temp = np.sort(temp, axis=0)
             temptemp = np.concatenate([np.zeros((1, gdat.numbstar), dtype=np.float32)] + [temp] + [np.ones((1, gdat.numbstar), dtype=np.float32)], axis=0)
@@ -154,10 +162,15 @@ for strgtype in ['sing', 'nomi']:
             for k in indxstartran:
                 indxinit = np.random.choice(gdat.indxtime)
                 indxtemp = np.arange(indxinit, indxinit + 4) % gdat.numblcpr
-                flux[:, indxtemp, k] = np.random.rand()
+                flux[:, indxtemp, k] *= np.random.rand()
         
             #flux[:, 1:, :] = fluxsumm[None, None, :] * lcpr[None, :, :]
         
+        print 'flux'
+        for a in range(flux.shape[2]):
+            print flux[:, :, a].flatten()
+        print
+
         # evaluate model
         cntpdata = eval_modl(gdat, xpos, ypos, flux, trueback, numbsidepsfn, coefspix, clib=gdatnotp.clib.clib_eval_modl, sizeimag=gdat.sizeimag)
         
@@ -173,6 +186,7 @@ for strgtype in ['sing', 'nomi']:
         if not np.isfinite(cntpdata).all():
             raise Exception('')
         
+
         # write to file
         path = pathdata + strgdata + '_%04d%04d_%s_mock.h5' % (gdat.numbener, gdat.numbtime, strgtype)
         print 'Writing to %s...' % path

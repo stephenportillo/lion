@@ -32,21 +32,46 @@ class gdatstrt(object):
         super(gdatstrt, self).__setattr__(attr, valu)
 
 
-def supr_catl(gdat, axis, xpos, ypos, flux, i, t, boolcond=False):
+def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False):
     
     for k in gdat.indxrefr:
         # minimum size of gdat.sizemrkr at 100 ADU
         size = gdat.sizemrkr * (np.log10(gdat.catlrefr[k]['flux'][i, t, :]) - 1.)
         size[np.where(size < gdat.sizemrkr)] = gdat.sizemrkr
         axis.scatter(gdat.catlrefr[k]['xpos'], gdat.catlrefr[k]['ypos'], marker='+', s=size, color=gdat.colrrefr[k], lw=2, alpha=0.7)
-    if boolcond:
-        colr = 'yellow'
-    else:
-        colr = 'b'
-    size = gdat.sizemrkr * (np.log10(flux) - 1.)
-    size[np.where(size < gdat.sizemrkr)] = gdat.sizemrkr
-    axis.scatter(xpos, ypos, marker='x', s=size, color=colr, lw=2, alpha=0.7)
-        
+        if boolcond:
+            for n in range(len(xpos)):
+                print 'n'
+                print n
+                print 'xpos[n]'
+                print xpos[n]
+                print 'ypos[n]'
+                print ypos[n]
+                print 'gdat.indxmtch[n]'
+                print gdat.indxmtch[n]
+                print 'gdat.catlrefr[k][xpos][gdat.indxmtch[n]]'
+                print gdat.catlrefr[k]['xpos'][gdat.indxmtch[n]]
+                print 'gdat.catlrefr[k][ypos][gdat.indxmtch[n]]'
+                print gdat.catlrefr[k]['ypos'][gdat.indxmtch[n]]
+                print
+                axis.text(gdat.catlrefr[k]['xpos'][gdat.indxmtch[n]] - 3., gdat.catlrefr[k]['ypos'][gdat.indxmtch[n]] - 3., str(gdat.indxmtch[n]), \
+                                #horizontalalignment='center', verticalalignment='center', transform=axis.transAxes, color='g')
+                                horizontalalignment='center', verticalalignment='center', color='g')
+    
+    if xpos != None:
+        if boolcond:
+            colr = 'yellow'
+        else:
+            colr = 'b'
+        size = gdat.sizemrkr * (np.log10(flux) - 1.)
+        size[np.where(size < gdat.sizemrkr)] = gdat.sizemrkr
+        axis.scatter(xpos, ypos, marker='x', s=size, color=colr, lw=2, alpha=0.7)
+        if boolcond:
+            for n in range(len(xpos)):
+                axis.text(xpos[n] + 3., ypos[n] + 3., str(n), \
+                                #horizontalalignment='center', verticalalignment='center', transform=axis.transAxes, color='b')
+                                horizontalalignment='center', verticalalignment='center', color=colr)
+    
         
 def plot_pcat(gdat=None, rtag=None):
     
@@ -146,8 +171,24 @@ def plot_pcat(gdat=None, rtag=None):
     
     # with sigfac < 8
     
+    gdat.distmtch, gdat.indxmtch = CCkd.query(np.vstack((HTx, HTy)).T, k=1, distance_upper_bound=dr, p=2)
+    print 'HTx'
+    print HTx
+    print 'HTy'
+    print HTy
+    print 'HTf'
+    print HTf
+    print 'CCx'
+    print CCx
+    print 'CCy'
+    print CCy
+    print 'CCf'
+    print CCf
+    print 'gdat.indxmtch'
+    print gdat.indxmtch
+    print
     goodmatchCC, indxmtch = associate(CCkd, CCf, HTkd, HTf, 100., 1e100)
-    gdat.indxmtch = indxmtch
+
     #goodmatchPC = associate(PCkd, PCf, HTkd, HTf, dr, dmag)
     
     #for i in xrange(nbins):
@@ -192,7 +233,7 @@ def plot_pcat(gdat=None, rtag=None):
     #minr, maxr = 15.5, 23.5
     #binw = (maxr - minr) / float(nbins)
     
-    completeCC, indxmtch, confmatchCC, sigfCC = associate(HTkd, HTf, CCkd, CCf, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
+    completeCC, indxmtchtrue, confmatchCC, sigfCC = associate(HTkd, HTf, CCkd, CCf, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
     #completeCC = associate(HTkd, HTf, CCkd, CCf, dr, dmag)
     
     completePC = np.zeros((PCx.shape[0], HTx.size))
@@ -202,7 +243,7 @@ def plot_pcat(gdat=None, rtag=None):
         CCc_one[:, 0] = PCx[i, 0:n]
         CCc_one[:, 1] = PCy[i, 0:n]
         CCf_one = PCf[i, 0:n]
-        completePC[i, :], indxmtch = associate(HTkd, HTf, scipy.spatial.KDTree(CCc_one), CCf_one, dr, dmag)
+        completePC[i, :], indxmtchtrue = associate(HTkd, HTf, scipy.spatial.KDTree(CCc_one), CCf_one, dr, dmag)
     completePC = np.sum(completePC, axis=0) / float(PCx.shape[0])
     
     reclPC = np.zeros(nbins)
@@ -282,7 +323,7 @@ def plot_pcat(gdat=None, rtag=None):
     plt.ylabel('completeness')
     plt.xlim((-0.025,0.4))
     plt.ylim((-0.1,1.1))
-    plt.savefig('roc.pdf', bbox_inches='tight')
+    plt.savefig(gdat.pathdatartag + 'rofc.%s' % gdat.strgplotfile)
     
 
 def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
@@ -412,14 +453,14 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
 
                 if cntprefr is not None:
                     cntpdiff = cntprefr[i, :, :, t] - cntpmodl[i, :, :, t]
-                for a in xrange(gdat.numbregiyaxi):
-                    y0 = max(a*sizeregi - offsypos - marg, 0)
-                    y1 = min((a+1)*sizeregi - offsypos + marg, sizeimag[1])
-                    for b in xrange(gdat.numbregixaxi):
-                        x0 = max(b*sizeregi - offsxpos - marg, 0)
-                        x1 = min((b+1)*sizeregi - offsxpos + marg, sizeimag[0])
+                for v in xrange(gdat.numbregiyaxi):
+                    y0 = max(v*sizeregi - offsypos - marg, 0)
+                    y1 = min((v+1)*sizeregi - offsypos + marg, sizeimag[1])
+                    for u in xrange(gdat.numbregixaxi):
+                        x0 = max(u*sizeregi - offsxpos - marg, 0)
+                        x1 = min((u+1)*sizeregi - offsxpos + marg, sizeimag[0])
                         cntpdifftemp = cntpdiff[y0:y1,x0:x1]
-                        chi2temp[a, b] = np.sum(cntpdifftemp**2 * weig[i, y0:y1,x0:x1, t])
+                        chi2temp[v, u] = np.sum(cntpdifftemp**2 * weig[i, y0:y1,x0:x1, t])
                 
                 chi2 += chi2temp
                 
@@ -502,6 +543,11 @@ def eval_modl(gdat, x, y, f, back, numbsidepsfn, coefspix, sizeregi=None, marg=0
                 #print chi2temp
 
     #print 'Exiting eval_modl()'
+    
+    if gdat.verbtype > 2:
+        print 'cntpmodl'
+        summgene(cntpmodl)
+        print 'eval_modl() ended'
 
     if boolretrdoub:
         return cntpmodl, chi2
@@ -661,6 +707,8 @@ def writ_catl(gdat, catl, path):
         filetemp.create_dataset(strgfeat, data=catl[strgfeat])
     if 'catlseed' in path:
         filetemp.create_dataset('degr', data=catl['degr'])
+    if catl['xpos'].ndim == 2:
+        filetemp.create_dataset('chi2', data=catl['chi2'])
         
     filetemp.close()
 
@@ -777,18 +825,21 @@ def plot_psfn(gdat, numbsidepsfn, coefspix, psf, ix, iy, clib=None):
 
 
 def plot_lcur(gdat):
-   
+    
+    print 'plot_lcur()'
     cntr = 0
-    numblcurplot = 1
+    numblcurplot = 4
     for k in gdat.indxsourcond:
-        print 'gdat.catlrefr[0][flux]'
-        summgene(gdat.catlrefr[0]['flux'])
-        print 'gdat.indxmtch'
-        print gdat.indxmtch
         print 'k'
         print k
-        print
-        meanlcurtrue = np.mean(gdat.catlrefr[0]['flux'][:, :, gdat.indxmtch[k]], axis=0)
+        print 'gdat.catlcond[gdat.indxxpos, k, 0]'
+        print gdat.catlcond[gdat.indxxpos, k, 0]
+        print 'gdat.catlcond[gdat.indxypos, k, 0]'
+        print gdat.catlcond[gdat.indxypos, k, 0]
+        print 'gdat.catlcond[gdat.indxflux, k, 0]'
+        print gdat.catlcond[gdat.indxflux, k, 0]
+        print 
+        
         meanlcur = np.mean(gdat.catlcond[gdat.indxflux, k, 0], axis=0)
         errrlcur = np.empty((2, gdat.numbtime))
         for i in range(2):
@@ -799,16 +850,33 @@ def plot_lcur(gdat):
         #stdvflux = np.sqrt((errrlcurdtre[0, :] - medimeanlcurdtre)**2)
         
         if k % numblcurplot == 0:
-            figr, axis = plt.subplots()
+            figr, axis = plt.subplots(numblcurplot, 1)
        
-        temp, listcaps, temp = axis.errorbar(gdat.indxtime, meanlcur, yerr=errrlcur, color='b', marker='o', ls='', markersize=10)
+        temp, listcaps, temp = axis[k%numblcurplot].errorbar(gdat.indxtime, meanlcur, yerr=errrlcur, color='b', marker='o', ls='', markersize=10)
         for caps in listcaps:
             caps.set_markeredgewidth(10)
-        axis.plot(gdat.indxtime, meanlcurtrue, color='g', markersize=10, marker='o')
         
+        indxtrue = np.where(gdat.indxmtch == k)[0]
+        if indxtrue.size > 0:
+            assert indxtrue.size == 1
+            print 'gdat.catlrefr[0][xpos][indxtrue]'
+            print gdat.catlrefr[0]['xpos'][indxtrue]
+            print 'gdat.catlrefr[0][ypos][indxtrue]'
+            print gdat.catlrefr[0]['ypos'][indxtrue]
+            print 'gdat.catlrefr[0][flux][:, :, indxtrue]'
+            print gdat.catlrefr[0]['flux'][:, :, indxtrue]
+            meanlcurtrue = np.mean(gdat.catlrefr[0]['flux'][:, :, indxtrue], axis=0)
+            print 'meanlcurtrue'
+            print meanlcurtrue
+            axis[k%numblcurplot].plot(gdat.indxtime, meanlcurtrue, color='g', markersize=10, marker='o')
+        
+        axis[k%numblcurplot].set_xlim([-1, gdat.numbtime])
+        
+        axis[k%numblcurplot].text(0.85, 0.75, str(k), horizontalalignment='center', verticalalignment='center', transform=axis[k%numblcurplot].transAxes, color='b')
+        axis[k%numblcurplot].text(0.95, 0.75, str(gdat.indxmtch[k]), horizontalalignment='center', verticalalignment='center', transform=axis[k%numblcurplot].transAxes, color='g')
+
         if (k + 1) % numblcurplot == 0 or k == gdat.numbsourcond - 1:
             #axis.set_title(stdvflux)
-            axis.set_xlim([-1, gdat.numbtime])
             plt.savefig(gdat.pathdatartag + '%s_lcur%04d.' % (gdat.rtag, cntr) + gdat.strgplotfile)
             plt.close()
             cntr += 1
@@ -1089,6 +1157,9 @@ def main( \
     if gdat.strgproc == None:
         
         # check inputs
+        if gdat.cntpdata == None:
+            raise Exception('Observed image should be provided using cntpdata.')
+
         if gdat.cntpdata.ndim != 4:
             raise Exception('Input image should be four dimensional.')
 
@@ -1272,6 +1343,7 @@ def main( \
                     cbar = plt.colorbar(imag, ax=axis, fraction=0.05, aspect=15)
                     cbar.set_ticks(tick)
                     cbar.set_ticklabels(labl)
+                    supr_catl(gdat, axis, i, t)
                     plt.savefig(gdat.pathdatartag + '%s_cntpdataenti_fram%04d%04d.%s' % (gdat.rtag, i, t, gdat.strgplotfile))
                     
                     plt.close()
@@ -1708,7 +1780,7 @@ def main( \
                             a, theta, phi = from_moments(self.galaxies[self._XX, 0:self.ng], self.galaxies[self._XY, 0:self.ng], self.galaxies[self._YY, 0:self.ng])
                             plt.scatter(self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], marker='o', s=4*a*a, edgecolors='red', facecolors='none')
                         
-                        supr_catl(gdat, plt.gca(), self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
+                        supr_catl(gdat, plt.gca(), i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux, 0:self.n])
                         
                         plt.subplot(1, 3, 2)
                         
@@ -1770,7 +1842,7 @@ def main( \
                                 imagscal = retr_imagscal(gdat, gdat.cntpdata[i, :, :, t])
                                 imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                                 ## overplot point sources
-                                supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n], i, t)
+                                supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
                                 ## limits
                                 setp_imaglimt(gdat, axis)
                                 cbar = plt.colorbar(imag, ax=axis, fraction=0.05, aspect=15)
@@ -1785,7 +1857,8 @@ def main( \
                                 imagscal = retr_imagscal(gdat, cntpresi[i, :, :, t])
                                 imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap=cmapresi, vmin=vmin, vmax=vmax)
                                 ## overplot point sources
-                                supr_catl(gdat, axis, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n], i, t)
+                                supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                                
                                 setp_imaglimt(gdat, axis)
                                 cbar = plt.colorbar(imag, ax=axis, fraction=0.05, aspect=15)
                                 cbar.set_ticks(tick)
@@ -1970,6 +2043,7 @@ def main( \
                                 #print np.sum(chi2proptemp)
                                 
                                 #chi2prop += chi2proptemp
+                        
                         #print 'chi2prop'
                         #print chi2prop
                         #print 'np.sum((cntpresi - cntpmodldiffacpt)**2 * weig)'
@@ -1980,10 +2054,30 @@ def main( \
                         #print chi2
                         if np.count_nonzero(boolregiacpt) > 0:
                             chi2copy = np.copy(chi2)
-                            for a in range(gdat.numbregiyaxi):
-                                for b in range(gdat.numbregixaxi):
-                                    chi2copy[a, b] = chi2prop[a, b]
-                                    #chi2[boolregiacpt] = chi2prop[boolregiacpt]
+                            for v in range(gdat.numbregiyaxi):
+                                for u in range(gdat.numbregixaxi):
+                                    if boolregiacpt[v, u] > 0:
+                                        chi2copy[v, u] = chi2prop[v, u]
+                            chi2 = chi2copy
+                        
+                        if gdat.diagmode:
+                            if not (jj == 0 and a == 0):
+                                for v in range(gdat.numbregiyaxi):
+                                    for u in range(gdat.numbregixaxi):
+                                        print 'Diagnostic check'
+                                        print 'chi2[v, u]'
+                                        print chi2[v, u]
+                                        print 'chi2prev[v, u]'
+                                        print chi2prev[v, u]
+                                        print
+                                        if chi2[v, u] - chi2prev[v, u] > 30.:
+                                            print 'chi2'
+                                            print chi2
+                                            print 'chi2prev'
+                                            print chi2prev
+                                            raise Exception('')
+                            chi2prev = np.copy(chi2)
+                            
                         #print 'after: chi2'
                         #print chi2
 
@@ -3059,6 +3153,7 @@ def main( \
 
         chan = {}
         chan['numb'] = np.zeros(gdat.numbsamp, dtype=np.int32)
+        chan['chi2'] = np.zeros(gdat.numbsamp)
         for strgfeat in gdat.liststrgfeatstar:
             if strgfeat == 'flux':
                 chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.numbener, gdat.numbtime, gdat.maxmnumbstar))
@@ -3102,7 +3197,7 @@ def main( \
                 for strgfeat in gdat.liststrgfeatstar:
                     indx = getattr(gdat, 'indx' + strgfeat)
                     chan[strgfeat][j-gdat.numbswepburn, :] = listobjtmodl[0].stars[indx, :]
-
+                chan['chi2'][j-gdat.numbswepburn] = np.sum(listchi2totl[0])
                 if strgmodl == 'galx':
                     ngsample[j] = listobjtmodl[0].ng
                     xgsample[j,:] = listobjtmodl[0].galaxies[gdat.indxxpos, :]
@@ -3162,20 +3257,28 @@ def main( \
             
         # plot the condensed catalog
         if gdat.boolplotsave:
-            print 'Plotting the condensed catalog...'
-
+            
             figr, axis = plt.subplots()
-            axis.imshow(gdat.cntpdata[0, :, :, 0], origin='lower', interpolation='nearest', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
-            numbswepplot = min(gdat.numbswep - gdat.numbswepburn, 10)
-            indxswepplot = np.random.choice(np.arange(gdat.numbswepburn, gdat.numbswep, dtype=int), size=numbswepplot, replace=False) 
-            for k in range(numbswepplot):
-                numb = chan['numb'][indxswepplot[k]-gdat.numbswepburn]
-                supr_catl(gdat, axis, chan['xpos'][k, :numb], chan['ypos'][k, :numb], chan['flux'][k, :numb], 0, 0)
-            # temp
-            supr_catl(gdat, axis, gdat.catlcond[gdat.indxxpos, :, 0], gdat.catlcond[gdat.indxypos, :, 0], gdat.catlcond[gdat.indxflux[0, 0], :, 0], 0, 0, boolcond=True)
-            plt.savefig(gdat.pathdatartag + '%s_condcatl.' % gdat.rtag + gdat.strgplotfile)
+            axis.plot(gdat.indxsamp, chan['chi2'])
+            plt.savefig(gdat.pathdatartag + 'chi2.%s' % gdat.strgplotfile)
             plt.close()
-
+    
+            print 'Plotting the condensed catalog...'
+            
+            for i in gdat.indxener:
+                for t in gdat.indxtime:
+                    figr, axis = plt.subplots()
+                    axis.imshow(gdat.cntpdata[i, :, :, t], origin='lower', interpolation='nearest', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
+                    numbswepplot = min(gdat.numbswep - gdat.numbswepburn, 10)
+                    indxswepplot = np.random.choice(np.arange(gdat.numbswepburn, gdat.numbswep, dtype=int), size=numbswepplot, replace=False) 
+                    for k in range(numbswepplot):
+                        numb = chan['numb'][indxswepplot[k]-gdat.numbswepburn]
+                        supr_catl(gdat, axis, i, t, chan['xpos'][k, :numb], chan['ypos'][k, :numb], chan['flux'][k, :, :, :numb])
+                    # temp
+                    supr_catl(gdat, axis, i, t, gdat.catlcond[gdat.indxxpos, :, 0], gdat.catlcond[gdat.indxypos, :, 0], gdat.catlcond[gdat.indxflux[i, t], :, 0], boolcond=True)
+                    plt.savefig(gdat.pathdatartag + '%s_condcatl%04d%04d.' % (gdat.rtag, i, t) + gdat.strgplotfile)
+                    plt.close()
+    
     if gdat.boolplotsave:
         print 'Making animations of frame plots...'
         
@@ -3654,8 +3757,9 @@ def cnfg_time():
     gdat.sizeregi = None
 
     # read the data
-    #strgdata = 'sdss0921_00010003_sing'
-    strgdata = 'sdss0921_00010003_nomi'
+    strgdata = 'sdss0921_00010003_sing'
+    #strgdata = 'sdss0921_00010003_nomi'
+    #strgdata = 'sdss0921_00010003_feww'
 
     path = pathdata + strgdata + '_mock.h5'
     print 'Reading %s...' % path
@@ -3711,17 +3815,17 @@ def cnfg_time():
          cntpdata=gdat.cntpdata, \
          cntppsfn=cntppsfn, \
          factusam=factusam, \
-         numbswep=100, \
-         numbswepburn=50, \
-         numbloop=1000, \
+         numbswep=50, \
+         numbswepburn=40, \
+         numbloop=10, \
          diagmode=True, \
-         #verbtype=2, \
+         verbtype=3, \
          colrstyl='pcat', \
          #boolplotsave=False, \
         
          boolspre=boolspre, \
          
-         strgproc='pcat_20180712_114028_cnfg_time_000100', \
+         #strgproc='pcat_20180714_142316_cnfg_time_000200', \
 
          strgmode=strgmode, \
          #maxmnumbstar=1, \
@@ -3849,8 +3953,5 @@ if __name__ == "__main__":
         main()
     else:
         globals().get(sys.argv[1])()
-
-
-
 
 
