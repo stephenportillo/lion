@@ -48,6 +48,7 @@ void clib_eval_llik(int numbsidexpos, int numbsideypos,
         NREGX = (numbsidexpos / sizeregi);
         NREGY = (numbsideypos / sizeregi);
     }
+    //printf("offsxpos, offsypos: %d %d\n", offsxpos, offsypos);
     
     int y0, y1, x0, x1, i, j, ii, jj;
     for (j=0 ; j < NREGY ; j++){
@@ -59,11 +60,19 @@ void clib_eval_llik(int numbsidexpos, int numbsideypos,
             chi2[j*NREGX+i] = 0.;
             for (jj=y0 ; jj<y1; jj++){
                 for (ii=x0 ; ii<x1; ii++){
+                    //printf("sizeregi offsypos marg numbsideypos numbsidexpos y1 x1: %d %d %d %d %d %d %d \n", sizeregi, offsypos, marg, numbsideypos, numbsidexpos, y1, x1);
+                    //printf("j,i,jj,ii: %d %d %d %d\n", j, i, jj, ii);
+                    //printf("cntpmodl[jj*numbsidexpos+ii]: %f\n", cntpmodl[jj*numbsidexpos+ii]);
+                    //printf("cntpresi[jj*numbsidexpos+ii]: %f\n", cntpresi[jj*numbsidexpos+ii]);
+                    //printf("weig[jj*numbsidexpos+ii]: %f\n", weig[jj*numbsidexpos+ii]);
+                    //printf("temp: %f\n\n", (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * \
+                    //                            (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * weig[jj*numbsidexpos+ii]);
                     chi2[j*NREGX+i] += (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * \
                                        (cntpmodl[jj*numbsidexpos+ii]-cntpresi[jj*numbsidexpos+ii]) * weig[jj*numbsidexpos+ii];
                 }
             }
         }
+    //printf("chi[0]: %f\n", chi2[0]);
     }
 }
 
@@ -135,6 +144,7 @@ void clib_eval_modl(int numbsidexpos, int numbsideypos, int numbphon, int numbpi
             }
         }
     }
-    
+     
+    //printf("sizeregi offsypos marg numbsideypos numbsidexpos: %d %d %d %d %d\n", sizeregi, sizeregi, marg, numbsideypos, numbsidexpos);
     clib_eval_llik(numbsidexpos, numbsideypos, cntpmodl, cntpresi, weig, chi2, sizeregi, marg, offsxpos, offsypos, booltile);
 }
