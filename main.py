@@ -36,7 +36,7 @@ class gdatstrt(object):
         super(gdatstrt, self).__setattr__(attr, valu)
 
 
-def plot_varbsamp(gdat, varb, lablxaxi, lablyaxi, strgplot):
+def plot_varbsamp(gdat, varb, lablyaxi, strgplot):
 
     figr, axis = plt.subplots()
     axis.plot(gdat.indxsamp, varb)
@@ -973,6 +973,13 @@ def plot_lcur(gdat):
         for k in gdat.indxsourcond:
             numblcurplot = min(4, gdat.numbsourcond - k)
             
+            print 'gdat.numbsourcond'
+            print gdat.numbsourcond
+            print 'gdat.indxsourcond'
+            summgene(gdat.indxsourcond)
+            print 'k'
+            print k
+            
             meanlcur = np.mean(gdat.catlcond[gdat.indxflux, k, 0], axis=0)
             errrlcur = np.empty((2, gdat.numbtime))
             for i in range(2):
@@ -1001,9 +1008,15 @@ def plot_lcur(gdat):
                     if plottype == 'nomi':
                         axis[k%numblcurplot].plot(gdat.indxtime, meanlcurtrue, color='g', markersize=10, marker='o', alpha=0.5)
             
-            if gdat.datatype == 'mock':
-                if plottype == 'nomi':
-                    axis[k%numblcurplot].plot(gdat.indxtime, np.mean(gdat.catlrefr[0]['apho'][:, :, indxtrue], axis=0), color='m', markersize=10, marker='o', alpha=0.5)
+                    if gdat.datatype == 'mock':
+                        if plottype == 'nomi':
+                            print 'gdat.catlrefr[0][apho]'
+                            summgene(gdat.catlrefr[0]['apho'])
+                            print 'gdat.catlrefr[0][apho][indxtrue]'
+                            summgene(gdat.catlrefr[0]['apho'][:, :, indxtrue])
+                            print 'indxtrue'
+                            summgene(indxtrue)
+                            axis[k%numblcurplot].plot(gdat.indxtime, np.mean(gdat.catlrefr[0]['apho'][:, :, indxtrue], axis=0), color='m', markersize=10, marker='o', alpha=0.5)
                 
             axis[k%numblcurplot].set_xlim([-1, gdat.numbtime])
             
@@ -1377,7 +1390,7 @@ def make_mock(gdat, gdatnotp):
         gdat.catlinit = gdat.truecatl
     
     
-def plot_fluxhist(gdat, flux, i, j, jj=None, plotmagt=False):
+def plot_fluxhist(gdat, flux, i, t, jj=None, plotmagt=False):
     
     figr, axis = plt.subplots()
     gdat.deltfluxplot = gdat.binsfluxplot[1:] - gdat.binsfluxplot[:-1]
@@ -1389,17 +1402,17 @@ def plot_fluxhist(gdat, flux, i, j, jj=None, plotmagt=False):
         delt = gdat.deltfluxplot
     for k in gdat.indxrefr:
         if plotmagt:
-            magtrefr = -2.5 * np.log10(gdat.catlrefr[k]['flux'][i, j]) + gdat.zeropoin
+            magtrefr = -2.5 * np.log10(gdat.catlrefr[k]['flux'][i, t, :]) + gdat.magtzero
             hist = np.histogram(magtrefr, bins=gdat.binsfluxplot)[0]
         else:
-            hist = np.histogram(gdat.catlrefr[k]['flux'][i, j], bins=gdat.binsfluxplot)[0]
+            hist = np.histogram(gdat.catlrefr[k]['flux'][i, t, :], bins=gdat.binsfluxplot)[0]
         axis.bar(xdat, hist, delt, alpha=0.5, label=gdat.lablrefr[k], lw=gdat.linewdth, facecolor=gdat.colrrefr[k], edgecolor=gdat.colrrefr[k])
     # temp
     if plotmagt:
-        magt = -2.5 * np.log10(flux[i, j, :]) + gdat.zeropoin
+        magt = -2.5 * np.log10(flux[i, t, :]) + gdat.magtzero
         hist = np.histogram(magt, bins=gdat.binsmagtplot)[0]
     else:
-        hist = np.histogram(flux[i, j, :], bins=gdat.binsfluxplot)[0]
+        hist = np.histogram(flux[i, t, :], bins=gdat.binsfluxplot)[0]
     if jj != None:
         colr = 'b'
         labl = 'Condensed'
@@ -1420,9 +1433,9 @@ def plot_fluxhist(gdat, flux, i, j, jj=None, plotmagt=False):
     else:
         strg = 'flux'
     if jj == None:
-        plt.savefig(gdat.pathdatartag + '%s_hist%s%04d%04d.%s' % (gdat.rtag, strg, i, j, gdat.strgplotfile))
+        plt.savefig(gdat.pathdatartag + '%s_hist%s%04d%04d.%s' % (gdat.rtag, strg, i, t, gdat.strgplotfile))
     else:
-        plt.savefig(gdat.pathdatartag + '%s_hist%s%04d%04d_fram%04d.' % (gdat.rtag, strg, i, j, jj, gdat.strgplotfile))
+        plt.savefig(gdat.pathdatartag + '%s_hist%s%04d%04d_fram%04d.%s' % (gdat.rtag, strg, i, t, jj, gdat.strgplotfile))
     plt.close()
 
 
@@ -1458,6 +1471,8 @@ def main( \
          
          # Boolean flag to turn on single-precision
          boolspre=True, \
+            
+         labldata=None, \
 
          # run tag to be post-processed
          strgproc=None, \
@@ -1481,6 +1496,7 @@ def main( \
 
          # a string indicating the name of the state
          strgstat=None, \
+         boolstatread=True, \
 
          # minimum flux of sources
          #minmflux=100, \
@@ -1494,7 +1510,9 @@ def main( \
          # size of the regions in number of pixels
          # temp
          sizeregi=None, \
-         
+        
+         magtzero=0., \
+
          # string indicating type of plot file
          strgplotfile='pdf', \
 
@@ -1749,7 +1767,7 @@ def main( \
 
         assert gdat.cntpdata.shape[0] == gdat.cntppsfnusam.shape[0]
 
-        if gdat.strgstat != None and gdat.catlinit != None:
+        if gdat.boolstatread and gdat.strgstat != None and gdat.catlinit != None:
             print 'strgstat and catlinit defined at the same time. catlinit takes precedence for the initial catalog.'
 
         # plotting
@@ -1765,7 +1783,11 @@ def main( \
         gdat.minmfluxplot = 1e1
         gdat.maxmfluxplot = 1e6
         gdat.binsfluxplot = 10**(np.linspace(np.log10(gdat.minmfluxplot), np.log10(gdat.maxmfluxplot), gdat.numbbinsfluxplot + 1))
-
+        gdat.binsmagtplot = -2.5 * np.log10(gdat.binsfluxplot[::-1]) + gdat.magtzero
+        gdat.deltmagtplot = gdat.binsmagtplot[1:] - gdat.binsmagtplot[:-1]
+        gdat.meanmagtplot = (gdat.binsmagtplot[1:] + gdat.binsmagtplot[:-1]) / 2.
+        gdat.minmmagtplot = 20.
+        gdat.maxmmagtplot = 3.
         gdat.numbtickcbar = 11
 
         gdat.scalcntp = 'asnh'
@@ -1812,12 +1834,13 @@ def main( \
         
         if gdat.strgstat != None:
             gdat.pathstat = gdat.pathdata + 'stat_' + gdat.strgstat + '.h5'
-            if os.path.isfile(gdat.pathstat):
-                gdat.catlinit = read_catl(gdat, gdat.pathstat)
-                #gdat.boolinitcatl = True
-            else:
-                print 'No initialization catalog found. Initializing randomly...'
-                #gdat.boolinitcatl = False
+            if gdat.boolstatread: 
+                if os.path.isfile(gdat.pathstat):
+                    gdat.catlinit = read_catl(gdat, gdat.pathstat)
+                    #gdat.boolinitcatl = True
+                else:
+                    print 'No initialization catalog found. Initializing randomly...'
+                    #gdat.boolinitcatl = False
 
         # check if source has been changed after compilation
         if os.path.getmtime(gdat.pathlion + 'blas.c') > os.path.getmtime(gdat.pathlion + 'blas.so'):
@@ -2303,6 +2326,7 @@ def main( \
                     chi2doff = gdat.chi2totl / numbdoff
                     if gdat.diagmode:
                         if chi2doff < 0.:
+                            print 'Chi2 per dof went negative.'
                             print 'gdat.cntpdata'
                             summgene(gdat.cntpdata)
                             print 'self.n'
@@ -2894,7 +2918,7 @@ def main( \
                     print 'stars0'
                     summgene(stars0)
                 starsp = np.empty_like(stars0)
-                f0 = stars0[gdat.indxflux, :]
+                f0 = stars0[gdat.indxflux[0, 0], :]
                 
                 if gdat.diagmode:
                     if (f0 < gdat.fittminmflux).any():
@@ -3075,6 +3099,14 @@ def main( \
                     numbspmr = (self.nregx * self.nregy) / 4
                 else:
                     numbspmr = 1
+                
+                if gdat.verbtype > 1:
+                    print 'Deciding to propose a split or merge...'
+                    print 'numbbrgt'
+                    print numbbrgt
+                    print 'numbspmr'
+                    print numbspmr
+
                 goodmove = False
                 proposal = Proposal()
                 # split
@@ -3088,14 +3120,10 @@ def main( \
                         dy = (np.random.normal(size=numbspmr)*self.kickrange)
                     if gdat.verbtype > 1:
                         print 'Proposing a split...'
-                        print 'numbbrgt'
-                        print numbbrgt
                         print 'gdat.maxmnumbstar'
                         print gdat.maxmnumbstar
                         print 'self.n'
                         print self.n
-                        print 'numbspmr'
-                        print numbspmr
                         print 'dx'
                         print dx
                         print 'dy'
@@ -3108,7 +3136,7 @@ def main( \
                         summgene(stars0)
                     x0 = stars0[gdat.indxxpos, :]
                     y0 = stars0[gdat.indxypos, :]
-                    f0 = stars0[gdat.indxflux, :]
+                    f0 = stars0[gdat.indxflux[0, 0], :]
                     # temp -- based on 0, 0
                     fminratio = f0 / gdat.fittminmflux
                     if gdat.boolspre:
@@ -3117,18 +3145,28 @@ def main( \
                         frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio))
                     
                     # temp
-                    #frac = np.mean(np.mean(frac, axis=0), axis=0)
-                    fracenti = (1e-3 * np.random.randn(gdat.numbflux * numbspmr) + 1.).reshape((gdat.numbener, gdat.numbtime, numbspmr))
-                    fracenti[0, 0, :] = 1.
-                    fracprim = frac * fracenti
+                    dfrcenti = 1e-3 * np.random.randn(gdat.numbflux * numbspmr).reshape((gdat.numbener, gdat.numbtime, numbspmr))
+                    dfrcenti[0, 0, :] = 0.
                     starsp = np.empty_like(stars0)
-                    starsp[gdat.indxxpos, :] = x0 + ((1-frac[0, 0, :])*dx)
-                    starsp[gdat.indxypos, :] = y0 + ((1-frac[0, 0, :])*dy)
-                    starsp[gdat.indxflux, :] = f0 * fracprim
+                    starsp[gdat.indxxpos, :] = x0 + ((1. - frac) * dx)
+                    starsp[gdat.indxypos, :] = y0 + ((1. - frac) * dy)
+                    starsp[gdat.indxflux[0, 0], :] = f0 * frac
+                    
+                    fracentihigh = frac * (1. + dfrcenti)
+                    
+                    # correct for fracenti > 1 or fracenti < 0
+                    indxloww = where(fracentihigh < 0.)
+                    fracentihigh[indxloww] += 2. * fracentihigh[indxloww]
+                    
+                    indxhigh = where(fracenti > 1.)
+                    fracenti[indxhigh] -= 2. * (fracenti[indxhigh] - 1.)
+
+                    starsp[gdat.indxflux, :] = starsp[gdat.indxflux[0, 0], :] * frac * (1. + dfrcenti)
                     starsb = np.empty_like(stars0)
-                    starsb[gdat.indxxpos, :] = x0 - frac[0, 0, :]*dx
-                    starsb[gdat.indxypos, :] = y0 - frac[0, 0, :]*dy
-                    starsb[gdat.indxflux, :] = f0 * (1-frac[0, 0, :]) * fracenti
+                    starsb[gdat.indxxpos, :] = x0 - frac * dx
+                    starsb[gdat.indxypos, :] = y0 - frac * dy
+                    starsb[gdat.indxflux[0, 0], :] = f0 * (1. - frac)
+                    starsb[gdat.indxflux, :] = starsb[gdat.indxflux[0, 0], :] * (1. - frac * (1. - dfrcenti))
                     
                     # don't want to think about how to bounce split-merge
                     # don't need to check if above fmin, because of how frac is decided
@@ -3159,8 +3197,30 @@ def main( \
                         invpairs[k] =  1./neighbours(xtemp, ytemp, self.kickrange, idx_move[k]) #divide by zero
                         invpairs[k] += 1./neighbours(xtemp, ytemp, self.kickrange, self.n)
                     invpairs *= 0.5
+                    if gdat.verbtype > 1:
+                        print 'Proposing a merge...'
+                        print 'numbspmr'
+                    if gdat.verbtype > 1:
+                        print 'starsb'
+                        print starsb
+                        print 'starsp'
+                        print starsp
+                        print
+                    
+                    if gdat.diagmode:
+                        if boolsplt:
+                            if (starsp[gdat.indxflux, :] < gdat.fittminmflux).any():
+                                print 'starsp[gdat.indxflux, :]'
+                                summgene(starsp[gdat.indxflux, :])
+                                raise Exception('')
+                            if (starsb[gdat.indxflux, :] < gdat.fittminmflux).any():
+                                print 'starsb[gdat.indxflux, :]'
+                                summgene(starsb[gdat.indxflux, :])
+                                raise Exception('')
+                
                 # merge
                 elif not boolsplt and idx_reg.size > 1: # need two things to merge!
+                    
                     numbspmr = min(numbspmr, idx_reg.size/2)
                     idx_move = np.empty(numbspmr, dtype=np.int)
                     idx_kill = np.empty(numbspmr, dtype=np.int)
@@ -3194,8 +3254,8 @@ def main( \
                     stars0 = self.stars.take(idx_move, axis=1)
                     starsk = self.stars.take(idx_kill, axis=1)
         
-                    f0 = stars0[gdat.indxflux,:]
-                    fk = starsk[gdat.indxflux,:]
+                    f0 = stars0[gdat.indxflux[0, 0], :]
+                    fk = starsk[gdat.indxflux[0, 0], :]
                     sum_f = f0 + fk
                     fminratio = sum_f / gdat.fittminmflux
                     print 'f0'
@@ -3203,26 +3263,44 @@ def main( \
                     print 'stars0'
                     summgene(stars0)
                     frac = f0 / sum_f
+
+                    dfrcenti = 
                     
                     # temp
                     starsp = np.empty_like(stars0)
-                    starsp[gdat.indxxpos,:] = frac[0, 0, :] * stars0[gdat.indxxpos,:] + (1-frac[0, 0, :])*starsk[gdat.indxxpos,:]
-                    starsp[gdat.indxypos,:] = frac[0, 0, :] * stars0[gdat.indxypos,:] + (1-frac[0, 0, :])*starsk[gdat.indxypos,:]
+                    starsp[gdat.indxxpos,:] = frac * stars0[gdat.indxxpos,:] + (1. - frac)*starsk[gdat.indxxpos,:]
+                    starsp[gdat.indxypos,:] = frac * stars0[gdat.indxypos,:] + (1. - frac)*starsk[gdat.indxypos,:]
                     starsp[gdat.indxflux,:] = f0 + fk
                     if goodmove:
                         proposal.add_move_stars(idx_move, stars0, starsp)
                         proposal.add_death_stars(idx_kill, starsk)
                     # turn numbbrgt into an array
                     numbbrgt = numbbrgt - (f0 > 2*gdat.fittminmflux) - (fk > 2*gdat.fittminmflux) + (starsp[gdat.indxflux,:] > 2*gdat.fittminmflux)
+                    
+                    if gdat.verbtype > 1:
+                        print 'starsk'
+                        print starsk
+                        print 'starsp'
+                        print starsp
+                        print
+                    
+                else:
+                    if gdat.verbtype > 1:
+                        print 'Could not propose a split or merge.'
                 
                 if goodmove:
                     print 'frac'
                     summgene(frac)
-                    factor = np.log(gdat.fittfluxdistslop-1) + (gdat.fittfluxdistslop-1)*np.log(gdat.fittminmflux) + \
-                                                -np.sqrt(2. * np.pi) * 1e-3 - 0.5 * (frac - frac[0, 0, None, None, :])**2 / 1e-6 + \
-                                                -gdat.fittfluxdistslop*np.log(frac[0, 0, :] * (1-frac[0, 0, :]) * sum_f) + \
-                                                np.log(2*np.pi*self.kickrange*self.kickrange) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fminratio) + \
-                                                np.log(numbbrgt) + np.log(invpairs) + np.log(sum_f) # last term is Jacobian
+                    factor = np.log(gdat.fittfluxdistslop - 1.) + \
+                                                (gdat.fittfluxdistslop - 1.) * np.log(gdat.fittminmflux) + \
+                                                -gdat.fittfluxdistslop * np.log(frac * (1-frac) * sum_f) + \
+                                                np.log(2. * np.pi * self.kickrange**2) + \
+                                                -np.log(gdat.sizeimag[0] * gdat.sizeimag[1]) + \
+                                                np.log(1. - 2. / fminratio) + \
+                                                np.log(numbbrgt) + \
+                                                np.log(invpairs) + \
+                                                np.log(sum_f) + \
+                                                -np.sqrt(2. * np.pi) * 1e-3 * (gdat.numbflux - 1) - 0.5 * np.sum(dfrcenti**2) / 1e-6
                     if not boolsplt:
                         factor *= -1
                         factor += self.penalty
@@ -3966,13 +4044,16 @@ def main( \
                 plot_varbsamp(gdat, chan['ypos'][:, k], '$y_{%d}$' % k, 'ypos%04d' % k)
                 for i in gdat.indxener:
                     for t in gdat.indxtime:
-                        plot_varbsamp(gdat, chan['flux'][i, j, :, k], '$f_{%d,%d,%d}$' % (i, j, k), 'flux%04%04d%04d' % (i, j, k))
+                        print 'chan[flux]'
+                        summgene(chan['flux'])
+                        print
+                        plot_varbsamp(gdat, chan['flux'][:, i, t, k], '$f_{%d,%d,%d}$' % (i, t, k), 'flux%04d%04d%04d' % (i, t, k))
             print 'Plotting the condensed catalog...'
             
             plot_fluxhist(gdat, gdat.catlcond[gdat.indxflux, :, 0], 0, 0)
             for i in gdat.indxener:
                 for t in gdat.indxtime:
-                    plot_fluxhist(gdat, gdat.catlcond[gdat.indxflux, :, 0], i, j, plotmagt=True)
+                    plot_fluxhist(gdat, gdat.catlcond[gdat.indxflux, :, 0], i, t, plotmagt=True)
             
                     figr, axis = plt.subplots()
                     axis.imshow(gdat.cntpdata[i, :, :, t], origin='lower', interpolation='nearest', cmap='Greys_r', vmin=gdat.minmcntpdata, vmax=gdat.maxmcntpdata)
@@ -4319,7 +4400,8 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
             print 'stdvflux[:, :, i]'
             print stdvflux[:, :, i]
             if (stdvflux[:, :, i] == 0.).any():
-                raise Exception('')
+                print 'Samples of condensed catalog elements have vanishing variance!'
+                #raise Exception('')
 
     catlcond = np.zeros((gdat.numbparacatlcond, numbsourseed, 2))
     catlcond[gdat.indxxpos, :, 0] = xposmean
@@ -4809,34 +4891,8 @@ def retr_cntppsfnusam(gdat):
 
 def cnfg_time(strgcnfgextnexec=None):
     
-    listcnfg = [ \
-                [1, 3, 'sing'], \
-                [1, 3, 'nomi'], \
-                [1, 3, 'crow'], \
-                [1, 30, 'nomi'], \
-               ]
-    for numbener, numbtime, strgmult in listcnfg:
-
-        # read the data
-        strgdata = 'sdss0921_0001%04d_%s' % (numbtime, strgmult)
-
-        #numbtime = gdat.cntpdata.shape[3]
-        #indxtime = np.arange(numbtime)
-
-        #numbpixl = gdat.numbsidexpos * gdat.numbsideypos
-        
-        #boolspre = True
-
-        #strgmode = 'pcat'
-        #strgmode = 'forc'
-
-        #strgmodl = 'star'
-        
-    # read PSF
     dictargs = {}
     
-    #dictargs['cntpdata'] = gdat.cntpdata
-    #dictargs['cntppsfn'] = cntppsfn
     #dictargs['factusam'] = factusam
     dictargs['numbener'] = 1
     dictargs['numbtime'] = 3
@@ -4851,7 +4907,7 @@ def cnfg_time(strgcnfgextnexec=None):
     dictargs['truenumbstar'] = 40
     #dictargs['truenumbstar'] = 3
     
-    #dictargs['inittype'] = 'rand'
+    dictargs['inittype'] = 'rand'
     dictargs['numbloop'] = 1
     dictargs['numbswep'] = 100
     dictargs['numbplotfram'] = 10
@@ -4866,13 +4922,12 @@ def cnfg_time(strgcnfgextnexec=None):
     
     #dictargs['boolspre'] = False
     #dictargs['boolclib'] = False
-    dictargs['verbtype'] = 3
+    dictargs['verbtype'] = 2
     
     dictargs['diagmode'] = True
     dictargs['colrstyl'] = 'pcat'
     #dictargs['strgproc'] = 'pcat_20180714_142316_cnfg_time_000200'
     dictargs['strgmode'] = 'pcat'
-    #dictargs['strgdata'] = strgdata
     dictargs['probprop'] = np.array([0., 0., 1.])
     #dictargs['probprop'] = np.array([1., 0., 0.])
     dictargs['booltile'] = False
@@ -4884,22 +4939,32 @@ def cnfg_time(strgcnfgextnexec=None):
          
     #dictargs['numbener'] = 1
 
-    listnamecnfgextn = ['sing', 'nomi', 'crow', 'timehigh']
+    listnamecnfgextn = ['defa', 'sing', 'nomi', 'crow', 'timehigh']
     #listnamecnfgextn = ['nomi', 'crow', 'timehigh']
     dictargsvari = {}
     for namecnfgextn in listnamecnfgextn:
         dictargsvari[namecnfgextn] = {}
     
+    dictargsvari['defa']['truenumbstar'] = 1
+    dictargsvari['defa']['initxpos'] = np.array([4.5])
+    dictargsvari['defa']['initypos'] = np.array([4.5])
+    dictargsvari['defa']['maxmnumbstar'] = 20
+    dictargsvari['defa']['numbtime'] = 1
 
     #dictargsvari['nomi']['strgproc'] = 'pcat_20180718_125001_cnfg_time_nomi_010000'
     dictargsvari['nomi']['truenumbstar'] = 3
+    dictargsvari['nomi']['maxmnumbstar'] = 20
     dictargsvari['nomi']['trueminmflux'] = 1e5
+    labldata = np.zeros((1, 3), dtype=object)
+    for t in range(3):
+        labldata[0, t] = 'Time bin %d' % t
     
     dictargsvari['sing']['truenumbstar'] = 1
     dictargsvari['sing']['initxpos'] = np.array([4.5])
     dictargsvari['sing']['initypos'] = np.array([4.5])
     dictargsvari['sing']['maxmnumbstar'] = 20
     #dictargsvari['sing']['strgproc'] = 'pcat_20180718_125000_cnfg_time_sing_010000'
+    dictargsvari['sing']['labldata'] = labldata
     
     dictargsvari['crow']['numbstar'] = 160
     dictargsvari['crow']['numbsidexpos'] = 40
