@@ -36,11 +36,24 @@ class gdatstrt(object):
         super(gdatstrt, self).__setattr__(attr, valu)
 
 
-def plot_varbsamp(gdat, varb, lablyaxi, strgplot):
+def plot_varbsamp(gdat, varb, lablyaxi, strgplot, xaxitype='samp'):
 
     figr, axis = plt.subplots()
-    axis.plot(gdat.indxsamp, varb)
-    axis.set_xlabel('$i_{samp}$')
+    
+    if xaxitype == 'samp':
+        indx = gdat.indxsamp
+    elif xaxitype == 'swep':
+        indx = gdat.indxswep
+    elif xaxitype == 'sweploop':
+        indx = gdat.indxsweploop
+    
+    axis.plot(indx, varb)
+    if xaxitype == 'samp':
+        axis.set_xlabel('$i_{samp}$')
+    elif xaxitype == 'swep':
+        axis.set_xlabel('$i_{swep}$')
+    elif xaxitype == 'sweploop':
+        axis.set_xlabel('$i_{swlp}$')
     axis.set_ylabel(lablyaxi)
     plt.tight_layout()
     plt.savefig(gdat.pathdatartag + '%s.%s' % (strgplot, gdat.strgplotfile))
@@ -431,13 +444,14 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
     y = y.compress(goodsrc)
     f = f.compress(goodsrc, axis=2)
     
-    #print 'x'
-    #print x
-    #print 'y'
-    #print y
-    #print 'f'
-    #print f
-    #print
+    if gdat.verbtype > 1:
+        print 'x'
+        summgene(x)
+        print 'y'
+        summgene(y)
+        print 'f'
+        summgene(f)
+        print
 
     numbphon = x.size
     rad = gdat.numbsidepsfn / 2
@@ -579,7 +593,9 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
             for t in gdat.indxtime:
                 
                 cntpmodltemp = np.copy(cntpback)
-                
+                if gdat.boolspre:
+                    cntpmodltemp = cntpmodltemp.astype(np.float32)
+
                 #if gdat.boolspre:
                 #    cntpmodltemp = np.zeros(sizeimag, dtype=np.float32) + cntpback
                 #else:
@@ -591,7 +607,7 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
                 #weigtemp = weig[i, :, :, t]
                 weigtemp = np.ascontiguousarray(weig[i, :, :, t])
                 
-                if gdat.verbtype > 1:
+                if gdat.verbtype > 2:
                     print 'it'
                     print i, t
                     print 'sizeimag'
@@ -629,6 +645,7 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
                     print 'gdat.booltile'
                     print gdat.booltile
                     
+                if gdat.verbtype > 2:
                     print 'desimatr[i, t, :, :].flags[C_CONTIGUOUS]'
                     print desimatr[i, t, :, :].flags['C_CONTIGUOUS']
                     print 'gdat.coefspix[i, :, :].flags[C_CONTIGUOUS]'
@@ -837,6 +854,7 @@ def writ_catl(gdat, catl, path):
         filetemp.create_dataset('degr', data=catl['degr'])
     if catl['xpos'].ndim == 2:
         filetemp.create_dataset('chi2', data=catl['chi2'])
+        filetemp.create_dataset('lposterm', data=catl['lposterm'])
         
     filetemp.close()
 
@@ -858,6 +876,7 @@ def read_catl(gdat, path, boolmock=False):
         catl['degr'] = filetemp['degr'][()] 
     if catl['xpos'].ndim == 2:
         catl['chi2'] = filetemp['chi2'][()] 
+        catl['lposterm'] = filetemp['lposterm'][()] 
     filetemp.close()
    
     return catl
@@ -890,6 +909,8 @@ def setp(gdat):
     gdat.liststrgfeatstar = ['xpos', 'ypos', 'flux']
     gdat.liststrgparastar = list(gdat.liststrgfeatstar)
     gdat.liststrgparastar += ['numb']
+
+    gdat.sizeaccp = 10
 
 
 def make_cmap(seq):
@@ -986,7 +1007,12 @@ def plot_lcur(gdat):
                 errrlcur[i, :] = np.mean(gdat.catlcond[gdat.indxflux, k, 1], axis=0)
             
             if (gdat.catlcond[gdat.indxflux, k, 1] == 0.).any():
-                raise Exception('')
+                print 'gdat.catlcond[gdat.indxflux, k, 1]'
+                print gdat.catlcond[gdat.indxflux, k, 1]
+                print 'gdat.catlcond[gdat.indxflux, k, 0]'
+                print gdat.catlcond[gdat.indxflux, k, 0]
+                print 'Warning! Condensed catalog flux uncertainties vanish!'
+                #raise Exception('')
 
             #errrlcurdtre = retr_dtre(errrlcur)
             #medimeanlcurdtre = np.median(errrlcurdtre[0, :])
@@ -1018,15 +1044,15 @@ def plot_lcur(gdat):
                             summgene(indxtrue)
                             axis[k%numblcurplot].plot(gdat.indxtime, np.mean(gdat.catlrefr[0]['apho'][:, :, indxtrue], axis=0), color='m', markersize=10, marker='o', alpha=0.5)
                 
+                    if plottype == 'resi':
+                        meanlcur -= meanlcurtrue
+                        meanlcur /= meanlcurtrue
+                        meanlcur *= 1e6
+                        errrlcur /= meanlcurtrue
+                        errrlcur *= 1e6
+           
             axis[k%numblcurplot].set_xlim([-1, gdat.numbtime])
             
-            if plottype == 'resi':
-                meanlcur -= meanlcurtrue
-                meanlcur /= meanlcurtrue
-                meanlcur *= 1e6
-                errrlcur /= meanlcurtrue
-                errrlcur *= 1e6
-           
             #print 'k'
             #print k
             #print 'meanlcur'
@@ -1354,15 +1380,10 @@ def make_mock(gdat, gdatnotp):
     xposgrid, yposgrid = np.meshgrid(arry, arry)
     apho = np.empty((gdat.numbener, gdat.numbtime, gdat.truenumbstar))
     for k in range(len(xpos)):
-        print 'xposgrid'
-        summgene(xposgrid)
         indxpixl = np.where(np.sqrt((xpos[k] - xposgrid)**2 + (ypos[k] - yposgrid)**2) < 3.)
         for i in gdat.indxener:
             for t in gdat.indxtime:
                 apho[i, t, k] = np.sum(gdat.cntpdata[i, indxpixl[0], indxpixl[1], t])
-                print 'apho[i, t, k]'
-                print apho[i, t, k]
-                print 
     if not np.isfinite(gdat.cntpdata).all() or np.amin(gdat.cntpdata) < 0.:
         print 'gdat.cntpdata'
         summgene(gdat.cntpdata)
@@ -1485,6 +1506,8 @@ def main( \
          # Boolean flag to control C library usage
          #boolclib=True, \
          boolclib=False, \
+            
+         priotype='powr', \
 
          # configuration string
          strgcnfg=None, \
@@ -1827,7 +1850,7 @@ def main( \
             assert gdat.sizeregi == gdat.sizeimag[0]
             assert gdat.sizeregi == gdat.sizeimag[1]
 
-        gdat.movetypes = ['P *', 'BD *', 'MS *', 'P g', 'BD g', '*-g', '**-g', '*g-g', 'MS g']
+        gdat.listproptype = ['P *', 'BD *', 'MS *', 'P g', 'BD g', '*-g', '**-g', '*g-g', 'MS g']
     
         if gdat.strgmode != 'pcat':
             gdat.catlinit = gdat.catlrefr[0]
@@ -2113,8 +2136,8 @@ def main( \
             gdat.fudgpena = 1.
             penalty = gdat.fudgpena * 0.5 * gdat.numbparastar
             penalty_g = 3.0
-            kickrange = 1.
-            kickrange_g = 1.
+            scalspmrposi = 1.
+            scalspmrposi_g = 1.
             
             def __init__(self):
 
@@ -2228,7 +2251,7 @@ def main( \
                 return np.log(slope-1) + (slope-1)*np.log(self.truermin_g) - slope*np.log(a) - 5*np.log(a) - np.log(u*u) - np.log(1-u*u)
         
             
-            def run_sampler(self, gdat, temperature, jj, boolplotshow=False):
+            def run_sampler(self, gdat, chan, temperature, jj, boolplotshow=False):
                 
                 if gdat.verbtype > 1:
                     print 'Sample %d started.' % jj
@@ -2256,6 +2279,10 @@ def main( \
                 else:
                     self.nregx = 1
                     self.nregy = 1
+                
+                if gdat.verbtype > 1:
+                    print 'self.n'
+                    print self.n
                 
                 if gdat.verbtype > 2:
                     print 'self.nregx'
@@ -2286,7 +2313,7 @@ def main( \
                 
                 if gdat.diagmode and jj > 0:
                     if np.amax(np.abs(gdat.chi2last - gdat.chi2stat)) > 0.2:
-                        print 'WARNING'
+                        print 'Warning! Chi2 state changed during loops!'
                         print 'gdat.cntpdata'
                         summgene(gdat.cntpdata)
                         print 'gdat.chi2last'
@@ -2493,7 +2520,7 @@ def main( \
 
                 if gdat.diagmode:
                     if abs(gdat.chi2totl - np.sum(gdat.chi2stat)) > 1.:
-                        print 'WARNING'
+                        print 'Warning! Chi2 calculated in python and C are different!'
                         print 'gdat.cntpdata'
                         summgene(gdat.cntpdata)
                         print 'gdat.chi2totl'
@@ -2533,10 +2560,14 @@ def main( \
                     if gdat.verbtype > 1:
                         print 'rtype'
                         print rtype
+                        print 'self.n'
+                        print self.n
+                        print 'gdat.chi2stat'
+                        summgene(gdat.chi2stat)
                     
                     gdat.thisindxswep = jj * gdat.numbloop + a
 
-                    gdat.movetype[gdat.thisindxswep] = rtype
+                    chan['proptype'][gdat.thisindxswep] = rtype
                     # defaults
                     pn = self.n
                     cntpbackdiff = np.zeros(gdat.sizeimag)
@@ -2558,7 +2589,7 @@ def main( \
                     # make the proposal
                     proposal = movefns[rtype]()
                     
-                    gdat.dt1[gdat.thisindxswep] = time.clock() - t1
+                    chan['dt01'][gdat.thisindxswep] = time.clock() - t1
         
                     if proposal.goodmove:
                         t2 = time.clock()
@@ -2567,7 +2598,7 @@ def main( \
                                clib=gdatnotp.clibeval, \
                                sizeregi=gdat.sizeregi, marg=gdat.marg, offsxpos=self.offsxpos, offsypos=self.offsypos)
                         llikprop = -0.5 * gdat.chi2prop
-                        gdat.dt2[gdat.thisindxswep] = time.clock() - t2
+                        chan['dt02'][gdat.thisindxswep] = time.clock() - t2
         
                         t3 = time.clock()
                         
@@ -2578,6 +2609,9 @@ def main( \
                         regiony = get_region(refy, self.offsypos, gdat.sizeregi)
                         
                         if gdat.verbtype > 1:
+                            print 'gdat.chi2prop'
+                            summgene(gdat.chi2prop)
+                        if gdat.verbtype > 2:
                             print 'refx'
                             summgene(refx)
                             print 'refy'
@@ -2622,6 +2656,8 @@ def main( \
                         if proposal.factor is not None:
                             dlogP[regiony, regionx] += proposal.factor
                         
+                        chan['deltllik'][:, :, gdat.thisindxswep] = llikprop - llik
+                        
                         if gdat.verbtype > 1:
                             print 'llikprop'
                             print llikprop
@@ -2634,11 +2670,17 @@ def main( \
                             print 'boolregiacpt'
                             print boolregiacpt
                         acceptprop = boolregiacpt[regiony, regionx]
-                        numaccept = np.count_nonzero(acceptprop)
                         
                         if gdat.diagmode:
-                            if rtype == 0 and gdat.stdvfluxprop < 1e-10 and gdat.stdvfluxprop < 1e-10 and np.count_nonzero(boolregiacpt) == 0:
-                                raise Exception('')
+                            if rtype == 0 and gdat.stdvfluxprop < 1e-10 and gdat.stdvposiprop < 1e-10 and np.count_nonzero(boolregiacpt) == 0:
+                                print 'Proposal not accepted despite small proposal scale.'
+                                print 'gdat.stdvfluxprop'
+                                print gdat.stdvfluxprop
+                                print 'gdat.stdvposiprop'
+                                print gdat.stdvposiprop
+                                print 'boolregiacpt'
+                                print boolregiacpt
+                                #raise Exception('')
                         # only keep cntpmodldiff in accepted regions+margins
                         for i in gdat.indxener:
                             for t in gdat.indxtime:
@@ -2700,7 +2742,7 @@ def main( \
                                 for v in range(gdat.numbregiyaxi):
                                     for u in range(gdat.numbregixaxi):
                                         if gdat.chi2stat[v, u] - gdat.chi2prev[v, u] > 30.:
-                                            print 'WARNING'
+                                            print 'Warning! Chi2 decreased by too much!'
                                             print 'gdat.cntpdata'
                                             summgene(gdat.cntpdata)
                                             print 'gdat.chi2stat'
@@ -2787,28 +2829,38 @@ def main( \
                             self.galaxies[:, 0:self.ngalx-num_kill] = np.delete(self.galaxies, idx_kill_a, axis=1)
                             self.galaxies[:, self.ngalx-num_kill:] = 0
                             self.ng -= num_kill
-                        gdat.dt3[gdat.thisindxswep] = time.clock() - t3
+                        chan['dt03'][gdat.thisindxswep] = time.clock() - t3
         
-                        if acceptprop.size > 0: 
-                            gdat.accept[gdat.thisindxswep] = np.count_nonzero(acceptprop) / float(acceptprop.size)
-                        else:
-                            gdat.accept[gdat.thisindxswep] = 0
+                        chan['accp'][:, :, gdat.thisindxswep] = boolregiacpt
                     else:
-                        gdat.outbounds[gdat.thisindxswep] = 1
+                        chan['booloutb'][gdat.thisindxswep] = 1
                     
+                    if gdat.diagmode:
+                        if proposal.factor != None and not np.isfinite(proposal.factor).any():
+                            print 'Warning! proposal.factor is not finite!'
+                            #raise Exception('')
+                    if proposal.factor != None and proposal.factor != []:
+                        chan['lposterm'][gdat.thisindxswep] = proposal.factor
+
                     if gdat.diagmode:
                         gdat.chi2prev = np.copy(gdat.chi2stat)
                     
                     if jj % gdat.factthinplot == 0 or gdat.boolstdvevol:
                         maxmsweplogg = jj * gdat.numbloop + a
-                        minmsweplogg = max(0, maxmsweplogg - 10)
+                        minmsweplogg = max(0, maxmsweplogg - gdat.sizeaccp)
                         indxsweplogg = np.arange(minmsweplogg, maxmsweplogg)
                     
                     if gdat.boolstdvevol:
-                        indxtemp = np.where(gdat.movetype[indxsweplogg] == 0)[0]
+                        indxtemp = np.where(chan['proptype'][indxsweplogg] == 0)[0]
                         if indxtemp.size > 0:
                             print 'Updating the proposal scale...'
-                            factprop = 2**(np.mean(gdat.accept[indxsweplogg][indxtemp]) - 0.25)
+                            #print 'indxsweplogg'
+                            #summgene(indxsweplogg)
+                            #print 'chan[accp]'
+                            #summgene(chan['accp'])
+                            #print 'chan[accp][:, :, indxsweplogg]'
+                            #summgene(chan['accp'][:, :, indxsweplogg])
+                            factprop = 2**(np.mean(chan['accp'][:, :, indxsweplogg[indxtemp]]) - 0.25)
                             gdat.stdvfluxprop *= factprop
                             gdat.stdvposiprop *= factprop
                             print 'factprop'
@@ -2819,9 +2871,6 @@ def main( \
                             print gdat.stdvposiprop
                             print 
                     
-                    #if (gdat.accept[gdat.thisindxswep] > 0.).any():
-                    #    print 'Some accepted.'
-
                     if gdat.verbtype > 1:
                         print 'gdat.chi2stat'
                         summgene(gdat.chi2stat)
@@ -2834,28 +2883,24 @@ def main( \
                                     summgene(cntpmodldiff[i, :, :, t])
                                     #print 'cntpmodldiffacpt[i, :, :, t]'
                                     #summgene(cntpmodldiffacpt[i, :, :, t])
-                        print 'gdat.accept[gdat.thisindxswep]'
-                        print gdat.accept[gdat.thisindxswep]
-                        print 'gdat.outbounds[gdat.thisindxswep]'
-                        print gdat.outbounds[gdat.thisindxswep]
                         print 'Loop %d ended.' % a
                         print
                         print
                         print
 
                 if jj % gdat.factthinplot == 0:
-                    gdat.dt1 *= 1000
-                    gdat.dt2 *= 1000
-                    gdat.dt3 *= 1000
+                    chan['dt01'] *= 1e3
+                    chan['dt02'] *= 1e3
+                    chan['dt03'] *= 1e3
                     maxmsweplogg = jj * gdat.numbloop + a
                     minmsweplogg = max(0, maxmsweplogg - 1000)
                     indxsweplogg = np.arange(minmsweplogg, maxmsweplogg)
-                    statarrays = [gdat.accept, gdat.outbounds, gdat.dt1, gdat.dt2, gdat.dt3]
+                    statarrays = [np.mean(np.mean(chan['accp'], axis=0), axis=0), chan['booloutb'], chan['dt01'], chan['dt02'], chan['dt03']]
                     
                     for j in gdat.indxvarbdiag:
                         print gdat.strgvarbdiag[j] + '\t(all) %0.3f' % np.mean(statarrays[j][indxsweplogg]),
-                        for k in xrange(len(gdat.movetypes)):
-                            print '(' + gdat.movetypes[k] + ') %0.3f' % np.mean(statarrays[j][indxsweplogg][gdat.movetype[indxsweplogg] == k]),
+                        for k in xrange(len(gdat.listproptype)):
+                            print '(' + gdat.listproptype[k] + ') %0.3f' % np.mean(statarrays[j][indxsweplogg][chan['proptype'][indxsweplogg] == k]),
                         print
                         if j == 1:
                             print '-' * 16
@@ -2918,7 +2963,10 @@ def main( \
                     print 'stars0'
                     summgene(stars0)
                 starsp = np.empty_like(stars0)
-                f0 = stars0[gdat.indxflux[0, 0], :]
+                if gdat.priotype == 'info':
+                    f0 = stars0[gdat.indxflux[0, 0], :]
+                else:
+                    f0 = stars0[gdat.indxflux, :]
                 
                 if gdat.diagmode:
                     if (f0 < gdat.fittminmflux).any():
@@ -2930,22 +2978,25 @@ def main( \
                 else:
                     lindf = 60./np.sqrt(25.)
                     logdf = 0.01/np.sqrt(25.)
-                ff = np.log(logdf*logdf*f0 + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0*f0)) / logdf
+                ff = np.log(logdf**2 * f0 + logdf * np.sqrt(lindf**2 + logdf**2 * f0**2)) / logdf
                 ffmin = np.log(logdf*logdf*gdat.fittminmflux + logdf*np.sqrt(lindf*lindf + logdf*logdf*gdat.fittminmflux*gdat.fittminmflux)) / logdf
                 if gdat.boolspre:
                     dff = gdat.stdvfluxprop * np.random.normal(size=nw*gdat.numbflux).astype(np.float32).reshape((gdat.numbener, gdat.numbtime, nw))
                 else:
                     dff = gdat.stdvfluxprop * np.random.normal(size=nw*gdat.numbflux).reshape((gdat.numbener, gdat.numbtime, nw))
-                aboveffmin = ff - ffmin
-                oob_flux = (-dff > aboveffmin)
-                dff[oob_flux] = -2*aboveffmin[oob_flux] - dff[oob_flux]
+                fluxabov = ff - ffmin
+                boolfluxoutb = -dff > fluxabov
+                dff[boolfluxoutb] = -2. * fluxabov[boolfluxoutb] - dff[boolfluxoutb]
                 pff = ff + dff
                 pf = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
                 # calculate flux distribution prior factor
                 dlogf = np.log(pf/f0)
                 # assumes flat priors over colors
                 # temp
-                factor = -gdat.fittfluxdistslop * dlogf[0, 0, :]
+                if gdat.priotype == 'info':
+                    factor = -gdat.fittfluxdistslop * dlogf[0, 0, :]
+                else:
+                    factor = -gdat.fittfluxdistslop * np.sum(dlogf)
                 
                 #print 'dlogf'
                 #summgene(dlogf)
@@ -2965,10 +3016,10 @@ def main( \
                     #print ff
                     print 'ffmin'
                     print ffmin
-                    print 'aboveffmin'
-                    summgene(aboveffmin)
-                    print 'oob_flux'
-                    print oob_flux
+                    print 'fluxabov'
+                    summgene(fluxabov)
+                    print 'boolfluxoutb'
+                    print boolfluxoutb
                     print 'dff'
                     print dff
                     print 'pff'
@@ -2985,21 +3036,46 @@ def main( \
                     if (pf < gdat.fittminmflux).any():
                         print 'pf'
                         print pf
-                        raise Exception('')
+                        indx = np.where(pf < gdat.fittminmflux)
+                        print 'dff[indx]'
+                        print dff[indx]
+                        print 'fluxabov[indx]'
+                        print fluxabov[indx]
+                        print 'boolfluxoutb[indx]'
+                        print boolfluxoutb[indx]
+                        print 'pf[indx]'
+                        print pf[indx]
+                        print 'gdat.fittminmflux'
+                        print gdat.fittminmflux
+                        if gdat.boolspre:
+                            print 'Warning! Proposed flux is lower than the minimum flux!'
+                        else:
+                            raise Exception('')
 
                 if not gdat.strgmode == 'forc':
                     dpos_rms = gdat.stdvposiprop / np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
                     if gdat.stdvposiprop == 1e-100 or gdat.boolstdvevol:
                         print 'Not lower-bounding the positional position size at 1e-3...'
+                        print
                     else:
                         dpos_rms[dpos_rms < 1e-3] = 1e-3
-                        
+                    
                     if gdat.boolspre:
                         dx = np.random.normal(size=nw).astype(np.float32)*dpos_rms
                         dy = np.random.normal(size=nw).astype(np.float32)*dpos_rms
                     else:
                         dx = np.random.normal(size=nw)*dpos_rms
                         dy = np.random.normal(size=nw)*dpos_rms
+                    
+                    if gdat.verbtype > 1:
+                        print 'dpos_rms'
+                        summgene(dpos_rms)
+                        print 'dx'
+                        summgene(dx)
+                        print 'dy'
+                        summgene(dy)
+                        print
+                    
                     starsp[gdat.indxxpos,:] = stars0[gdat.indxxpos,:] + dx
                     starsp[gdat.indxypos,:] = stars0[gdat.indxypos,:] + dy
                 else:
@@ -3081,6 +3157,7 @@ def main( \
                         proposal.add_death_stars(idx_kill, starsk)
                 else:
                     factor = float('-inf')
+                
                 proposal.set_factor(factor)
 
                 return proposal
@@ -3090,7 +3167,7 @@ def main( \
                 
                 boolsplt = np.random.randint(2)
                 idx_reg = self.idx_parity_stars()
-                sum_f = 0
+                fluxspmrtotl = 0
                 low_n = 0
                 idx_bright = idx_reg.take(np.flatnonzero(self.stars[gdat.indxflux, :].take(idx_reg) > 2*gdat.fittminmflux)) # in region!
                 numbbrgt = idx_bright.size
@@ -3113,11 +3190,11 @@ def main( \
                 if boolsplt and self.n > 0 and self.n < gdat.maxmnumbstar and numbbrgt > 0: # need something to split, but don't exceed maxmnumbstar
                     numbspmr = min(numbspmr, numbbrgt, gdat.maxmnumbstar - self.n) # need bright source AND room for split source
                     if gdat.boolspre:
-                        dx = (np.random.normal(size=numbspmr)*self.kickrange).astype(np.float32)
-                        dy = (np.random.normal(size=numbspmr)*self.kickrange).astype(np.float32)
+                        dx = (np.random.normal(size=numbspmr)*self.scalspmrposi).astype(np.float32)
+                        dy = (np.random.normal(size=numbspmr)*self.scalspmrposi).astype(np.float32)
                     else:
-                        dx = (np.random.normal(size=numbspmr)*self.kickrange)
-                        dy = (np.random.normal(size=numbspmr)*self.kickrange)
+                        dx = (np.random.normal(size=numbspmr)*self.scalspmrposi)
+                        dy = (np.random.normal(size=numbspmr)*self.scalspmrposi)
                     if gdat.verbtype > 1:
                         print 'Proposing a split...'
                         print 'gdat.maxmnumbstar'
@@ -3138,45 +3215,81 @@ def main( \
                     y0 = stars0[gdat.indxypos, :]
                     f0 = stars0[gdat.indxflux[0, 0], :]
                     # temp -- based on 0, 0
-                    fminratio = f0 / gdat.fittminmflux
-                    if gdat.boolspre:
-                        frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
+                    fluxnormminm = f0 / gdat.fittminmflux
+                    if gdat.priotype == 'info':
+                        varbrandtemp = np.random.uniform(size=numbspmr)
                     else:
-                        frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio))
+                        varbrandtemp = np.random.uniform(size=numbspmr * gdat.numbflux).reshape((gdat.numbener, gdat.numbtime, numbspmr))
+                    
+                    frac = (1. / fluxnormminm + varbrandtemp * (1. - 2. / fluxnormminm))
+                    
+                    if gdat.boolspre:
+                        frac = frac.astype(np.float32)
                     
                     # temp
                     dfrcenti = 1e-3 * np.random.randn(gdat.numbflux * numbspmr).reshape((gdat.numbener, gdat.numbtime, numbspmr))
                     dfrcenti[0, 0, :] = 0.
                     starsp = np.empty_like(stars0)
-                    starsp[gdat.indxxpos, :] = x0 + ((1. - frac) * dx)
-                    starsp[gdat.indxypos, :] = y0 + ((1. - frac) * dy)
-                    starsp[gdat.indxflux[0, 0], :] = f0 * frac
+                    if gdat.priotype == 'info':
+                        fractemp = frac
+                    else:
+                        fractemp = frac[0, 0, :]
+                    starsp[gdat.indxxpos, :] = x0 + ((1. - fractemp) * dx)
+                    starsp[gdat.indxypos, :] = y0 + ((1. - fractemp) * dy)
                     
-                    fracentihigh = frac * (1. + dfrcenti)
+                    if gdat.priotype == 'info':
+                        fracenti = frac * (1. + dfrcenti)
                     
-                    # correct for fracenti > 1 or fracenti < 0
-                    indxloww = where(fracentihigh < 0.)
-                    fracentihigh[indxloww] += 2. * fracentihigh[indxloww]
-                    
-                    indxhigh = where(fracenti > 1.)
-                    fracenti[indxhigh] -= 2. * (fracenti[indxhigh] - 1.)
-
-                    starsp[gdat.indxflux, :] = starsp[gdat.indxflux[0, 0], :] * frac * (1. + dfrcenti)
+                        # correct for fracenti > 1 or fracenti < 0
+                        # temp
+                        indxloww = np.where(fracenti < 0.)
+                        if indxloww[0].size > 0:
+                            fracenti[indxloww] = -fracenti[indxloww]
+                        
+                        indxhigh = np.where(fracenti > 1.)
+                        if indxhigh[0].size > 0:
+                            fracenti[indxhigh] -= 2. * (fracenti[indxhigh] - 1.)
+                            fracenti[indxbadd] = fracenti[indxbadd] % 1.
+                        starsp[gdat.indxflux, :] = f0 * fracenti
+                    else:
+                        starsp[gdat.indxflux, :] = f0 * frac
+                        
                     starsb = np.empty_like(stars0)
-                    starsb[gdat.indxxpos, :] = x0 - frac * dx
-                    starsb[gdat.indxypos, :] = y0 - frac * dy
-                    starsb[gdat.indxflux[0, 0], :] = f0 * (1. - frac)
-                    starsb[gdat.indxflux, :] = starsb[gdat.indxflux[0, 0], :] * (1. - frac * (1. - dfrcenti))
+                    starsb[gdat.indxxpos, :] = x0 - fractemp * dx
+                    starsb[gdat.indxypos, :] = y0 - fractemp * dy
                     
-                    # don't want to think about how to bounce split-merge
-                    # don't need to check if above fmin, because of how frac is decided
+                    if gdat.verbtype > 1:
+                        print 'starsb[gdat.indxflux, :]'
+                        summgene(starsb[gdat.indxflux, :])
+                        print 'starsb[gdat.indxflux[0, 0], :]'
+                        summgene(starsb[gdat.indxflux[0, 0], :])
+                    
+                    if gdat.priotype == 'info':
+                        starsb[gdat.indxflux, :] = f0 * (1. - fracenti)
+                    else:
+                        starsb[gdat.indxflux, :] = f0 * (1. - frac)
+                    
+                    if gdat.verbtype > 1:
+                        print 'f0'
+                        summgene(f0)
+                        print 'frac'
+                        summgene(frac)
+                        print 'starsb[gdat.indxflux, :]'
+                        summgene(starsb[gdat.indxflux, :])
+                        print 'starsb[gdat.indxflux[0, 0], :]'
+                        summgene(starsb[gdat.indxflux[0, 0], :])
+                        if gdat.priotype == 'info':
+                            print 'fracenti'
+                            summgene(fracenti)
+                    
                     inbounds = np.logical_and(self.in_bounds(starsp), self.in_bounds(starsb))
                     stars0 = stars0.compress(inbounds, axis=1)
                     starsp = starsp.compress(inbounds, axis=1)
                     starsb = starsb.compress(inbounds, axis=1)
                     idx_move = idx_move.compress(inbounds)
-                    fminratio = fminratio.compress(inbounds)
-                    frac = frac.compress(inbounds, axis=2)
+                    fluxnormminm = fluxnormminm.compress(inbounds)
+                    if gdat.priotype == 'powr':
+                        frac = frac.compress(inbounds, axis=2)
                     numbspmr = idx_move.size
                     goodmove = numbspmr > 0
                     if goodmove:
@@ -3184,7 +3297,7 @@ def main( \
                         proposal.add_birth_stars(starsb)
         
                     # need to calculate factor
-                    sum_f = stars0[gdat.indxflux,:]
+                    fluxspmrtotl = stars0[gdat.indxflux,:]
                     invpairs = np.empty(numbspmr)
                     for k in xrange(numbspmr):
                         xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
@@ -3194,12 +3307,9 @@ def main( \
                         xtemp = np.concatenate([xtemp, starsb[gdat.indxxpos, k:k+1]])
                         ytemp = np.concatenate([ytemp, starsb[gdat.indxypos, k:k+1]])
         
-                        invpairs[k] =  1./neighbours(xtemp, ytemp, self.kickrange, idx_move[k]) #divide by zero
-                        invpairs[k] += 1./neighbours(xtemp, ytemp, self.kickrange, self.n)
+                        invpairs[k] =  1./neighbours(xtemp, ytemp, self.scalspmrposi, idx_move[k]) #divide by zero
+                        invpairs[k] += 1./neighbours(xtemp, ytemp, self.scalspmrposi, self.n)
                     invpairs *= 0.5
-                    if gdat.verbtype > 1:
-                        print 'Proposing a merge...'
-                        print 'numbspmr'
                     if gdat.verbtype > 1:
                         print 'starsb'
                         print starsb
@@ -3213,13 +3323,25 @@ def main( \
                                 print 'starsp[gdat.indxflux, :]'
                                 summgene(starsp[gdat.indxflux, :])
                                 raise Exception('')
-                            if (starsb[gdat.indxflux, :] < gdat.fittminmflux).any():
-                                print 'starsb[gdat.indxflux, :]'
-                                summgene(starsb[gdat.indxflux, :])
-                                raise Exception('')
+                            
+                            if gdat.priotype == 'info':
+                                if (starsb[gdat.indxflux[0, 0], :] < gdat.fittminmflux).any():
+                                    print 'starsb[gdat.indxflux[0, 0], :]'
+                                    summgene(starsb[gdat.indxflux[0, 0], :])
+                                    print 'gdat.fittminmflux'
+                                    print gdat.fittminmflux
+                                    raise Exception('')
+                                if (starsb[gdat.indxflux[0, 0], :] < gdat.fittminmflux).any():
+                                    print 'starsb[gdat.indxflux[0, 0], :]'
+                                    summgene(starsb[gdat.indxflux[0, 0], :])
+                                    raise Exception('')
                 
                 # merge
                 elif not boolsplt and idx_reg.size > 1: # need two things to merge!
+                    
+                    if gdat.verbtype > 1:
+                        print 'Proposing a merge...'
+                        print 'numbspmr'
                     
                     numbspmr = min(numbspmr, idx_reg.size/2)
                     idx_move = np.empty(numbspmr, dtype=np.int)
@@ -3231,14 +3353,14 @@ def main( \
         
                     for k in xrange(numbspmr):
                         idx_move[k] = np.random.choice(gdat.maxmnumbstar, p=choosable/nchoosable)
-                        invpairs[k], idx_kill[k] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.kickrange, idx_move[k], generate=True)
+                        invpairs[k], idx_kill[k] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.scalspmrposi, idx_move[k], generate=True)
                         if invpairs[k] > 0:
                             invpairs[k] = 1./invpairs[k]
                         # prevent sources from being involved in multiple proposals
                         if not choosable[idx_kill[k]]:
                             idx_kill[k] = -1
                         if idx_kill[k] != -1:
-                            invpairs[k] += 1./neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.kickrange, idx_kill[k])
+                            invpairs[k] += 1./neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.scalspmrposi, idx_kill[k])
                             choosable[idx_move[k]] = False
                             choosable[idx_kill[k]] = False
                             nchoosable -= 2
@@ -3256,20 +3378,17 @@ def main( \
         
                     f0 = stars0[gdat.indxflux[0, 0], :]
                     fk = starsk[gdat.indxflux[0, 0], :]
-                    sum_f = f0 + fk
-                    fminratio = sum_f / gdat.fittminmflux
-                    print 'f0'
-                    summgene(f0)
-                    print 'stars0'
-                    summgene(stars0)
-                    frac = f0 / sum_f
-
-                    dfrcenti = 
+                    fluxspmrtotl = f0 + fk
+                    fluxnormminm = fluxspmrtotl / gdat.fittminmflux
+                    frac = f0 / fluxspmrtotl
+                    
+                    if gdat.priotype == 'info':
+                        dfrcenti = (stars0[gdat.indxflux, :] / (stars0[gdat.indxflux, :] + stars0[gdat.indxflux[0, 0], :]) - frac)
                     
                     # temp
                     starsp = np.empty_like(stars0)
-                    starsp[gdat.indxxpos,:] = frac * stars0[gdat.indxxpos,:] + (1. - frac)*starsk[gdat.indxxpos,:]
-                    starsp[gdat.indxypos,:] = frac * stars0[gdat.indxypos,:] + (1. - frac)*starsk[gdat.indxypos,:]
+                    starsp[gdat.indxxpos,:] = frac * stars0[gdat.indxxpos,:] + (1. - frac) * starsk[gdat.indxxpos,:]
+                    starsp[gdat.indxypos,:] = frac * stars0[gdat.indxypos,:] + (1. - frac) * starsk[gdat.indxypos,:]
                     starsp[gdat.indxflux,:] = f0 + fk
                     if goodmove:
                         proposal.add_move_stars(idx_move, stars0, starsp)
@@ -3289,18 +3408,19 @@ def main( \
                         print 'Could not propose a split or merge.'
                 
                 if goodmove:
-                    print 'frac'
-                    summgene(frac)
                     factor = np.log(gdat.fittfluxdistslop - 1.) + \
                                                 (gdat.fittfluxdistslop - 1.) * np.log(gdat.fittminmflux) + \
-                                                -gdat.fittfluxdistslop * np.log(frac * (1-frac) * sum_f) + \
-                                                np.log(2. * np.pi * self.kickrange**2) + \
+                                                -gdat.fittfluxdistslop * np.log(frac * (1. - frac) * fluxspmrtotl) + \
+                                                np.log(2. * np.pi * self.scalspmrposi**2) + \
                                                 -np.log(gdat.sizeimag[0] * gdat.sizeimag[1]) + \
-                                                np.log(1. - 2. / fminratio) + \
+                                                np.log(1. - 2. / fluxnormminm) + \
                                                 np.log(numbbrgt) + \
                                                 np.log(invpairs) + \
-                                                np.log(sum_f) + \
-                                                -np.sqrt(2. * np.pi) * 1e-3 * (gdat.numbflux - 1) - 0.5 * np.sum(dfrcenti**2) / 1e-6
+                                                np.log(fluxspmrtotl)
+
+                    if gdat.priotype == 'info':
+                        lprienti = -np.sqrt(2. * np.pi) * 1e-3 * (gdat.numbflux - 1) - 0.5 * np.sum(dfrcenti**2) / 1e-6
+                        factor += lprienti 
                     if not boolsplt:
                         factor *= -1
                         factor += self.penalty
@@ -3321,9 +3441,9 @@ def main( \
                 ff = np.log(logdf*logdf*f0g + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0g*f0g)) / logdf
                 ffmin = np.log(logdf*logdf*gdat.fittminmflux_g + logdf*np.sqrt(lindf*lindf + logdf*logdf*gdat.fittminmflux_g*gdat.fittminmflux_g)) / logdf
                 dff = np.random.normal(size=nw).astype(np.float32)
-                aboveffmin = ff - ffmin
-                oob_flux = (-dff > aboveffmin)
-                dff[oob_flux] = -2*aboveffmin[oob_flux] - dff[oob_flux]
+                fluxabov = ff - ffmin
+                boolfluxoutb = (-dff > fluxabov)
+                dff[boolfluxoutb] = -2*fluxabov[boolfluxoutb] - dff[boolfluxoutb]
                 pff = ff + dff
                 pfg = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
         
@@ -3446,7 +3566,7 @@ def main( \
                 boolsplt = np.random.randint(2)
                 idx_reg = self.idx_parity_stars() # stars
                 idx_reg_g = self.idx_parity_galaxies() # galaxies
-                sum_f = 0
+                fluxspmrtotl = 0
                 low_n = 0
                 idx_bright = idx_reg_g.take(np.flatnonzero(self.galaxies[gdat.indxflux, :].take(idx_reg_g) > 2*gdat.fittminmflux)) # in region and bright enough to make two stars
                 numbbrgt = idx_bright.size # can only split bright galaxies
@@ -3460,8 +3580,8 @@ def main( \
                     idx_kill_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
                     galaxiesk = self.galaxies.take(idx_kill_g, axis=1)
                     xkg, ykg, fkg, xxkg, xykg, yykg = galaxiesk
-                    fminratio = fkg / gdat.fittminmflux # again, care about fmin for stars
-                    frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
+                    fluxnormminm = fkg / gdat.fittminmflux # again, care about fmin for stars
+                    frac = (1./fluxnormminm + np.random.uniform(size=numbspmr)*(1. - 2./fluxnormminm)).astype(np.float32)
                     f1Mf = frac * (1. - frac) # frac(1 - frac)
                     agalx, theta, phi = from_moments(xxkg, xykg, yykg)
                     dx = agalx * np.cos(phi) / np.sqrt(2 * f1Mf)
@@ -3478,7 +3598,7 @@ def main( \
                     idx_kill_g = idx_kill_g.compress(inbounds)
                     galaxiesk = galaxiesk.compress(inbounds, axis=1)
                     starsb = starsb.compress(inbounds, axis=1)
-                    fminratio = fminratio.compress(inbounds)
+                    fluxnormminm = fluxnormminm.compress(inbounds)
                     frac = frac.compress(inbounds)
                     dr2 = dr2.compress(inbounds)
                     f1Mf = f1Mf.compress(inbounds)
@@ -3491,7 +3611,7 @@ def main( \
                         proposal.add_birth_stars(starsb)
         
                     # need star pairs to calculate factor
-                    sum_f = fkg
+                    fluxspmrtotl = fkg
                     weigoverpairs = np.empty(numbspmr) # w (1/sum w_1 + 1/sum w_2) / 2
                     for k in xrange(numbspmr):
                         xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
@@ -3499,13 +3619,13 @@ def main( \
                         xtemp = np.concatenate([xtemp, starsb[0, k:k+1, gdat.indxxpos], starsb[1, k:k+1, gdat.indxxpos]])
                         ytemp = np.concatenate([ytemp, starsb[0, k:k+1, gdat.indxypos], starsb[1, k:k+1, gdat.indxypos]])
         
-                        neighi = neighbours(xtemp, ytemp, self.kickrange_g, self.n)
-                        neighj = neighbours(xtemp, ytemp, self.kickrange_g, self.n+1)
+                        neighi = neighbours(xtemp, ytemp, self.scalspmrposi_g, self.n)
+                        neighj = neighbours(xtemp, ytemp, self.scalspmrposi_g, self.n+1)
                         if neighi > 0 and neighj > 0:
                             weigoverpairs[k] = 1./neighi + 1./neighj
                         else:
                             weigoverpairs[k] = 0.
-                    weigoverpairs *= 0.5 * np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g))
+                    weigoverpairs *= 0.5 * np.exp(-dr2/(2.*self.scalspmrposi_g*self.scalspmrposi_g))
                     weigoverpairs[weigoverpairs == 0] = 1
                 # merge
                 elif not boolsplt and idx_reg.size > 1: # need two things to merge!
@@ -3518,13 +3638,13 @@ def main( \
         
                     for k in xrange(numbspmr):
                         idx_kill[k,0] = np.random.choice(gdat.maxmnumbstar, p=choosable/nchoosable)
-                        invpairs[k], idx_kill[k,1] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.kickrange_g, idx_kill[k,0], generate=True)
+                        invpairs[k], idx_kill[k,1] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.scalspmrposi_g, idx_kill[k,0], generate=True)
                         # prevent sources from being involved in multiple proposals
                         if not choosable[idx_kill[k,1]]:
                             idx_kill[k,1] = -1
                         if idx_kill[k,1] != -1:
                             invpairs[k] = 1./invpairs[k]
-                            invpairs[k] += 1./neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.kickrange_g, idx_kill[k,1])
+                            invpairs[k] += 1./neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.scalspmrposi_g, idx_kill[k,1])
                             choosable[idx_kill[k,:]] = False
                             nchoosable -= 2
                     invpairs *= 0.5
@@ -3540,16 +3660,16 @@ def main( \
                     dx = starsk[gdat.indxxpos,:,1] - starsk[gdat.indxxpos,:,0]
                     dy = starsk[gdat.indxxpos,:,1] - starsk[gdat.indxypos,:,0]
                     dr2 = dx*dx + dy*dy
-                    weigoverpairs = np.exp(-dr2/(2.*self.kickrange_g*self.kickrange_g)) * invpairs
+                    weigoverpairs = np.exp(-dr2/(2.*self.scalspmrposi_g*self.scalspmrposi_g)) * invpairs
                     weigoverpairs[weigoverpairs == 0] = 1
-                    sum_f = np.sum(fk, axis=1)
-                    fminratio = sum_f / gdat.fittminmflux
-                    frac = fk[:,0] / sum_f
+                    fluxspmrtotl = np.sum(fk, axis=1)
+                    fluxnormminm = fluxspmrtotl / gdat.fittminmflux
+                    frac = fk[:,0] / fluxspmrtotl
                     f1Mf = frac * (1. - frac)
                     galaxiesb = np.empty((6, numbspmr))
                     galaxiesb[gdat.indxxpos,:] = frac*starsk[gdat.indxxpos,:,0] + (1-frac)*starsk[gdat.indxxpos,:,1]
                     galaxiesb[gdat.indxypos,:] = frac*starsk[gdat.indxypos,:,0] + (1-frac)*starsk[gdat.indxypos,:,1]
-                    galaxiesb[gdat.indxflux,:] = sum_f
+                    galaxiesb[gdat.indxflux,:] = fluxspmrtotl
                     u = np.random.uniform(low=3e-4, high=1., size=numbspmr).astype(np.float32) #3e-4 for numerics
                     theta = np.arccos(u).astype(np.float32)
                     galaxiesb[self._XX,:] = f1Mf*(dx*dx+u*u*dy*dy)
@@ -3562,9 +3682,9 @@ def main( \
                         proposal.add_birth_galaxies(galaxiesb)
                 if goodmove:
                     factor = 2*np.log(gdat.fittfluxdistslop-1) - np.log(gdat.fittfluxdistslop_g-1) + 2*(gdat.fittfluxdistslop-1)*np.log(gdat.fittminmflux) - (gdat.fittfluxdistslop_g-1)*np.log(gdat.fittminmflux_g) - \
-                        gdat.fittfluxdistslop*np.log(f1Mf) - (2*gdat.fittfluxdistslop - gdat.fittfluxdistslop_g)*np.log(sum_f) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fminratio) - \
-                        np.log(2*np.pi*self.kickrange_g*self.kickrange_g) + np.log(numbbrgt/(self.ng+1.-boolsplt)) + np.log((self.n-1+2*boolsplt)*weigoverpairs) + \
-                        np.log(sum_f) - np.log(4.) - 2*np.log(dr2) - 3*np.log(f1Mf) - np.log(np.cos(theta)) - 3*np.log(np.sin(theta))
+                        gdat.fittfluxdistslop*np.log(f1Mf) - (2*gdat.fittfluxdistslop - gdat.fittfluxdistslop_g)*np.log(fluxspmrtotl) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - 2./fluxnormminm) - \
+                        np.log(2*np.pi*self.scalspmrposi_g*self.scalspmrposi_g) + np.log(numbbrgt/(self.ng+1.-boolsplt)) + np.log((self.n-1+2*boolsplt)*weigoverpairs) + \
+                        np.log(fluxspmrtotl) - np.log(4.) - 2*np.log(dr2) - 3*np.log(f1Mf) - np.log(np.cos(theta)) - 3*np.log(np.sin(theta))
                     if not boolsplt:
                         factor *= -1
                         factor += 2*self.penalty - self.penalty_g
@@ -3579,7 +3699,7 @@ def main( \
             def stargalaxy_galaxy(self):
                 boolsplt = np.random.randint(2)
                 idx_reg_g = self.idx_parity_galaxies()
-                sum_f = 0
+                fluxspmrtotl = 0
                 low_n = 0
                 idx_bright = idx_reg_g.take(np.flatnonzero(self.galaxies[gdat.indxflux, :].take(idx_reg_g) > gdat.fittminmflux + gdat.fittminmflux_g)) # in region and bright enough to make s+g
                 numbbrgt = idx_bright.size
@@ -3590,8 +3710,8 @@ def main( \
                 # split off star
                 if boolsplt and self.ng > 0 and self.n < gdat.maxmnumbstar and numbbrgt > 0: # need something to split, but don't exceed maxmnumbstar
                     numbspmr = min(numbspmr, numbbrgt, gdat.maxmnumbstar-self.n) # need bright source AND room for split off star
-                    dx = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
-                    dy = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
+                    dx = (np.random.normal(size=numbspmr)*self.scalspmrposi_g).astype(np.float32)
+                    dy = (np.random.normal(size=numbspmr)*self.scalspmrposi_g).astype(np.float32)
                     idx_move_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
                     galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                     x0g, y0g, f0g, xx0g, xy0g, yy0g = galaxies0
@@ -3628,7 +3748,7 @@ def main( \
                         proposal.add_birth_stars(starsb)
         
                     # need to calculate factor
-                    sum_f = f0g
+                    fluxspmrtotl = f0g
                     invpairs = np.zeros(numbspmr)
                     for k in xrange(numbspmr):
                         xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
@@ -3636,7 +3756,7 @@ def main( \
                         xtemp = np.concatenate([xtemp, galaxiesp[gdat.indxxpos, k:k+1], starsb[gdat.indxxpos, k:k+1]])
                         ytemp = np.concatenate([ytemp, galaxiesp[gdat.indxypos, k:k+1], starsb[gdat.indxypos, k:k+1]])
         
-                        invpairs[k] =  1./neighbours(xtemp, ytemp, self.kickrange_g, self.n)
+                        invpairs[k] =  1./neighbours(xtemp, ytemp, self.scalspmrposi_g, self.n)
                 # merge star into galaxy
                 elif not boolsplt and idx_reg_g.size > 1: # need two things to merge!
                     numbspmr = min(numbspmr, idx_reg_g.size)
@@ -3649,7 +3769,7 @@ def main( \
                     for k in xrange(numbspmr):
                         l = idx_move_g[k]
                         invpairs[k], idx_kill[k] = neighbours(np.concatenate([self.stars[gdat.indxxpos, 0:self.n], self.galaxies[gdat.indxxpos, l:l+1]]), \
-                                np.concatenate([self.stars[gdat.indxypos, 0:self.n], self.galaxies[gdat.indxypos, l:l+1]]), self.kickrange_g, self.n, generate=True)
+                                np.concatenate([self.stars[gdat.indxypos, 0:self.n], self.galaxies[gdat.indxypos, l:l+1]]), self.scalspmrposi_g, self.n, generate=True)
                         if invpairs[k] > 0:
                             invpairs[k] = 1./invpairs[k]
                         else:
@@ -3669,8 +3789,8 @@ def main( \
         
                     galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                     starsk = self.stars.take(idx_kill, axis=1)
-                    sum_f = galaxies0[gdat.indxflux,:] + starsk[gdat.indxflux,:]
-                    frac = galaxies0[gdat.indxflux,:] / sum_f
+                    fluxspmrtotl = galaxies0[gdat.indxflux,:] + starsk[gdat.indxflux,:]
+                    frac = galaxies0[gdat.indxflux,:] / fluxspmrtotl
                     dx = galaxies0[gdat.indxxpos,:] - starsk[gdat.indxxpos,:]
                     dy = galaxies0[gdat.indxypos,:] - starsk[gdat.indxypos,:]
                     pxxg = frac*galaxies0[self._XX,:] + frac*(1-frac)*dx*dx
@@ -3682,7 +3802,7 @@ def main( \
                     idx_kill = idx_kill.compress(inbounds)
                     invpairs = invpairs.compress(inbounds)
                     starsk = starsk.compress(inbounds, axis=1)
-                    sum_f = sum_f.compress(inbounds)
+                    fluxspmrtotl = fluxspmrtotl.compress(inbounds)
                     frac = frac.compress(inbounds)
                     pxxg = pxxg.compress(inbounds)
                     pxyg = pxyg.compress(inbounds)
@@ -3703,8 +3823,8 @@ def main( \
                     # this proposal makes a galaxy that is bright enough to split
                     numbbrgt = numbbrgt + 1
                 if goodmove:
-                    factor = np.log(gdat.fittfluxdistslop-1) - (gdat.fittfluxdistslop-1)*np.log(sum_f/gdat.fittminmflux) - gdat.fittfluxdistslop_g*np.log(frac) - gdat.fittfluxdistslop*np.log(1-frac) + \
-                            np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - (gdat.fittminmflux+gdat.fittminmflux_g)/sum_f) + \
+                    factor = np.log(gdat.fittfluxdistslop-1) - (gdat.fittfluxdistslop-1)*np.log(fluxspmrtotl/gdat.fittminmflux) - gdat.fittfluxdistslop_g*np.log(frac) - gdat.fittfluxdistslop*np.log(1-frac) + \
+                            np.log(2*np.pi*self.scalspmrposi_g*self.scalspmrposi_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + np.log(1. - (gdat.fittminmflux+gdat.fittminmflux_g)/fluxspmrtotl) + \
                             np.log(numbbrgt/float(self.ng)) + np.log((self.n+1.-boolsplt)*invpairs) - 2*np.log(frac)
                     if not boolsplt:
                         factor *= -1
@@ -3720,7 +3840,7 @@ def main( \
             def merge_split_galaxies(self):
                 boolsplt = np.random.randint(2)
                 idx_reg = self.idx_parity_galaxies()
-                sum_f = 0
+                fluxspmrtotl = 0
                 low_n = 0
                 idx_bright = idx_reg.take(np.flatnonzero(self.galaxies[gdat.indxflux, :].take(idx_reg) > 2*gdat.fittminmflux_g)) # in region!
                 numbbrgt = idx_bright.size
@@ -3731,12 +3851,12 @@ def main( \
                 # split
                 if boolsplt and self.ng > 0 and self.ng < self.ngalx and numbbrgt > 0: # need something to split, but don't exceed maxmnumbstar
                     numbspmr = min(numbspmr, numbbrgt, self.ngalx-self.ng) # need bright source AND room for split source
-                    dx = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
-                    dy = (np.random.normal(size=numbspmr)*self.kickrange_g).astype(np.float32)
+                    dx = (np.random.normal(size=numbspmr)*self.scalspmrposi_g).astype(np.float32)
+                    dy = (np.random.normal(size=numbspmr)*self.scalspmrposi_g).astype(np.float32)
                     idx_move_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
                     galaxies0 = self.galaxies.take(idx_move_g, axis=1)
-                    fminratio = galaxies0[gdat.indxflux,:] / gdat.fittminmflux_g
-                    frac = (1./fminratio + np.random.uniform(size=numbspmr)*(1. - 2./fminratio)).astype(np.float32)
+                    fluxnormminm = galaxies0[gdat.indxflux,:] / gdat.fittminmflux_g
+                    frac = (1./fluxnormminm + np.random.uniform(size=numbspmr)*(1. - 2./fluxnormminm)).astype(np.float32)
                     frac_xx = np.random.uniform(size=numbspmr).astype(np.float32)
                     frac_xy = np.random.uniform(size=numbspmr).astype(np.float32)
                     frac_yy = np.random.uniform(size=numbspmr).astype(np.float32)
@@ -3769,7 +3889,7 @@ def main( \
                     galaxiesp = galaxiesp.compress(inbounds, axis=1)
                     galaxiesb = galaxiesb.compress(inbounds, axis=1)
                     idx_move_g = idx_move_g.compress(inbounds)
-                    fminratio = fminratio.compress(inbounds)
+                    fluxnormminm = fluxnormminm.compress(inbounds)
                     frac = frac.compress(inbounds)
                     xx_p = xx_p.compress(inbounds)
                     xy_p = xy_p.compress(inbounds)
@@ -3778,7 +3898,7 @@ def main( \
                     goodmove = numbspmr > 0
         
                     # need to calculate factor
-                    sum_f = galaxies0[gdat.indxflux,:]
+                    fluxspmrtotl = galaxies0[gdat.indxflux,:]
                     invpairs = np.empty(numbspmr)
                     for k in xrange(numbspmr):
                         xtemp = self.galaxies[gdat.indxxpos, 0:self.ng].copy()
@@ -3788,8 +3908,8 @@ def main( \
                         xtemp = np.concatenate([xtemp, galaxiesb[gdat.indxxpos, k:k+1]])
                         ytemp = np.concatenate([ytemp, galaxiesb[gdat.indxypos, k:k+1]])
         
-                        invpairs[k] =  1./neighbours(xtemp, ytemp, self.kickrange_g, idx_move_g[k])
-                        invpairs[k] += 1./neighbours(xtemp, ytemp, self.kickrange_g, self.ng)
+                        invpairs[k] =  1./neighbours(xtemp, ytemp, self.scalspmrposi_g, idx_move_g[k])
+                        invpairs[k] += 1./neighbours(xtemp, ytemp, self.scalspmrposi_g, self.ng)
                     invpairs *= 0.5
                 # merge
                 elif not boolsplt and idx_reg.size > 1: # need two things to merge!
@@ -3804,14 +3924,14 @@ def main( \
                     for k in xrange(numbspmr):
                         idx_move_g[k] = np.random.choice(self.ngalx, p=choosable/nchoosable)
                         invpairs[k], idx_kill_g[k] = neighbours(self.galaxies[gdat.indxxpos, 0:self.ng], \
-                                                                self.galaxies[gdat.indxypos, 0:self.ng], self.kickrange_g, idx_move_g[k], generate=True)
+                                                                self.galaxies[gdat.indxypos, 0:self.ng], self.scalspmrposi_g, idx_move_g[k], generate=True)
                         if invpairs[k] > 0:
                             invpairs[k] = 1./invpairs[k]
                         # prevent sources from being involved in multiple proposals
                         if not choosable[idx_kill_g[k]]:
                             idx_kill_g[k] = -1
                         if idx_kill_g[k] != -1:
-                            invpairs[k] += 1./neighbours(self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.kickrange_g, idx_kill_g[k])
+                            invpairs[k] += 1./neighbours(self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.scalspmrposi_g, idx_kill_g[k])
                             choosable[idx_move_g[k]] = False
                             choosable[idx_kill_g[k]] = False
                             nchoosable -= 2
@@ -3824,9 +3944,9 @@ def main( \
         
                     galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                     galaxiesk = self.galaxies.take(idx_kill_g, axis=1)
-                    sum_f = galaxies0[gdat.indxflux,:] + galaxiesk[gdat.indxflux,:]
-                    fminratio = sum_f / gdat.fittminmflux_g
-                    frac = galaxies0[gdat.indxflux,:] / sum_f
+                    fluxspmrtotl = galaxies0[gdat.indxflux,:] + galaxiesk[gdat.indxflux,:]
+                    fluxnormminm = fluxspmrtotl / gdat.fittminmflux_g
+                    frac = galaxies0[gdat.indxflux,:] / fluxspmrtotl
         
                     galaxiesp = np.empty_like(galaxies0)
                     galaxiesp[gdat.indxxpos,:] = frac*galaxies0[gdat.indxxpos,:] + (1-frac)*galaxiesk[gdat.indxxpos,:]
@@ -3849,8 +3969,8 @@ def main( \
                     idx_move_g = idx_move_g.compress(inbounds)
                     idx_kill_g = idx_kill_g.compress(inbounds)
                     invpairs = invpairs.compress(inbounds)
-                    sum_f = sum_f.compress(inbounds)
-                    fminratio = fminratio.compress(inbounds)
+                    fluxspmrtotl = fluxspmrtotl.compress(inbounds)
+                    fluxnormminm = fluxnormminm.compress(inbounds)
                     frac = frac.compress(inbounds)
                     xx_p = xx_p.compress(inbounds)
                     xy_p = xy_p.compress(inbounds)
@@ -3866,10 +3986,10 @@ def main( \
                     numbbrgt = numbbrgt - (galaxies0[gdat.indxflux,:] > 2*gdat.fittminmflux_g) - (galaxiesk[gdat.indxflux,:] > 2*gdat.fittminmflux_g) + \
                                                                                                                     (galaxiesp[gdat.indxflux,:] > 2*gdat.fittminmflux_g)
                 if goodmove:
-                    factor = np.log(gdat.fittfluxdistslop_g-1) + (gdat.fittfluxdistslop_g-1)*np.log(gdat.fittminmflux) - gdat.fittfluxdistslop_g*np.log(frac*(1-frac)*sum_f) + \
-                        np.log(2*np.pi*self.kickrange_g*self.kickrange_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + \
-                        np.log(1. - 2./fminratio) + np.log(numbbrgt) + np.log(invpairs) + \
-                        np.log(sum_f) + np.log(xx_p) + np.log(np.abs(xy_p)) + np.log(yy_p) - 3*np.log(frac) - 3*np.log(1-frac) # last line is Jacobian
+                    factor = np.log(gdat.fittfluxdistslop_g-1) + (gdat.fittfluxdistslop_g-1)*np.log(gdat.fittminmflux) - gdat.fittfluxdistslop_g*np.log(frac*(1-frac)*fluxspmrtotl) + \
+                        np.log(2 * np.pi*self.scalspmrposi_g*self.scalspmrposi_g) - np.log(gdat.sizeimag[0]*gdat.sizeimag[1]) + \
+                        np.log(1. - 2./fluxnormminm) + np.log(numbbrgt) + np.log(invpairs) + \
+                        np.log(fluxspmrtotl) + np.log(xx_p) + np.log(np.abs(xy_p)) + np.log(yy_p) - 3*np.log(frac) - 3*np.log(1-frac) # last line is Jacobian
                     if not boolsplt:
                         factor *= -1
                         factor += self.penalty_g
@@ -3911,23 +4031,27 @@ def main( \
             gdat.catlmlik['numb'] = 0
             for strgfeat in gdat.liststrgfeatstar:
                 gdat.catlmlik[strgfeat] = np.zeros(gdat.maxmnumbstar)
-
+        
+        gdat.numbsweploop = gdat.numbswep * gdat.numbloop
+        gdat.indxsweploop = np.arange(gdat.numbsweploop)
         chan = {}
         chan['numb'] = np.zeros(gdat.numbsamp, dtype=np.int32)
         chan['chi2'] = np.zeros(gdat.numbsamp)
+        chan['lposterm'] = np.zeros(gdat.numbsweploop)
         for strgfeat in gdat.liststrgfeatstar:
             if strgfeat == 'flux':
                 chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.numbener, gdat.numbtime, gdat.maxmnumbstar))
             else:
                 chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.maxmnumbstar))
         
-        gdat.numbsweploop = gdat.numbswep * gdat.numbloop
-        gdat.movetype = np.zeros((gdat.numbsweploop))
-        gdat.accept = np.zeros((gdat.numbsweploop))
-        gdat.outbounds = np.zeros((gdat.numbsweploop))
-        gdat.dt1 = np.zeros((gdat.numbsweploop))
-        gdat.dt2 = np.zeros((gdat.numbsweploop))
-        gdat.dt3 = np.zeros((gdat.numbsweploop))
+        
+        chan['proptype'] = np.zeros((gdat.numbsweploop))
+        chan['booloutb'] =  np.zeros((gdat.numbsweploop))
+        chan['deltllik'] =  np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi, gdat.numbsweploop))
+        chan['accp'] =  np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi, gdat.numbsweploop))
+        chan['dt01'] = np.zeros((gdat.numbsweploop))
+        chan['dt02'] = np.zeros((gdat.numbsweploop))
+        chan['dt03'] = np.zeros((gdat.numbsweploop))
                 
         mlik = -1e100
         for j in gdat.indxswep:
@@ -3936,7 +4060,7 @@ def main( \
             #temptemp = max(50 - 0.1*j, 1)
             temptemp = 1.
             for k in xrange(ntemps):
-                _, _, listchi2totl[k] = listobjtmodl[k].run_sampler(gdat, temptemp, j)
+                _, _, listchi2totl[k] = listobjtmodl[k].run_sampler(gdat, chan, temptemp, j)
         
             lliktotl = -0.5 * listchi2totl[0]
 
@@ -4036,17 +4160,37 @@ def main( \
         # posterior plots
         # plot the condensed catalog
         if gdat.boolplotsave:
+           
+            listtemp = [ \
+                        ['lposterm', '$\log P_*$'], \
+                        ['booloutb', '$b_o$'], \
+                       ]
+            for name, labl in listtemp:
+                plot_varbsamp(gdat, chan[name], labl, name, xaxitype='sweploop')
+            listtemp = [ \
+                        ['numb', '$N_{star}$'], \
+                        ['chi2', '$\chi^2$'], \
+                       ]
+            for name, labl in listtemp:
+                plot_varbsamp(gdat, chan[name], labl, name)
             
-            plot_varbsamp(gdat, chan['numb'], '$N_{star}$', 'numbstar')
-            plot_varbsamp(gdat, chan['chi2'], '$\chi^2$', 'chi2')
+            for u in range(gdat.numbregixaxi):
+                for v in range(gdat.numbregiyaxi):
+                    plot_varbsamp(gdat, chan['accp'][v, u, :], '$b_{a,%d,%d}$' % (v, u), 'accp', xaxitype='sweploop')
+                    
+                    for k in range(3):
+                        indxprop = np.where(chan['proptype'] == k)
+                        temp = np.zeros_like(chan['accp'][v, u, :])
+                        indx = temp[0]
+                        temp[indxprop] = chan['accp'][v, u, indxprop]
+                        plot_varbsamp(gdat, temp, '$b_{a,%d,%d,%d}$' % (v, u, k), 'accp%d%d%02d' % (v, u, k), xaxitype='sweploop')
+                        plot_varbsamp(gdat, chan['deltllik'][v, u, :], '$\Delta\ln P(D|M)_{%d,%d,%d}$' % (v, u, k), 'deltllik%d%d%d' % (v, u, k), xaxitype='sweploop')
+            
             for k in gdat.indxsourcond:
                 plot_varbsamp(gdat, chan['xpos'][:, k], '$x_{%d}$' % k, 'xpos%04d' % k)
                 plot_varbsamp(gdat, chan['ypos'][:, k], '$y_{%d}$' % k, 'ypos%04d' % k)
                 for i in gdat.indxener:
                     for t in gdat.indxtime:
-                        print 'chan[flux]'
-                        summgene(chan['flux'])
-                        print
                         plot_varbsamp(gdat, chan['flux'][:, i, t, k], '$f_{%d,%d,%d}$' % (i, t, k), 'flux%04d%04d%04d' % (i, t, k))
             print 'Plotting the condensed catalog...'
             
@@ -4897,8 +5041,8 @@ def cnfg_time(strgcnfgextnexec=None):
     dictargs['numbener'] = 1
     dictargs['numbtime'] = 3
     
-    dictargs['stdvposiprop'] = 1e-1
-    dictargs['stdvfluxprop'] = 1e-1
+    #dictargs['stdvposiprop'] = 1e-100
+    #dictargs['stdvfluxprop'] = 1e-100
     
     #dictargs['cntpback'] = 225.
     dictargs['truebias'] = 0.
@@ -4908,27 +5052,29 @@ def cnfg_time(strgcnfgextnexec=None):
     #dictargs['truenumbstar'] = 3
     
     dictargs['inittype'] = 'rand'
-    dictargs['numbloop'] = 1
+    dictargs['numbloop'] = 100
     dictargs['numbswep'] = 100
-    dictargs['numbplotfram'] = 10
-    dictargs['trueminmflux'] = 1e4
-    dictargs['fittminmflux'] = 1.
+    dictargs['numbplotfram'] = 2
+    dictargs['trueminmflux'] = 100.
+    dictargs['fittminmflux'] = 100.
+    
+    #dictargs['maxmnumbstar'] = 1
     
     #dictargs['boolcntpbackevol'] = True
-    dictargs['boolstdvevol'] = True
+    #dictargs['boolstdvevol'] = True
     
     dictargs['numbsidexpos'] = 10
     dictargs['numbsideypos'] = 10
     
     #dictargs['boolspre'] = False
-    #dictargs['boolclib'] = False
-    dictargs['verbtype'] = 2
+    dictargs['boolclib'] = False
+    #dictargs['verbtype'] = 2
     
     dictargs['diagmode'] = True
     dictargs['colrstyl'] = 'pcat'
     #dictargs['strgproc'] = 'pcat_20180714_142316_cnfg_time_000200'
     dictargs['strgmode'] = 'pcat'
-    dictargs['probprop'] = np.array([0., 0., 1.])
+    dictargs['probprop'] = np.array([2., 0., 0.])
     #dictargs['probprop'] = np.array([1., 0., 0.])
     dictargs['booltile'] = False
     #dictargs['sizeregi'] = gdat.sizeregi
@@ -4954,7 +5100,8 @@ def cnfg_time(strgcnfgextnexec=None):
     #dictargsvari['nomi']['strgproc'] = 'pcat_20180718_125001_cnfg_time_nomi_010000'
     dictargsvari['nomi']['truenumbstar'] = 3
     dictargsvari['nomi']['maxmnumbstar'] = 20
-    dictargsvari['nomi']['trueminmflux'] = 1e5
+    dictargsvari['nomi']['trueminmflux'] = 1e3
+    dictargsvari['nomi']['trueminmflux'] = 1e3
     labldata = np.zeros((1, 3), dtype=object)
     for t in range(3):
         labldata[0, t] = 'Time bin %d' % t
