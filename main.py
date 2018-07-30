@@ -4523,7 +4523,8 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
         print 'featcond[:, i, gdat.indxxpos]'
         summgene(featcond[:, i, gdat.indxxpos])
         if (featcond[:, i, gdat.indxflux] - np.mean(featcond[:, i, gdat.indxflux]) == 0.).all():
-            raise Exception('')
+            print 'Warning! condensed catalog flux uncertainties vanish!'
+            #raise Exception('')
         # temp -- check zeros here, np.nonzero(featcond[:, i, gdat.indxypos])
 
         assert xpos.size == ypos.size
