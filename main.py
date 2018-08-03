@@ -462,11 +462,20 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
         for xt, yt in zip(x, y):
             print xt, yt
 
-    ix = np.ceil(x).astype(np.int32)
+    ix = np.floor(x).astype(np.int32)
     dx = ix - x
-    iy = np.ceil(y).astype(np.int32)
+    iy = np.floor(y).astype(np.int32)
     dy = iy - y
     
+    print 'heeey'
+    print 'x'
+    print x
+    print 'y'
+    print y
+    print 'ix'
+    print ix
+    print 'iy'
+    print iy
     # construct the design matrix
     if gdat.boolspre:
         desimatr = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, \
@@ -928,18 +937,20 @@ def make_cmap(seq):
     return matplotlib.colors.LinearSegmentedColormap('CustomMap', colrdict)
 
 
-def plot_psfn(gdat, ix, iy, clib=None):
+def plot_psfn(gdat, clib=None):
     
     print 'Plotting the PSF...'
+    
+    ix = 0
+    iy = 0
 
+    xpos = np.array([(gdat.numbsidepsfn + 1.) / 2.])
+    ypos = np.array([(gdat.numbsidepsfn + 1.) / 2.])
+    flux = np.ones((gdat.numbener, gdat.numbtime, 1))
     if gdat.boolspre:
-        xpos = np.array([gdat.numbsidepsfn / 2. + ix], dtype=np.float32)
-        ypos = np.array([gdat.numbsidepsfn / 2. + iy], dtype=np.float32)
-        flux = np.ones((gdat.numbener, gdat.numbtime, 1), dtype=np.float32)
-    else:
-        xpos = np.array([gdat.numbsidepsfn / 2. + ix])
-        ypos = np.array([gdat.numbsidepsfn / 2. + iy])
-        flux = np.ones((gdat.numbener, gdat.numbtime, 1))
+        xpos = xpos.astype(np.float32)
+        ypos = ypos.astype(np.float32)
+        flux = flux.astype(np.float32)
     cntpback = np.zeros((gdat.numbsidepsfn, gdat.numbsidepsfn))
     sizeimag = [gdat.numbsidepsfn, gdat.numbsidepsfn]
     
@@ -1467,6 +1478,9 @@ def main( \
          # numpy array containing the data counts
          cntpdata=None, \
         
+         # weight
+         weig=None, \
+
          # scalar bias
          bias=None, \
          
@@ -1597,9 +1611,6 @@ def main( \
          # color style
          colrstyl='lion', \
 
-         # boolean flag whether to test the PSF
-         testpsfn=False, \
-         
          # string to indicate the ingredients of the photometric model
          # 'star' for star only, 'stargalx' for star and galaxy
          strgmodl='star', \
@@ -1769,7 +1780,8 @@ def main( \
             raise Exception('Input image should be four dimensional.')
         
         gdat.vari = gdat.cntpdata / gdat.gain
-        gdat.weig = 1. / gdat.vari # inverse variance
+        if gdat.weig == None:
+            gdat.weig = 1. / gdat.vari # inverse variance
         
         if not np.isfinite(gdat.cntpdata).all() or np.amin(gdat.cntpdata) < 0.:
             print 'gdat.cntpdata'
@@ -1906,11 +1918,8 @@ def main( \
 
         # plots
         ## PSF
-        if False:
-        #if gdat.boolplot and testpsfn:
-            plot_psfn(gdat, np.random.randn(), np.random.randn(), \
-                      clib=gdatnotp.clibeval, \
-                      )
+        if gdat.boolplot:
+            plot_psfn(gdat, clib=gdatnotp.clibeval)
         
         ## data
         if False: 
@@ -2476,6 +2485,23 @@ def main( \
                                 plt.savefig(gdat.pathdatartag + '%s_cntpdata%04d%04d_fram%04d.' % (gdat.rtag, i, t, jj) + gdat.strgplotfile)
                                 plt.close()
 
+                                # point source map
+                                figr, axis = plt.subplots()
+                                tick, labl, vmin, vmax = retr_cbar(gdat, 'data')
+                                imagscal = retr_imagscal(gdat, cntpmodl[i, :, :, t] - gdat.cntpback)
+                                imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
+                                ## overplot point sources
+                                supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                                
+                                setp_imaglimt(gdat, axis)
+                                cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
+                                cbar = figr.colorbar(imag, cax=cbaxes) 
+                                cbar.set_ticks(tick)
+                                cbar.set_ticklabels(labl)
+                                plt.tight_layout()
+                                plt.savefig(gdat.pathdatartag + '%s_cntppnts%04d%04d_fram%04d.' % (gdat.rtag, i, t, jj) + gdat.strgplotfile)
+                                plt.close()
+                                
                                 # residual map
                                 figr, axis = plt.subplots()
                                 tick, labl, vmin, vmax = retr_cbar(gdat, 'resi')
@@ -2485,7 +2511,7 @@ def main( \
                                 supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
                                 
                                 setp_imaglimt(gdat, axis)
-                                cbaxes = figr.add_axes([0.83, 0.1, 0.03, 0.8]) 
+                                cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
                                 cbar = figr.colorbar(imag, cax=cbaxes) 
                                 #cbar = plt.colorbar(axis, cax=cbaxes) 
                                 #cbar = plt.colorbar(imag, ax=axis, fraction=0.05, aspect=15)
@@ -2657,8 +2683,8 @@ def main( \
                             dlogP[regiony, regionx] += proposal.factor
                         
                         chan['deltllik'][:, :, gdat.thisindxswep] = llikprop - llik
-                        chan['stdvposiprop'][:, :, gdat.thisindxswep] = gdat.stdvposiprop
-                        chan['stdvfluxprop'][:, :, gdat.thisindxswep] = gdat.stdvfluxprop
+                        chan['stdvposiprop'][gdat.thisindxswep] = gdat.stdvposiprop
+                        chan['stdvfluxprop'][gdat.thisindxswep] = gdat.stdvfluxprop
                         
                         if gdat.verbtype > 1:
                             print 'llikprop'
@@ -2768,6 +2794,10 @@ def main( \
                             idx_move_a = proposal.idx_move.compress(acceptprop)
                             self.stars[:, idx_move_a] = starsp
                             
+                            if gdat.diagmode:
+                                if (proposal.starsp[gdat.indxflux, :] - np.mean(proposal.starsp[gdat.indxflux, :]) == 0.).all():
+                                    raise Exception('')
+                                    
                             if gdat.verbtype > 1:
                                 print 'proposal.idx_move is not None'
                                 print 'proposal.starsp'
@@ -3171,7 +3201,13 @@ def main( \
                 idx_reg = self.idx_parity_stars()
                 fluxspmrtotl = 0
                 low_n = 0
-                idx_bright = idx_reg.take(np.flatnonzero(self.stars[gdat.indxflux, :].take(idx_reg) > 2*gdat.fittminmflux)) # in region!
+                if gdat.priotype == 'prio':
+                    idx_bright = idx_reg[np.where(self.stars[gdat.indxflux[0, 0], idx_reg] > 2. * gdat.fittminmflux)]
+                else:
+                    print 'idx_reg'
+                    print idx_reg
+                    print 'HACKING'
+                    idx_bright = idx_reg[np.where((self.stars[gdat.indxflux, :] > 2. * gdat.fittminmflux).all(axis=0).all(axis=0))]
                 numbbrgt = idx_bright.size
                 
                 if gdat.booltile:
@@ -3215,13 +3251,14 @@ def main( \
                         summgene(stars0)
                     x0 = stars0[gdat.indxxpos, :]
                     y0 = stars0[gdat.indxypos, :]
-                    f0 = stars0[gdat.indxflux[0, 0], :]
-                    # temp -- based on 0, 0
-                    fluxnormminm = f0 / gdat.fittminmflux
                     if gdat.priotype == 'info':
+                        # temp -- based on 0, 0
+                        f0 = stars0[gdat.indxflux[0, 0], :]
                         varbrandtemp = np.random.uniform(size=numbspmr)
                     else:
                         varbrandtemp = np.random.uniform(size=numbspmr * gdat.numbflux).reshape((gdat.numbener, gdat.numbtime, numbspmr))
+                        f0 = stars0[gdat.indxflux, :]
+                    fluxnormminm = f0 / gdat.fittminmflux
                     
                     frac = (1. / fluxnormminm + varbrandtemp * (1. - 2. / fluxnormminm))
                     
@@ -3229,13 +3266,13 @@ def main( \
                         frac = frac.astype(np.float32)
                     
                     # temp
-                    dfrcenti = 1e-3 * np.random.randn(gdat.numbflux * numbspmr).reshape((gdat.numbener, gdat.numbtime, numbspmr))
-                    dfrcenti[0, 0, :] = 0.
                     starsp = np.empty_like(stars0)
                     if gdat.priotype == 'info':
-                        fractemp = frac
-                    else:
+                        dfrcenti = 1e-3 * np.random.randn(gdat.numbflux * numbspmr).reshape((gdat.numbener, gdat.numbtime, numbspmr))
+                        dfrcenti[0, 0, :] = 0.
                         fractemp = frac[0, 0, :]
+                    else:
+                        fractemp = frac[0, 0]
                     starsp[gdat.indxxpos, :] = x0 + ((1. - fractemp) * dx)
                     starsp[gdat.indxypos, :] = y0 + ((1. - fractemp) * dy)
                     
@@ -3257,14 +3294,16 @@ def main( \
                         starsp[gdat.indxflux, :] = f0 * frac
                         
                     starsb = np.empty_like(stars0)
-                    starsb[gdat.indxxpos, :] = x0 - fractemp * dx
-                    starsb[gdat.indxypos, :] = y0 - fractemp * dy
-                    
+                    if gdat.priotype == 'info':
+                        starsb[gdat.indxxpos, :] = x0 - fractemp * dx
+                        starsb[gdat.indxypos, :] = y0 - fractemp * dy
+                    else:
+                        starsb[gdat.indxxpos, :] = x0 - frac[0, 0] * dx
+                        starsb[gdat.indxypos, :] = y0 - frac[0, 0] * dy
+
                     if gdat.verbtype > 1:
                         print 'starsb[gdat.indxflux, :]'
                         summgene(starsb[gdat.indxflux, :])
-                        print 'starsb[gdat.indxflux[0, 0], :]'
-                        summgene(starsb[gdat.indxflux[0, 0], :])
                     
                     if gdat.priotype == 'info':
                         starsb[gdat.indxflux, :] = f0 * (1. - fracenti)
@@ -3278,8 +3317,6 @@ def main( \
                         summgene(frac)
                         print 'starsb[gdat.indxflux, :]'
                         summgene(starsb[gdat.indxflux, :])
-                        print 'starsb[gdat.indxflux[0, 0], :]'
-                        summgene(starsb[gdat.indxflux[0, 0], :])
                         if gdat.priotype == 'info':
                             print 'fracenti'
                             summgene(fracenti)
@@ -3324,6 +3361,8 @@ def main( \
                             if (starsp[gdat.indxflux, :] < gdat.fittminmflux).any():
                                 print 'starsp[gdat.indxflux, :]'
                                 summgene(starsp[gdat.indxflux, :])
+                                print 'gdat.fittminmflux'
+                                print gdat.fittminmflux
                                 raise Exception('')
                             
                             if gdat.priotype == 'info':
@@ -3378,11 +3417,19 @@ def main( \
                     stars0 = self.stars.take(idx_move, axis=1)
                     starsk = self.stars.take(idx_kill, axis=1)
         
-                    f0 = stars0[gdat.indxflux[0, 0], :]
-                    fk = starsk[gdat.indxflux[0, 0], :]
+                    if gdat.priotype == 'info':
+                        f0 = stars0[gdat.indxflux[0, 0], :]
+                        fk = starsk[gdat.indxflux[0, 0], :]
+                    else:
+                        f0 = stars0[gdat.indxflux, :]
+                        fk = starsk[gdat.indxflux, :]
                     fluxspmrtotl = f0 + fk
                     fluxnormminm = fluxspmrtotl / gdat.fittminmflux
-                    frac = f0 / fluxspmrtotl
+                    
+                    if gdat.priotype == 'info':
+                        frac = f0 / fluxspmrtotl
+                    else:
+                        frac = f0[0, 0] / fluxspmrtotl[0, 0]
                     
                     if gdat.priotype == 'info':
                         dfrcenti = (stars0[gdat.indxflux, :] / (stars0[gdat.indxflux, :] + stars0[gdat.indxflux[0, 0], :]) - frac)
@@ -3423,12 +3470,20 @@ def main( \
                     if gdat.priotype == 'info':
                         lprienti = -np.sqrt(2. * np.pi) * 1e-3 * (gdat.numbflux - 1) - 0.5 * np.sum(dfrcenti**2) / 1e-6
                         factor += lprienti 
+                    else:
+                        factor = np.sum(factor)
                     if not boolsplt:
                         factor *= -1
                         factor += self.penalty
                     else:
                         factor -= self.penalty
                     proposal.set_factor(np.sum(factor))
+                   
+                    if gdat.diagmode:
+                        if factor.size != 1 or not np.isfinite(factor):
+                            print 'factor'
+                            print factor
+                            raise Exception('')
                 return proposal
         
             
@@ -4095,8 +4150,6 @@ def main( \
                 for strgfeat in gdat.liststrgfeatstar:
                     indx = getattr(gdat, 'indx' + strgfeat)
                     chan[strgfeat][j-gdat.numbswepburn, :] = listobjtmodl[0].stars[indx, :]
-                #print 'listobjtmodl[0].stars[gdat.indxflux[0, 0], :5]'
-                #print listobjtmodl[0].stars[gdat.indxflux[0, 0], :5]
                 #print 'chan[flux][j-gdat.numbswepburn, 0, 0, :5]'
                 #print chan['flux'][j-gdat.numbswepburn, 0, 0, :5]
                 #print 'chan[flux][j-gdat.numbswepburn, 0, 1, :5]'
@@ -4183,15 +4236,20 @@ def main( \
 
             for u in range(gdat.numbregixaxi):
                 for v in range(gdat.numbregiyaxi):
-                    plot_varbsamp(gdat, chan['accp'][v, u, :], '$b_{a,%d,%d}$' % (v, u), 'accp', xaxitype='sweploop')
+                    retr_meanmove(chan['accp'][v, u, :])
+                    plot_varbsamp(gdat, retr_meanmove(chan['accp'][v, u, :]), '$A_{%d,%d}$' % (v, u), 'accp', xaxitype='sweploop')
                     
                     for k in range(3):
-                        indxprop = np.where(chan['proptype'] == k)
+                        indxprop = np.where(chan['proptype'] == k)[0]
                         temp = np.zeros_like(chan['accp'][v, u, :])
-                        indx = temp[0]
-                        temp[indxprop] = chan['accp'][v, u, indxprop]
-                        plot_varbsamp(gdat, temp, '$b_{a,%d,%d,%d}$' % (v, u, k), 'accp%d%d%02d' % (v, u, k), xaxitype='sweploop')
-                        plot_varbsamp(gdat, chan['deltllik'][v, u, :], '$\Delta\ln P(D|M)_{%d,%d,%d}$' % (v, u, k), 'deltllik%d%d%d' % (v, u, k), xaxitype='sweploop')
+                        print 'chan[accp][v, u, :]'
+                        summgene(chan['accp'][v, u, :])
+                        print 'chan[accp][v, u, indxprop]'
+                        summgene(chan['accp'][v, u, indxprop])
+                        #indx = temp[0]
+                        temp[indxprop] = retr_meanmove(chan['accp'][v, u, indxprop])
+                        plot_varbsamp(gdat, temp, '$A_{%d,%d,%d}$' % (v, u, k), 'accp%d%d%02d' % (v, u, k), xaxitype='sweploop')
+                        plot_varbsamp(gdat, chan['deltllik'][v, u, indxprop], '$\Delta\ln P(D|M)_{%d,%d,%d}$' % (v, u, k), 'deltllik%d%d%d' % (v, u, k), xaxitype='sweploop')
             
             for k in gdat.indxsourcond:
                 plot_varbsamp(gdat, chan['xpos'][:, k], '$x_{%d}$' % k, 'xpos%04d' % k)
@@ -4232,6 +4290,19 @@ def main( \
                 os.system(cmnd)
         print 'Done.'
     
+
+def retr_meanmove(arry, numbkern=10):
+
+    arrymean = np.empty_like(arry)
+    numb = arry.size
+    indx = np.arange(numb)
+    for k in indx:
+        indxloww = max(0, k - numbkern)
+        arrymean[k] = np.mean(arry[indxloww:k+1])
+
+    return arrymean
+
+
 
 def retr_catlseed(rtag, pathdata, pathdatartag=None):
     
@@ -4743,7 +4814,6 @@ def cnfg_defa():
          colrstyl='pcat', \
          #boolplotsave=False, \
          #diagmode=True, \
-         testpsfn=True, \
          bias=bias, \
          gain=gain, \
          #verbtype=2, \
@@ -5224,7 +5294,6 @@ def cnfg_ener():
          back=back, \
          
          bias=truebias, \
-         #testpsfn=True, \
         )
          
 #import astroquery
