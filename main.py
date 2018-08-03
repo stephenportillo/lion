@@ -2657,6 +2657,8 @@ def main( \
                             dlogP[regiony, regionx] += proposal.factor
                         
                         chan['deltllik'][:, :, gdat.thisindxswep] = llikprop - llik
+                        chan['stdvposiprop'][:, :, gdat.thisindxswep] = gdat.stdvposiprop
+                        chan['stdvfluxprop'][:, :, gdat.thisindxswep] = gdat.stdvfluxprop
                         
                         if gdat.verbtype > 1:
                             print 'llikprop'
@@ -2860,7 +2862,7 @@ def main( \
                             #summgene(chan['accp'])
                             #print 'chan[accp][:, :, indxsweplogg]'
                             #summgene(chan['accp'][:, :, indxsweplogg])
-                            factprop = 2**(np.mean(chan['accp'][:, :, indxsweplogg[indxtemp]]) - 0.25)
+                            factprop = 1.1**(np.mean(chan['accp'][:, :, indxsweplogg[indxtemp]]) - 0.25)
                             gdat.stdvfluxprop *= factprop
                             gdat.stdvposiprop *= factprop
                             print 'factprop'
@@ -4047,6 +4049,8 @@ def main( \
         
         chan['proptype'] = np.zeros((gdat.numbsweploop))
         chan['booloutb'] =  np.zeros((gdat.numbsweploop))
+        chan['stdvfluxprop'] =  np.zeros((gdat.numbsweploop))
+        chan['stdvposiprop'] =  np.zeros((gdat.numbsweploop))
         chan['deltllik'] =  np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi, gdat.numbsweploop))
         chan['accp'] =  np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi, gdat.numbsweploop))
         chan['dt01'] = np.zeros((gdat.numbsweploop))
@@ -4164,6 +4168,8 @@ def main( \
             listtemp = [ \
                         ['lposterm', '$\log P_*$'], \
                         ['booloutb', '$b_o$'], \
+                        ['stdvfluxprop', '$\sigma_{p,f}$'], \
+                        ['stdvposiprop', '$\sigma_{p,r}$'], \
                        ]
             for name, labl in listtemp:
                 plot_varbsamp(gdat, chan[name], labl, name, xaxitype='sweploop')
@@ -4173,7 +4179,8 @@ def main( \
                        ]
             for name, labl in listtemp:
                 plot_varbsamp(gdat, chan[name], labl, name)
-            
+           
+
             for u in range(gdat.numbregixaxi):
                 for v in range(gdat.numbregiyaxi):
                     plot_varbsamp(gdat, chan['accp'][v, u, :], '$b_{a,%d,%d}$' % (v, u), 'accp', xaxitype='sweploop')
