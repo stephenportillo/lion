@@ -1508,6 +1508,7 @@ def main( \
          boolspre=True, \
             
          labldata=None, \
+         labldataaxis=None, \
 
          # run tag to be post-processed
          strgproc=None, \
@@ -5180,9 +5181,15 @@ def cnfg_time(strgcnfgextnexec=None):
     dictargsvari['nomi']['maxmnumbstar'] = 20
     dictargsvari['nomi']['trueminmflux'] = 1e3
     dictargsvari['nomi']['trueminmflux'] = 1e3
+    dictargsvari['nomi']['indxdatatotl'] = np.array([3, 5, 6])
     labldata = np.zeros((1, 3), dtype=object)
     for t in range(3):
         labldata[0, t] = 'Time bin %d' % t
+    labldataaxis = np.zeros((1, 3), dtype=object)
+    for t in range(3):
+        labldata[0, t] = 'Time bin %d' % t
+        labldata[0, t] = 'Time bin %d' % t
+    dictargsvari['nomi']['indxdatatotl'] = np.arange(3, 6)
     
     dictargsvari['sing']['truenumbstar'] = 1
     dictargsvari['sing']['initxpos'] = np.array([4.5])
