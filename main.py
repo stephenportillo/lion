@@ -1019,36 +1019,37 @@ def retr_psfnbili(gdat, i, xpos, ypos):
     iix = iix % gdat.factusam
     iiy = iiy % gdat.factusam
     
-    print 'retr_psfnbili'
-    print 'xpos'
-    print xpos
-    print 'ypos'
-    print ypos
-    print 'iix'
-    print iix
-    print 'iiy'
-    print iiy
-    print 'dix'
-    print dix
-    print 'diy'
-    print diy
+    #print 'retr_psfnbili'
+    #print 'xpos'
+    #print xpos
+    #print 'ypos'
+    #print ypos
+    #print 'iix'
+    #print iix
+    #print 'iiy'
+    #print iiy
+    #print 'dix'
+    #print dix
+    #print 'diy'
+    #print diy
     
     f00 = gdat.cntppsfnusam[i, iiy-1:gdat.numbsidepsfnusam:gdat.factusam,   iix-1:gdat.numbsidepsfnusam:gdat.factusam]
     f01 = gdat.cntppsfnusam[i, iiy:gdat.numbsidepsfnusam:gdat.factusam, iix-1:gdat.numbsidepsfnusam:gdat.factusam]
     f10 = gdat.cntppsfnusam[i, iiy-1:gdat.numbsidepsfnusam:gdat.factusam,   iix:gdat.numbsidepsfnusam:gdat.factusam]
     f11 = gdat.cntppsfnusam[i, iiy:gdat.numbsidepsfnusam:gdat.factusam, iix:gdat.numbsidepsfnusam:gdat.factusam]
     psfnbili = f00 * (1. - dix) * (1. - diy) + f10 * dix * (1. - diy) + f01 * (1. - dix) * diy + f11 * dix * diy
-    print 'f00'
-    print f00
-    print 'f01'
-    print f01
-    print 'f10'
-    print f10
-    print 'f11'
-    print f11
-    print 'psfnbili'
-    print psfnbili
-    print 
+    
+    #print 'f00'
+    #print f00
+    #print 'f01'
+    #print f01
+    #print 'f10'
+    #print f10
+    #print 'f11'
+    #print f11
+    #print 'psfnbili'
+    #print psfnbili
+    #print 
 
     return psfnbili
 
@@ -2019,6 +2020,8 @@ def main( \
         if gdat.boolplot and gdat.boolplotinit:
             
             # background
+            print 'gdat.cntpback'
+            summgene(gdat.cntpback)
             plot_imag(gdat, gdat.cntpback, 'data', 'cntpback')
 
             ## PSF
@@ -2988,7 +2991,7 @@ def main( \
                         if proposal.factor != None and not np.isfinite(proposal.factor).any():
                             print 'Warning! proposal.factor is not finite!'
                             #raise Exception('')
-                    if proposal.factor != None and proposal.factor != []:
+                    if proposal.factor is not None and proposal.factor != []:
                         chan['lposterm'][gdat.thisindxswlp] = proposal.factor
 
                     if gdat.diagmode:
@@ -4907,6 +4910,8 @@ def cnfg_defa():
     #truecatl = read_catl(gdat, path)
     #bias = 0.
     
+    cntpback = np.zeros((cntpdata.shape[1], cntpdata.shape[2])) + 200.
+
     #liststrgener = ['rbnd']
     #read_psfn(pathdata, strgdata, liststrgener)
     #strgdata = 'sdss0921'
