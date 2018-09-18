@@ -3,8 +3,10 @@ import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
 import h5py, datetime
 import matplotlib 
-import seaborn as sns
-sns.set(context='poster', style='ticks', color_codes=True)
+
+# temp
+#import seaborn as sns
+#sns.set(context='poster', style='ticks', color_codes=True)
 
 from scipy import ndimage
 
@@ -965,6 +967,10 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
     
     cntpmodlpsfn = eval_modl(gdat, xpos, ypos, flux, cntpback, clib=clib, sizeimag=sizeimag)
     
+    if gdat.exprtype == 'tess':
+        vmax = 0.5
+    else:
+        vmax = None
     #print 'ix'
     #print ix
     #print 'iy'
@@ -973,7 +979,7 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
     for i in gdat.indxener:
         
         figr, axis = plt.subplots(figsize=(20, 20))
-        imag = axis.imshow(cntpmodlpsfn[i, :, :, 0], interpolation='nearest', origin='lower', cmap='Greys_r', vmin=0, vmax=0.5)
+        imag = axis.imshow(cntpmodlpsfn[i, :, :, 0], interpolation='nearest', origin='lower', cmap='Greys_r', vmin=0, vmax=vmax)
         axis.scatter(gdat.numbsidepsfn/2, gdat.numbsidepsfn/2, marker='x', s=100, color='b')
         axis.scatter(xpos, ypos, marker='+', s=100, color='g')
         axis.set_title('x,y = %.3g %.3g' % (xpos, ypos)) 
@@ -1591,7 +1597,9 @@ def main( \
 
          # data path
          pathdatartag=None, \
-         
+
+         # a string defining the experiment type
+         exprtype=None, \
             
          boolframplotenti=False, \
 
@@ -4939,6 +4947,8 @@ def cnfg_defa():
     #else:
     #    lablrefr = ['HST 606W']
     #    colrrefr = ['m']
+   
+    exprtype = 'sdss'
     
     bias = 0.
     gain = 1.
@@ -4952,8 +4962,10 @@ def cnfg_defa():
          #lablrefr=lablrefr, \
          #colrrefr=colrrefr, \
         
-         cntpback=cntpback, \
+         #cntpback=cntpback, \
         
+         exprtype=exprtype, \
+
          sizeregi=20, \
          #numbswep=200, \
          colrstyl='pcat', \
