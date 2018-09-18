@@ -3,8 +3,10 @@ import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
 import h5py, datetime
 import matplotlib 
-import seaborn as sns
-sns.set(context='poster', style='ticks', color_codes=True)
+
+# temp
+#import seaborn as sns
+#sns.set(context='poster', style='ticks', color_codes=True)
 
 from scipy import ndimage
 
@@ -965,6 +967,10 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
     
     cntpmodlpsfn = eval_modl(gdat, xpos, ypos, flux, cntpback, clib=clib, sizeimag=sizeimag)
     
+    if gdat.exprtype == 'tess':
+        vmax = 0.5
+    else:
+        vmax = None
     #print 'ix'
     #print ix
     #print 'iy'
@@ -973,7 +979,7 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
     for i in gdat.indxener:
         
         figr, axis = plt.subplots(figsize=(20, 20))
-        imag = axis.imshow(cntpmodlpsfn[i, :, :, 0], interpolation='nearest', origin='lower', cmap='Greys_r', vmin=0, vmax=0.5)
+        imag = axis.imshow(cntpmodlpsfn[i, :, :, 0], interpolation='nearest', origin='lower', cmap='Greys_r', vmin=0, vmax=vmax)
         axis.scatter(gdat.numbsidepsfn/2, gdat.numbsidepsfn/2, marker='x', s=100, color='b')
         axis.scatter(xpos, ypos, marker='+', s=100, color='g')
         axis.set_title('x,y = %.3g %.3g' % (xpos, ypos)) 
@@ -1019,36 +1025,37 @@ def retr_psfnbili(gdat, i, xpos, ypos):
     iix = iix % gdat.factusam
     iiy = iiy % gdat.factusam
     
-    print 'retr_psfnbili'
-    print 'xpos'
-    print xpos
-    print 'ypos'
-    print ypos
-    print 'iix'
-    print iix
-    print 'iiy'
-    print iiy
-    print 'dix'
-    print dix
-    print 'diy'
-    print diy
+    #print 'retr_psfnbili'
+    #print 'xpos'
+    #print xpos
+    #print 'ypos'
+    #print ypos
+    #print 'iix'
+    #print iix
+    #print 'iiy'
+    #print iiy
+    #print 'dix'
+    #print dix
+    #print 'diy'
+    #print diy
     
     f00 = gdat.cntppsfnusam[i, iiy-1:gdat.numbsidepsfnusam:gdat.factusam,   iix-1:gdat.numbsidepsfnusam:gdat.factusam]
     f01 = gdat.cntppsfnusam[i, iiy:gdat.numbsidepsfnusam:gdat.factusam, iix-1:gdat.numbsidepsfnusam:gdat.factusam]
     f10 = gdat.cntppsfnusam[i, iiy-1:gdat.numbsidepsfnusam:gdat.factusam,   iix:gdat.numbsidepsfnusam:gdat.factusam]
     f11 = gdat.cntppsfnusam[i, iiy:gdat.numbsidepsfnusam:gdat.factusam, iix:gdat.numbsidepsfnusam:gdat.factusam]
     psfnbili = f00 * (1. - dix) * (1. - diy) + f10 * dix * (1. - diy) + f01 * (1. - dix) * diy + f11 * dix * diy
-    print 'f00'
-    print f00
-    print 'f01'
-    print f01
-    print 'f10'
-    print f10
-    print 'f11'
-    print f11
-    print 'psfnbili'
-    print psfnbili
-    print 
+    
+    #print 'f00'
+    #print f00
+    #print 'f01'
+    #print f01
+    #print 'f10'
+    #print f10
+    #print 'f11'
+    #print f11
+    #print 'psfnbili'
+    #print psfnbili
+    #print 
 
     return psfnbili
 
@@ -1590,7 +1597,9 @@ def main( \
 
          # data path
          pathdatartag=None, \
-         
+
+         # a string defining the experiment type
+         exprtype=None, \
             
          boolframplotenti=False, \
 
@@ -2988,7 +2997,7 @@ def main( \
                         if proposal.factor != None and not np.isfinite(proposal.factor).any():
                             print 'Warning! proposal.factor is not finite!'
                             #raise Exception('')
-                    if proposal.factor != None and proposal.factor != []:
+                    if proposal.factor is not None and proposal.factor != []:
                         chan['lposterm'][gdat.thisindxswlp] = proposal.factor
 
                     if gdat.diagmode:
@@ -4907,6 +4916,11 @@ def cnfg_defa():
     #truecatl = read_catl(gdat, path)
     #bias = 0.
     
+    # temp
+    print 'cntpdata'
+    summgene(cntpdata)
+    cntpback = np.zeros((cntpdata.shape[1], cntpdata.shape[2])) + 200.
+
     #liststrgener = ['rbnd']
     #read_psfn(pathdata, strgdata, liststrgener)
     #strgdata = 'sdss0921'
@@ -4934,6 +4948,8 @@ def cnfg_defa():
     #else:
     #    lablrefr = ['HST 606W']
     #    colrrefr = ['m']
+   
+    exprtype = 'sdss'
     
     bias = 0.
     gain = 1.
@@ -4947,8 +4963,10 @@ def cnfg_defa():
          #lablrefr=lablrefr, \
          #colrrefr=colrrefr, \
         
-         cntpback=cntpback, \
+         #cntpback=cntpback, \
         
+         exprtype=exprtype, \
+
          sizeregi=20, \
          #numbswep=200, \
          colrstyl='pcat', \
