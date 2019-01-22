@@ -21,7 +21,9 @@ import networkx
 
 import time
 import astropy.wcs
-import astropy.io.fits
+import astropy.io.fits as fits
+
+import scipy.misc
 
 import sys, os, warnings
 
@@ -392,7 +394,7 @@ def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
 			return goodmatch, matches
 
 
-def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsypos=0, weig=None, cntprefr=None, clib=None, sizeimag=None):
+def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntprefr=None, clib=None, sizeimag=None):
         
     if gdat.verbtype > 1:
         print 'eval_modl()'
@@ -409,17 +411,18 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
     else:
         boolretrdoub = False
     
+    # define image and region size for PSF plotting
     if sizeimag is None:
         sizeimag = gdat.sizeimag
-
+        sizeregi = gdat.sizeregi
+    else:
+        sizeregi = max(sizeimag[0], sizeimag[1])
+    
     if weig is None:
         if gdat.boolspre:
             weig = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
         else:
             weig = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime])
-    
-    if sizeregi is None:
-        sizeregi = max(sizeimag[0], sizeimag[1])
     
     if gdat.diagmode:
         pass
@@ -563,11 +566,11 @@ def eval_modl(gdat, x, y, f, cntpback, sizeregi=None, marg=0, offsxpos=0, offsyp
                     summgene(weig)
                 
                 for v in xrange(gdat.numbregiyaxi):
-                    y0 = max(v*sizeregi - offsypos - marg, 0)
-                    y1 = min((v+1)*sizeregi - offsypos + marg, sizeimag[1])
+                    y0 = max(v*sizeregi - offsypos - gdat.marg, 0)
+                    y1 = min((v+1)*sizeregi - offsypos + gdat.marg, sizeimag[1])
                     for u in xrange(gdat.numbregixaxi):
-                        x0 = max(u*sizeregi - offsxpos - marg, 0)
-                        x1 = min((u+1)*sizeregi - offsxpos + marg, sizeimag[0])
+                        x0 = max(u*sizeregi - offsxpos - gdat.marg, 0)
+                        x1 = min((u+1)*sizeregi - offsxpos + gdat.marg, sizeimag[0])
                         cntpdifftemp = cntpdiff[y0:y1,x0:x1]
                         chi2temp[v, u] = np.sum(cntpdifftemp**2 * weig[i, y0:y1,x0:x1, t])
                 
@@ -1639,9 +1642,6 @@ def main( \
          strgstat=None, \
          boolstatread=True, \
 
-         # minimum flux of sources
-         #minmflux=100, \
-
          # user-defined time stamp string
          strgtimestmp=None, \
 
@@ -1834,6 +1834,8 @@ def main( \
         print 'gdat.numbswep: ', gdat.numbswep
         print 'gdat.numbsamp: ', gdat.numbsamp
         print 'gdat.numbloop: ', gdat.numbloop
+        print 'gdat.gain: ', gdat.gain
+        print 'gdat.fittminmfux', gdat.fittminmflux
 
         gdat.cmapresi = make_cmapdivg('Red', 'Orange')
         if colrstyl == 'pcat':
@@ -1889,22 +1891,28 @@ def main( \
             gdat.weig = 1. / gdat.vari # inverse variance
         
         if not np.isfinite(gdat.cntpdata).all() or np.amin(gdat.cntpdata) < 0.:
+            print 'Input count map goes either negative or infinite.'
             print 'gdat.cntpdata'
             summgene(gdat.cntpdata)
-            raise Exception('')
+            #raise Exception('')
 
         if not np.isfinite(gdat.vari).all() or np.amin(gdat.vari) < 0.:
-            raise Exception('')
-
-        if not np.isfinite(gdat.weig).all() or np.amin(gdat.weig) < 0.:
-            print 'gdat.vari.dtype'
-            print gdat.vari.dtype
+            print 'Variance map goes either negative or infinite.'
             print 'gdat.vari'
             summgene(gdat.vari)
+            #raise Exception('')
+
+        if not np.isfinite(gdat.weig).all() or np.amin(gdat.weig) < 0.:
+            print 'Weight map goes either negative or infinite.'
             print 'gdat.weig'
             summgene(gdat.weig)
-            raise Exception('')
-
+            #raise Exception('')
+        
+        if gdat.boolspre:
+            if not isinstance(gdat.cntpdata, np.float32):
+                gdat.cntpdata = gdat.cntpdata.astype(np.float32)
+                gdat.weig = gdat.weig.astype(np.float32)
+        
         assert gdat.cntpdata.shape[0] == gdat.cntppsfnusam.shape[0]
 
         if gdat.boolstatread and gdat.strgstat != None and gdat.catlinit != None:
@@ -2446,7 +2454,7 @@ def main( \
                 cntpmodl, gdat.chi2stat = eval_modl(gdat, xposeval, yposeval, fluxeval, self.cntpback, \
                                                                    weig=gdat.weig, cntprefr=cntpresi, \
                                                                    clib=gdatnotp.clibeval, \
-                                                                   sizeregi=gdat.sizeregi, marg=gdat.marg, offsxpos=self.offsxpos, offsypos=self.offsypos)
+                                                                   offsxpos=self.offsxpos, offsypos=self.offsypos)
                 llik = -0.5 * gdat.chi2stat
                 
                 if gdat.diagmode and jj > 0:
@@ -2747,7 +2755,7 @@ def main( \
                         cntpmodldiff, gdat.chi2prop = eval_modl(gdat, proposal.xphon, proposal.yphon, proposal.fphon, cntpbackdiff, \
                                weig=gdat.weig, cntprefr=cntpresi, \
                                clib=gdatnotp.clibeval, \
-                               sizeregi=gdat.sizeregi, marg=gdat.marg, offsxpos=self.offsxpos, offsypos=self.offsypos)
+                               offsxpos=self.offsxpos, offsypos=self.offsypos)
                         llikprop = -0.5 * gdat.chi2prop
                         chan['dt02'][gdat.thisindxswlp] = time.clock() - t2
         
@@ -4891,6 +4899,114 @@ def setp_varbiter(gdat, strgmodltemp, strgvarbtemp, valu):
         except:
             setattr(gdat, strgmodltemp + strgvarbtemp, valu)
    
+
+def cnfg_wise():
+    
+    # read the data
+    #strgdata = 'sdss0921'
+    
+    #gdat = gdatstrt()
+    
+    #gdat.pathlion, pathdata = retr_path()
+    
+    # setup
+    #setp(gdat)
+    
+    # read the data
+    pathdata = os.environ['LION_DATA_PATH'] + '/unwise/unwise-1497p015-w1-img-m.fits'
+    pathweig = os.environ['LION_DATA_PATH'] + '/unwise/unwise-1497p015-w1-std-m.fits'
+    pathpsfn = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.info.fits'
+    pathback = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.mod.fits'
+    print 'Reading %s...' % pathdata
+    cntpdata = fits.open(pathdata)[0].data[None, :, :, None]
+    cntpback = fits.open(pathback)[2].data[None, :, :, None]
+    weig = 1. / fits.open(pathweig)[0].data[None, :, :, None]**2
+    
+    gdat = gdatstrt()
+    gdat.numbener = 1
+    gdat.indxener = [0]
+    gdat.numbsidepsfnusam = 125
+    cntppsfnorig = fits.open(pathpsfn)[3].data[None,:,:]
+    cntppsfnusam = np.empty((gdat.numbener, gdat.numbsidepsfnusam, gdat.numbsidepsfnusam))
+    for i in gdat.indxener:
+        thispsfnorig = cntppsfnorig[i,:,:]
+        origsize = cntppsfnorig.shape[1] # check if square?
+        subssize = 25
+        indxstrt = origsize/2 - subssize/2
+        indxfnsh = origsize/2 + subssize/2 + 1
+        
+        subspsfn = thispsfnorig[indxstrt:indxfnsh,indxstrt:indxfnsh]
+        print 'subspsfn'
+        print subspsfn.shape
+        cntppsfnusam[i,:,:] = scipy.misc.imresize(subspsfn, (125,125), interp='lanczos', mode='F')
+
+    weig[~np.isfinite(weig)] = 0.
+
+    print 'cntpdata'
+    summgene(cntpdata)
+    print 'cntpback'
+    summgene(cntpback)
+    #liststrgener = ['rbnd']
+    #read_psfn(pathdata, strgdata, liststrgener)
+    #strgdata = 'sdss0921'
+    #filepsfn = open(pathdata + strgdata + '_psfn.txt')
+    #numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
+    #filepsfn.close()
+    #cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1)
+    #cntppsfn = cntppsfn[None, :, :] 
+    #numbtime = 1
+    #numbener = 1
+
+    #numbsidexpos = 100
+    #numbsideypos = 100
+
+    #strgmodl = 'star'
+    #datatype = 'mock'
+    #
+    #catlrefr = []
+
+    #if datatype == 'mock':
+    #    catlrefr.append(truecatl)
+    #    #catlrefr[0]['flux'] = catlrefr[0]['flux'][None, None, :]
+    #    lablrefr = ['True']
+    #    colrrefr = ['g']
+    #else:
+    #    lablrefr = ['HST 606W']
+    #    colrrefr = ['m']
+   
+    factusam = 5
+
+    #exprtype = 'sdss'
+    
+    main( \
+         cntpdata=cntpdata, \
+         cntppsfnusam=cntppsfnusam, \
+         factusam=factusam, \
+         
+         weig=weig, \
+
+         #catlrefr=catlrefr, \
+         #lablrefr=lablrefr, \
+         #colrrefr=colrrefr, \
+        
+         #cntpback=cntpback, \
+        
+         fittminmflux=10., \
+
+         #exprtype='wise', exprtype, \
+
+         #sizeregi=20, \
+         #numbswep=200, \
+         #colrstyl='pcat', \
+         boolplotplot=False, \
+         #diagmode=True, \
+         fluxzero=22.5, \
+         #verbtype=2, \
+         #numbswep=100, \
+         #numbloop=1000, \
+         priotype = 'prio'
+        )
+
 
 def cnfg_defa():
     
