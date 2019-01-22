@@ -664,16 +664,14 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                     summgene(weigtemp)
                     print 'sizeregi'
                     print sizeregi
-                    print 'marg'
-                    print marg
+                    print 'gdat.marg'
+                    print gdat.marg
                     print 'offsxpos'
                     print offsxpos
                     print 'offsypos'
                     print offsypos
                     print 'gdat.booltile'
                     print gdat.booltile
-                    
-                if gdat.verbtype > 2:
                     print 'desimatr[i, t, :, :].flags[C_CONTIGUOUS]'
                     print desimatr[i, t, :, :].flags['C_CONTIGUOUS']
                     print 'gdat.coefspix[i, :, :].flags[C_CONTIGUOUS]'
@@ -689,8 +687,9 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                     print 'chi2temp.flags[C_CONTIGUOUS]'
                     print chi2temp.flags['C_CONTIGUOUS']
 
-                clib(sizeimag[0], sizeimag[1], numbphon, gdat.numbsidepsfn, gdat.numbparaspix, desimatr[i, t, :, :], gdat.coefspix[i, :, :], cntpmodlstmp, ix, iy, cntpmodltemp, \
-                                                                                    cntprefrtemp, weigtemp, chi2temp, sizeregi, marg, offsxpos, offsypos, gdat.booltile)
+                clib(sizeimag[0], sizeimag[1], numbphon, gdat.numbsidepsfn, gdat.numbparaspix, desimatr[i, t, :, :], \
+                                                               gdat.coefspix[i, :, :], cntpmodlstmp, ix, iy, cntpmodltemp, \
+                                                               cntprefrtemp, weigtemp, chi2temp, sizeregi, gdat.marg, offsxpos, offsypos, gdat.booltile)
                
                 # temp
                 #chi2temp = np.array([[np.sum((cntprefrtemp - cntpmodltemp)**2 * weig[i, :, :, t])]]).astype(np.float64)
@@ -1625,8 +1624,7 @@ def main( \
          booltile=True, \
         
          # Boolean flag to control C library usage
-         #boolclib=True, \
-         boolclib=False, \
+         boolclib=True, \
             
          priotype='powr', \
 
@@ -1635,8 +1633,6 @@ def main( \
 
          # level of background 
          cntpback=None, \
-         boolcntpbackevol=False, \
-         boolstdvevol=False, \
 
          # a string indicating the name of the state
          strgstat=None, \
@@ -2036,8 +2032,6 @@ def main( \
         if gdat.boolplot and gdat.boolplotinit:
             
             # background
-            print 'gdat.cntpback'
-            summgene(gdat.cntpback)
             plot_imag(gdat, gdat.cntpback, 'data', 'cntpback')
 
             ## PSF
@@ -2378,7 +2372,6 @@ def main( \
                     self.galaxies[gdat.indxflux, :self.ng] *= gdat.fittminmflux_g
                     self.galaxies[[self._XX,self._XY,self._YY],0:self.ng] = self.moments_from_prior(self.truermin_g, self.ng)
                 self.cntpback = gdat.cntpback
-
             
             # should offsxpos/y, parity_x/y be instance variables?
             def moments_from_prior(self, truermin_g, ngalx, slope=np.float32(4)):
@@ -2656,24 +2649,6 @@ def main( \
                                 plt.savefig(gdat.pathdatartag + '%s_cntpresi%04d%04d_fram%04d.' % (gdat.rtag, i, t, jj) + gdat.strgplotfile)
                                 plt.close()
                                 
-                        if gdat.boolcntpbackevol:
-                            # background map
-                            figr, axis = plt.subplots()
-                            tick, labl, vmin, vmax = retr_cbar(gdat, 'data')
-                            imagscal = retr_imagscal(gdat, gdat.cntpback)
-                            imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
-                            ## overplot point sources
-                            supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            
-                            setp_imaglimt(gdat, axis)
-                            cbaxes = figr.add_axes([0.83, 0.1, 0.03, 0.8]) 
-                            cbar = figr.colorbar(imag, cax=cbaxes) 
-                            cbar.set_ticks(tick)
-                            cbar.set_ticklabels(labl)
-                            plt.tight_layout()
-                            plt.savefig(gdat.pathdatartag + '%s_cntpback%04d%04d_fram%04d.' % (gdat.rtag, i, t, jj) + gdat.strgplotfile)
-                            plt.close()
-                                
                         ## flux histogram
                         plot_fluxhist(gdat, self.stars[gdat.indxflux, 0:self.n], 0, 0, jj=jj)
 
@@ -2706,6 +2681,9 @@ def main( \
                     t1 = time.clock()
                     self.thisindxproptype = np.random.choice(np.arange(gdat.probprop.size, dtype=int), p=gdat.probprop)
 
+                    # temp -- put this under diagmode
+                    regifact = np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi))
+                    
                     if gdat.diagmode:
                         for i in gdat.indxener:
                             for t in gdat.indxtime:
@@ -2813,7 +2791,8 @@ def main( \
                         
                         dlogP = (llikprop - llik) / temperature
                         if proposal.factor is not None:
-                            dlogP[regiony, regionx] += proposal.factor
+                            regifact[regiony, regionx] += proposal.factor
+                            dlogP[regiony, regionx] += regifact
                         
                         chan['deltllik'][:, :, gdat.thisindxswlp] = llikprop - llik
                         chan['stdvposiprop'][gdat.thisindxswlp] = gdat.stdvposiprop
@@ -2894,9 +2873,6 @@ def main( \
                                     if boolregiacpt[v, u] > 0:
                                         gdat.chi2copy[v, u] = gdat.chi2prop[v, u]
                             gdat.chi2stat = gdat.chi2copy
-                        
-                            if gdat.boolcntpbackevol:
-                                gdat.cntpback = ndimage.median_filter(np.mean(np.mean(cntpresi, axis=3), axis=0), 5)
                         
                         if gdat.diagmode:
                             if not (jj == 0 and a == 0):
@@ -3008,37 +2984,16 @@ def main( \
                             print 'Warning! proposal.factor is not finite!'
                             #raise Exception('')
                     if proposal.factor is not None and proposal.factor != []:
-                        chan['lposterm'][gdat.thisindxswlp] = proposal.factor
+                        chan['lposterm'][gdat.thisindxswlp, :, :] = regifact
 
                     if gdat.diagmode:
                         gdat.chi2prev = np.copy(gdat.chi2stat)
                    
                     gdat.numbswepaccplogg = 100
-                    if jj % gdat.factthinplot == 0 or gdat.boolstdvevol:
+                    if jj % gdat.factthinplot == 0:
                         maxmsweplogg = jj * gdat.numbloop + a
                         minmsweplogg = max(0, maxmsweplogg - gdat.numbswepaccplogg)
                         indxsweplogg = np.arange(minmsweplogg, maxmsweplogg)
-                    
-                    if gdat.boolstdvevol:
-                        indxtemp = np.where(chan['proptype'][indxsweplogg] == 0)[0]
-                        if indxtemp.size > 0:
-                            print 'Updating the proposal scale...'
-                            #print 'indxsweplogg'
-                            #summgene(indxsweplogg)
-                            #print 'chan[accp]'
-                            #summgene(chan['accp'])
-                            #print 'chan[accp][:, :, indxsweplogg]'
-                            #summgene(chan['accp'][:, :, indxsweplogg])
-                            factprop = 1.1**(np.mean(chan['accp'][:, :, indxsweplogg[indxtemp]]) - 0.25)
-                            gdat.stdvfluxprop *= factprop
-                            gdat.stdvposiprop *= factprop
-                            print 'factprop'
-                            print factprop
-                            print 'gdat.stdvfluxprop'
-                            print gdat.stdvfluxprop
-                            print 'gdat.stdvposiprop'
-                            print gdat.stdvposiprop
-                            print 
                     
                     if gdat.verbtype > 1:
                         print 'gdat.chi2stat'
@@ -3225,7 +3180,7 @@ def main( \
 
                 if not gdat.strgmode == 'forc':
                     dpos_rms = gdat.stdvposiprop / np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
-                    if gdat.stdvposiprop == 1e-100 or gdat.boolstdvevol:
+                    if gdat.stdvposiprop == 1e-100:
                         print 'Not lower-bounding the positional position size at 1e-3...'
                         print
                     else:
@@ -4204,9 +4159,6 @@ def main( \
         ntemps = 1
         temps = np.sqrt(2) ** np.arange(ntemps)
         
-        if gdat.boolcntpbackevol:
-            gdat.cntpback = ndimage.median_filter(np.mean(np.mean(gdat.cntpdata, axis=3), axis=0), 5)
-                        
         ngsample = np.zeros(gdat.numbsamp, dtype=np.int32)
         xgsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
         ygsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
@@ -4238,7 +4190,7 @@ def main( \
         chan = {}
         chan['numb'] = np.zeros(gdat.numbsamp, dtype=np.int32)
         chan['chi2'] = np.zeros(gdat.numbsamp)
-        chan['lposterm'] = np.zeros(gdat.numbswlp)
+        chan['lposterm'] = np.zeros((gdat.numbswlp, gdat.numbregixaxi, gdat.numbregiyaxi))
         for strgfeat in gdat.liststrgfeatstar:
             if strgfeat == 'flux':
                 chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.numbener, gdat.numbtime, gdat.maxmnumbstar))
@@ -4998,10 +4950,11 @@ def cnfg_wise():
          #sizeregi=20, \
          #numbswep=200, \
          #colrstyl='pcat', \
-         boolplotplot=False, \
+         boolplotinit=False, \
+         #boolplotplot=False, \
          #diagmode=True, \
          fluxzero=22.5, \
-         #verbtype=2, \
+         verbtype=3, \
          #numbswep=100, \
          #numbloop=1000, \
          priotype = 'prio'
@@ -5408,9 +5361,6 @@ def cnfg_time(strgcnfgextnexec=None):
     dictargs['fittminmflux'] = 100.
     
     #dictargs['maxmnumbstar'] = 1
-    
-    #dictargs['boolcntpbackevol'] = True
-    #dictargs['boolstdvevol'] = True
     
     dictargs['numbsidexpos'] = 10
     dictargs['numbsideypos'] = 10
