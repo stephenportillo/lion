@@ -5,8 +5,8 @@ import h5py, datetime
 import matplotlib 
 
 # temp
-#import seaborn as sns
-#sns.set(context='poster', style='ticks', color_codes=True)
+import seaborn as sns
+sns.set(context='poster', style='ticks', color_codes=True)
 
 from scipy import ndimage
 
@@ -70,7 +70,7 @@ def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False,
         # minimum size of gdat.sizemrkr at 100 ADU
         size = gdat.sizemrkr * (np.log10(gdat.catlrefr[k]['flux'][i, t, :]) - 1.)
         size[np.where(size < gdat.sizemrkr)] = gdat.sizemrkr
-        axis.scatter(gdat.catlrefr[k]['xpos'], gdat.catlrefr[k]['ypos'], marker='+', s=size, color=gdat.colrrefr[k], lw=4, alpha=0.7)
+        axis.scatter(gdat.catlrefr[k]['xpos'], gdat.catlrefr[k]['ypos'], marker='+', s=size, color=gdat.colrrefr[k], lw=1, alpha=0.7)
         if plottext:
             for n in range(len(gdat.catlrefr[k]['xpos'])):
                 if gdat.catlrefr[k]['strg'][n] != None:
@@ -90,7 +90,7 @@ def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False,
             colr = 'b'
         size = gdat.sizemrkr * (np.log10(flux) - 1.)
         size[np.where(size < gdat.sizemrkr)] = gdat.sizemrkr
-        axis.scatter(xpos, ypos, marker='x', s=size, color=colr, lw=4, alpha=0.7)
+        axis.scatter(xpos, ypos, marker='x', s=size, color=colr, lw=1, alpha=0.7)
         if boolcond:
             for n in range(len(xpos)):
                 axis.text(xpos[n] + 3., ypos[n] + 3., str(n), \
@@ -114,16 +114,6 @@ def plot_pcat(gdat=None, rtag=None):
     setp(gdat)
     
     psf0 = gdat.cntppsfnusam[:gdat.numbsidepsfnusam:gdat.factusam, :gdat.numbsidepsfnusam:gdat.factusam]
-    def err_f(f):
-            gain = 4.62
-            return 1./np.sqrt(gain*np.sum(psf0*psf0/(np.median(gdat.cntpback)+psf0*f)))
-    def err_mag(mag):
-            f = 10**((22.5 - mag)/2.5) / 0.00546689
-            return 1.08573620476 * np.sqrt((err_f(f) / f)**2 + 0.01**2)
-    def adutomag(adu):
-            return 22.5 - 2.5 * np.log10(0.00546689 * adu)
-    
-    hwhm=2.5
     
     if len(gdat.catlrefr) > 0:
         print 'gdat.strgdata'
@@ -139,13 +129,12 @@ def plot_pcat(gdat=None, rtag=None):
         
         HTx = HTcat['xpos']
         HTy = HTcat['ypos']
-        HTf = HTcat['flux'][0, 0, :]
+        HTmag = HTcat['magt'][0, 0, :] # temp
         HTc = np.zeros((HTx.shape[0], 2))
         HTc[:, 0] = HTx
         HTc[:, 1] = HTy
         HTkd = scipy.spatial.KDTree(HTc)
         
-        #CCcat = np.loadtxt('run-alpha-20-new/condensed_catalog.txt')
         path = gdat.pathdatartag + gdat.rtag + '_catlcond.h5'
         filetemp = h5py.File(path, 'r')
         print 'Reading %s...' % path
@@ -154,8 +143,9 @@ def plot_pcat(gdat=None, rtag=None):
         CCx = catlcond[0, :, 0]
         CCy = catlcond[1, :, 0]
         CCf = catlcond[2, :, 0]
+        CCmag = gdat.magtzero - 2.5*np.log10(CCf)
         # temp
-        CCconf = catlcond[0, :, 0]
+        CCconf = catlcond[gdat.indxprvl, :]
         CCs = catlcond[0, :, 0]
         
         CCc = np.zeros((CCx.shape[0], 2))
@@ -171,20 +161,22 @@ def plot_pcat(gdat=None, rtag=None):
         PCx = chan['xpos']
         PCy = chan['ypos']
         PCf = chan['flux'][:, 0, 0, :]
-        PCc_all = np.zeros((PCx.size, 2))
-        PCc_all[:, 0] = PCx.flatten()
-        PCc_all[:, 1] = PCy.flatten()
+        PCmag = gdat.magtzero - 2.5*np.log10(PCf)
+        mask = (PCx > 0) * (PCy > 0) * (PCf > 0)
+        PCc_all = np.zeros((np.sum(mask), 2))
+        PCc_all[:, 0] = PCx[mask].flatten()
+        PCc_all[:, 1] = PCy[mask].flatten()
         PCkd = scipy.spatial.KDTree(PCc_all)
+        PCmag_all = PCmag[mask]
         
         sizefac = 1360.
         n = PCn[-1]
-        plt.scatter(PCx[-1,0:n], PCy[-1,0:n], s=PCf[-1,0:n]/sizefac, c='r', marker='x')
         
         dr = 0.75
         dmag = 0.5
         
         nbins = 16
-        minr, maxr = 15.5, 23.5
+        minr, maxr = np.amin(HTmag) - 0.1, gdat.magtzero - 2.5*np.log10(gdat.fittminmflux)
         binw = (maxr - minr) / float(nbins)
         #print "max r CC", np.max(CCf)
         
@@ -194,55 +186,46 @@ def plot_pcat(gdat=None, rtag=None):
         # with sigfac < 8
         
         gdat.distmtch, gdat.indxmtch = CCkd.query(np.vstack((HTx, HTy)).T, k=1, distance_upper_bound=dr, p=2)
-        print 'HTx'
-        print HTx
-        print 'HTy'
-        print HTy
-        print 'HTf'
-        print HTf
-        print 'CCx'
-        print CCx
-        print 'CCy'
-        print CCy
-        print 'CCf'
-        print CCf
-        print 'gdat.indxmtch'
-        print gdat.indxmtch
-        print
-        goodmatchCC, indxmtch = associate(CCkd, CCf, HTkd, HTf, 100., 1e100)
+        if gdat.verbtype > 1:
+            print 'HTx'
+            print HTx
+            print 'HTy'
+            print HTy
+            print 'HTf'
+            print HTf
+            print 'CCx'
+            print CCx
+            print 'CCy'
+            print CCy
+            print 'CCf'
+            print CCf
+            print 'gdat.indxmtch'
+            print gdat.indxmtch
+            print
 
-        #goodmatchPC = associate(PCkd, PCf, HTkd, HTf, dr, dmag)
+        goodmatchCC, indxmtch = associate(CCkd, CCmag, HTkd, HTmag, dr, dmag)
+        goodmatchPC, indxmtch = associate(PCkd, PCmag_all, HTkd, HTmag, dr, dmag)
         
-        #for i in xrange(nbins):
-        #    rlo = minr + i * binw
-        #    rhi = rlo + binw
-        #
-        #	#print i, np.sum(inbin)
-        #
-        #    inbin = np.logical_and(PCf >= rlo, PCf < rhi)
-        #    precPC[i] = np.sum(np.logical_and(inbin, goodmatchPC)) / float(np.sum(inbin))
-        #
-        #	#inbin = np.logical_and(CCf >= rlo, CCf < rhi)
-        #	#precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
-        #
-        #plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Portillo et al. (2017)', marker='x', markersize=10, mew=2)
-        #plt.xlabel('SDSS r magnitude')
-        #plt.ylabel('false discovery rate')
-        #plt.ylim((-0.05, 0.7))
-        #plt.xlim((15,24))
-        #plt.legend(prop={'size':12}, loc = 'best')
-        #plt.tight_layout()
-        #plt.savefig(gdat.pathdatartag + 'fdr-lion.pdf')
-        #
-        #plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
+        for i in xrange(nbins):
+            rlo = minr + i * binw
+            rhi = rlo + binw
+        
+            inbin = np.logical_and(PCmag_all >= rlo, PCmag_all < rhi)
+            precPC[i] = np.sum(np.logical_and(inbin, goodmatchPC)) / float(np.sum(inbin))
+        
+        	#inbin = np.logical_and(CCf >= rlo, CCf < rhi)
+        	#precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
+        
+        plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
         #plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
         #plt.xlabel('SDSS r magnitude')
         #plt.ylabel('false discovery rate')
         #plt.ylim((-0.05, 0.7))
         #plt.xlim((15,24))
-        #plt.legend(prop={'size':12}, loc = 'best')
-        #plt.tight_layout()
-        #plt.savefig('fdr_classical.pdf')
+        plt.legend(prop={'size':12}, loc = 'best')
+        plt.tight_layout()
+        plt.savefig(gdat.pathdatartag + 'fldr.pdf')
+        plt.close()
         #
         #plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
         #plt.xlabel('SDSS r magnitude')
@@ -252,12 +235,8 @@ def plot_pcat(gdat=None, rtag=None):
         #plt.legend(prop={'size':12}, loc = 'best')
         #plt.tight_layout()
         #plt.savefig('fdr_sigfac.pdf')
-        #
-        #nbins = 16
-        #minr, maxr = 15.5, 23.5
-        #binw = (maxr - minr) / float(nbins)
         
-        completeCC, indxmtchtrue, confmatchCC, sigfCC = associate(HTkd, HTf, CCkd, CCf, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
+        completeCC, indxmtchtrue, confmatchCC, sigfCC = associate(HTkd, HTmag, CCkd, CCmag, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
         #completeCC = associate(HTkd, HTf, CCkd, CCf, dr, dmag)
         
         completePC = np.zeros((PCx.shape[0], HTx.size))
@@ -266,8 +245,13 @@ def plot_pcat(gdat=None, rtag=None):
             CCc_one = np.zeros((n,2))
             CCc_one[:, 0] = PCx[i, 0:n]
             CCc_one[:, 1] = PCy[i, 0:n]
-            CCf_one = PCf[i, 0:n]
-            completePC[i, :], indxmtchtrue = associate(HTkd, HTf, scipy.spatial.KDTree(CCc_one), CCf_one, dr, dmag)
+            CCf_one = PCmag[i, 0:n]
+            plt.scatter(PCx[i,0:n], PCy[i,0:n], marker='x', c='r', s=10**(-0.4*(PCmag[i,0:n]-21)))
+            plt.scatter(HTx, HTy, marker='+', c='g', s=10**(-0.4*(HTmag-21)))
+            plt.close()
+
+            outp, indxmtchtrue = associate(HTkd, HTmag, scipy.spatial.KDTree(CCc_one), CCf_one, dr, dmag)
+            completePC[i, :] = outp
         completePC = np.sum(completePC, axis=0) / float(PCx.shape[0])
         
         reclPC = np.zeros(nbins)
@@ -276,13 +260,13 @@ def plot_pcat(gdat=None, rtag=None):
         for i in xrange(nbins):
             rlo = minr + i * binw
             rhi = rlo + binw
-            inbin = np.logical_and(HTf >= rlo, HTf < rhi)
+            inbin = np.logical_and(HTmag >= rlo, HTmag < rhi)
             reclPC[i] = np.sum(completePC[inbin]) / float(np.sum(inbin))
             reclCC[i] = np.sum(confmatchCC[inbin]) / float(np.sum(inbin))
         
         plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
         plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-        plt.xlabel('True flux')
+        plt.xlabel('Reference magnitude')
         plt.ylabel('completeness')
         plt.ylim((-0.1, 1.1))
         plt.legend(prop={'size':12}, loc = 'best')
@@ -302,8 +286,8 @@ def plot_pcat(gdat=None, rtag=None):
         for i in xrange(nbins):
         	rlo = minr + i * binw
         	rhi = rlo + binw
-        	inbinHT = np.logical_and(HTf >= rlo, HTf < rhi)
-        	inbinCC = np.logical_and(CCf >= rlo, CCf < rhi)
+        	inbinHT = np.logical_and(HTmag >= rlo, HTmag < rhi)
+        	inbinCC = np.logical_and(CCmag >= rlo, CCmag < rhi)
         	for j in xrange(nsigf):
         		sigfaccut = sigfaccuts[j]
         		reclCCt[i,j] = np.sum(confmatchCC[np.logical_and(inbinHT, sigfCC < sigfaccut)]) / float(np.sum(inbinHT))
@@ -353,8 +337,8 @@ def plot_pcat(gdat=None, rtag=None):
     
 
 def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
-    
     allmatches = a.query_ball_tree(b, dr)
+    
     goodmatch = np.zeros(mags_a.size, np.bool)
     if confs_b is not None:
         confmatch = np.zeros(mags_a.size)
@@ -371,20 +355,20 @@ def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
                 if np.abs(mag_a - mag_b) < dmag:
                     goodmatch[i] = True
                     if (confs_b is not None) and (confs_b[j] > confmatch[i]):
-						confmatch[i] = confs_b[j]
+                        confmatch[i] = confs_b[j]
                     if (sigfs_b is not None) and (sigfs_b[j] < sigfmatch[i]):
                         sigfmatch[i] = sigfs_b[j]
-    
-	if confs_b is not None:
-		if sigfs_b is not None:
-			return goodmatch, matches, confmatch, sigfmatch
-		else:
-			return goodmatch, matches, confmatch
-	else:
-		if sigfs_b is not None:
-			return goodmatch, matches, sigfmatch
-		else:
-			return goodmatch, matches
+
+    if confs_b is not None:
+        if sigfs_b is not None:
+            return goodmatch, matches, confmatch, sigfmatch
+        else:
+            return goodmatch, matches, confmatch
+    else:
+        if sigfs_b is not None:
+            return goodmatch, matches, sigfmatch
+        else:
+            return goodmatch, matches
 
 
 def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntprefr=None, clib=None, sizeimag=None):
@@ -1839,7 +1823,7 @@ def main( \
         print 'gdat.numbsamp: ', gdat.numbsamp
         print 'gdat.numbloop: ', gdat.numbloop
         print 'gdat.gain: ', gdat.gain
-        print 'gdat.fittminmfux', gdat.fittminmflux
+        print 'gdat.fittminmflux', gdat.fittminmflux
 
         gdat.cmapresi = make_cmapdivg('Red', 'Orange')
         if colrstyl == 'pcat':
@@ -2088,7 +2072,7 @@ def main( \
             _YY = cntr.incr()
         
         gdat.numbparastar = cntr.gets()
-        gdat.indxconf = cntr.incr()
+        gdat.indxprvl = cntr.incr()
         gdat.numbparacatlcond = 1 + gdat.numbparastar
         
         print 'gdat.numbparastar'
@@ -2624,7 +2608,7 @@ def main( \
                                     print gdat.fittminmflux
                                     print 'self.stars[gdat.indxflux[i, t], :self.n]'
                                     print self.stars[gdat.indxflux[i, t], :self.n]
-                                    #raise Exception('')
+                                    raise Exception('')
 
                     if gdat.verbtype > 1:
                         print 'self.thisindxproptype'
@@ -2978,7 +2962,6 @@ def main( \
         
             
             def idx_parity_stars(self):
-                
                 return idx_parity(self.stars[gdat.indxxpos,:], self.stars[gdat.indxypos,:], self.n, self.offsxpos, self.offsypos, self.parity_x, self.parity_y, gdat.sizeregi)
         
             
@@ -3027,14 +3010,16 @@ def main( \
                 if gdat.diagmode:
                     if (f0 < gdat.fittminmflux).any():
                         print 'Flux went below minimum'
-                        #raise Exception('')
+                        raise Exception('')
 
+                psf0 = gdat.cntppsfnusam[0,:gdat.numbsidepsfnusam:gdat.factusam, :gdat.numbsidepsfnusam:gdat.factusam]
+                stdf = 1./np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(psf0*psf0)) # assumes single band
+                nest = 0.5 * gdat.maxmnumbstar / (gdat.numbregixaxi * gdat.numbregiyaxi)
+                lindf = stdf / np.sqrt(nest * (2+gdat.numbener)) # put numbtime here? 60
+                logdf = 0.01 / np.sqrt(nest * (2+gdat.numbener))
                 if gdat.boolspre:
-                    lindf = np.float32(60./np.sqrt(25.))
-                    logdf = np.float32(0.01/np.sqrt(25.))
-                else:
-                    lindf = 60./np.sqrt(25.)
-                    logdf = 0.01/np.sqrt(25.)
+                    lindf = np.float32(lindf)
+                    logdf = np.float32(logdf)
                 ff = np.log(logdf**2 * f0 + logdf * np.sqrt(lindf**2 + logdf**2 * f0**2)) / logdf
                 ffmin = np.log(logdf*logdf*gdat.fittminmflux + logdf*np.sqrt(lindf*lindf + logdf*logdf*gdat.fittminmflux*gdat.fittminmflux)) / logdf
                 if gdat.boolspre:
@@ -3048,6 +3033,10 @@ def main( \
                 pf = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
                 # calculate flux distribution prior factor
                 dlogf = np.log(pf/f0)
+                if gdat.diagmode and (pf < gdat.fittminmflux).any():
+                    print 'proposed flux went below minimum'
+                    print f0 > gdat.fittminmflux
+                    raise Exception("")
                 # assumes flat priors over colors
                 # temp
                 if gdat.priotype == 'info':
@@ -3111,7 +3100,12 @@ def main( \
                             #raise Exception('')
 
                 if not gdat.strgmode == 'forc':
-                    dpos_rms = gdat.stdvposiprop / np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
+                    psfx = gdat.cntppsfnusam[0, 0:gdat.numbsidepsfnusam:gdat.factusam, 1:gdat.numbsidepsfnusam:gdat.factusam]
+                    dpdx = (psfx - psf0) * gdat.factusam
+                    #print 'rms', 1./ np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(dpdx*dpdx) * nest * gdat.numbener ), 'old', gdat.stdvposiprop                    
+                    dpos_rms = 1./ np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(dpdx*dpdx) * nest * (2+gdat.numbener) ) / \
+                            np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
+                    #dpos_rms = gdat.stdvposiprop / np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
                     if gdat.stdvposiprop == 1e-100:
                         print 'Not lower-bounding the positional position size at 1e-3...'
                         print
@@ -3141,10 +3135,15 @@ def main( \
                     starsp[gdat.indxypos,:] = stars0[gdat.indxypos,:]
                 starsp[gdat.indxflux, :] = pf
                 self.bounce_off_edges(starsp)
+
                 
                 if gdat.verbtype > 1:
+                    print 'stars0[gdat.indxflux]'
+                    summgene(stars0[gdat.indxflux])
                     print 'starsp'
                     summgene(starsp)
+                    print 'starsp[gdat.indxflux]'
+                    summgene(starsp[gdat.indxflux])
         
                 proposal = Proposal()
                 proposal.add_move_stars(idx_move, stars0, starsp)
@@ -4223,8 +4222,6 @@ def main( \
         gdat = cPickle.load(filepick)
         filepick.close()
         
-        print 'gdat.strgproc'
-        print gdat.strgproc
         print 'gdat.pathdatartag'
         print gdat.pathdatartag
         pathchan = gdat.pathdatartag + gdat.rtag + '_chan.h5'
@@ -4506,9 +4503,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     # confidence cut
     minmdegr = 2 
     
-    # gain
-    gain = 0.00546689
-    
     path = pathdatartag + 'gdat.p'
     filepick = open(path, 'rb')
     print 'Reading %s...' % path
@@ -4651,7 +4645,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     stdvypos = np.zeros(numbsourseed)
     stdvflux = np.zeros((gdat.numbener, gdat.numbtime, numbsourseed))
     stdvmagt = np.zeros(numbsourseed)
-    conf = np.zeros(numbsourseed)
+    prvl = np.zeros(numbsourseed)
     
     # confidence interval defined for err_(x,y,f)
     pctlhigh = 84
@@ -4666,7 +4660,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
 
         assert xpos.size == ypos.size
         
-        conf[i] = xpos.size / gdat.numbsamp
+        prvl[i] = xpos.size / gdat.numbsamp
             
         xposmean[i] = np.mean(xpos)
         yposmean[i] = np.mean(ypos)
@@ -4686,9 +4680,8 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     catlcond[gdat.indxypos, :, 1] = stdvypos
     catlcond[gdat.indxflux, :, 0] = fluxmean
     catlcond[gdat.indxflux, :, 1] = stdvflux
-    catlcond[gdat.indxconf, :, 0] = conf
+    catlcond[gdat.indxprvl, :, 0] = prvl
     
-    #magt = 22.5 - 2.5 * np.log10(flux * gain)
 
     ## h5 file path
     print 'Will write the chain to %s...' % pathcatlcond
@@ -4816,7 +4809,8 @@ def cnfg_wise():
     cntpdata = fits.open(pathdata)[0].data[None, 0:smalbnds, 0:smalbnds, None]
     cntpback = fits.open(pathback)[2].data[None, 0:smalbnds, 0:smalbnds, None]
     weig = 1. / fits.open(pathweig)[0].data[None, 0:smalbnds, 0:smalbnds, None]**2
-    
+    magtzero = 22.5 # if we were good people, we would read it in
+
     gdat = gdatstrt()
     gdat.numbener = 1
     gdat.indxener = [0]
@@ -4861,7 +4855,19 @@ def cnfg_wise():
     #strgmodl = 'star'
     #datatype = 'mock'
     #
-    #catlrefr = []
+
+    catlrefr = []
+    # crowdsource catalog
+    crsrdata = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.cat.fits'
+    crsrcatl = fits.open(crsrdata)[1].data
+    mask = (crsrcatl['x'] > 0) * (crsrcatl['x'] < smalbnds) * (crsrcatl['y'] > 0) * (crsrcatl['y'] < smalbnds)
+    crsrcatldict = {}
+    crsrcatldict['xpos'] = crsrcatl['y'][mask]
+    crsrcatldict['ypos'] = crsrcatl['x'][mask]
+    catlflux = (crsrcatl['flux'][mask])[None, None, :]
+    crsrcatldict['flux'] = catlflux
+    crsrcatldict['magt'] = magtzero - 2.5 * np.log10(catlflux)
+    catlrefr.append(crsrcatldict)
 
     #if datatype == 'mock':
     #    catlrefr.append(truecatl)
@@ -4883,9 +4889,9 @@ def cnfg_wise():
          
          weig=weig, \
 
-         #catlrefr=catlrefr, \
-         #lablrefr=lablrefr, \
-         #colrrefr=colrrefr, \
+         catlrefr=catlrefr, \
+         lablrefr=['CwdSrc'], \
+         colrrefr=['g'], \
         
          cntpback=cntpback, \
         
@@ -4894,17 +4900,19 @@ def cnfg_wise():
          #exprtype='wise', exprtype, \
 
          sizeregi=32, \
+         marg=16,
          #numbswep=200, \
          #colrstyl='pcat', \
-         numbplotfram=100, \
+         numbplotfram=10, \
          boolplotinit=False, \
          #boolplotplot=False, \
          #diagmode=True, \
-         fluxzero=22.5, \
+         magtzero=magtzero, \
          verbtype=1, \
          #numbswep=100, \
          #numbloop=1000, \
-         priotype = 'prio'
+         priotype = 'prio', \
+         strgproc='pcat_20190123_140543_cnfg_wise_100000'
         )
 
 
@@ -5516,3 +5524,6 @@ if __name__ == "__main__":
         globals().get(sys.argv[1])(*sys.argv[2:])
 
 
+#import numpy as np
+import numpy.ctypeslib as npct
+from ctypes import c_int, c_double
