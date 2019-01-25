@@ -2469,7 +2469,7 @@ def main( \
                 # log
                 numbpara = retr_numbpara(gdat, self.n, self.ng)
                 gdat.chi2totl = np.sum(gdat.weig.astype(np.float64) * (gdat.cntpdata - cntpmodl).astype(np.float64) ** 2)
-                
+
                 if jj % gdat.factthinplot == 0:
                     
                     numbdoff = gdat.numbdata - numbpara
@@ -2766,7 +2766,8 @@ def main( \
                                 
                                 cntpresi[i, :, :, t] -= cntpmodldiffacpt # has to occur after clib_eval_llik, because cntpresi is used as cntprefr
                                 cntpmodl[i, :, :, t] += cntpmodldiffacpt
-                                
+
+
                                 #print 'chi2proptemp'
                                 #summgene(chi2proptemp)
                                 #print 'np.sum(chi2proptemp)'
@@ -4802,10 +4803,11 @@ def cnfg_wise():
     # read the data
     pathdata = os.environ['LION_DATA_PATH'] + '/unwise/unwise-1497p015-w1-img-m.fits'
     pathweig = os.environ['LION_DATA_PATH'] + '/unwise/unwise-1497p015-w1-std-m.fits'
+    pathmask = os.environ['LION_DATA_PATH'] + '/unwise/unwise-1497p015-msk.fits.gz'
     pathpsfn = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.info.fits'
     pathback = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.mod.fits'
     print 'Reading %s...' % pathdata
-    smalbnds = 128
+    smalbnds = 2048
     cntpdata = fits.open(pathdata)[0].data[None, 0:smalbnds, 0:smalbnds, None]
     cntpback = fits.open(pathback)[2].data[None, 0:smalbnds, 0:smalbnds, None]
     weig = 1. / fits.open(pathweig)[0].data[None, 0:smalbnds, 0:smalbnds, None]**2
@@ -4830,6 +4832,8 @@ def cnfg_wise():
         cntppsfnusam[i,:,:] = scipy.misc.imresize(subspsfn, (125,125), interp='lanczos', mode='F')
 
     weig[~np.isfinite(weig)] = 0.
+    maskwise = fits.open(pathmask)[0].data
+    weig *= (maskwise == 0)[None,:smalbnds,:smalbnds,None] # is 0 too restrictive? 64 might be OK
     print 'weig'
     summgene(weig)
 
@@ -4912,7 +4916,7 @@ def cnfg_wise():
          #numbswep=100, \
          #numbloop=1000, \
          priotype = 'prio', \
-         strgproc='pcat_20190123_140543_cnfg_wise_100000'
+         #strgproc='pcat_20190123_140543_cnfg_wise_100000'
         )
 
 
