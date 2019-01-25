@@ -4,6 +4,8 @@ from ctypes import c_int, c_double
 import h5py, datetime
 import matplotlib 
 
+from astropy.wcs import WCS
+
 # temp
 import seaborn as sns
 sns.set(context='poster', style='ticks', color_codes=True)
@@ -145,7 +147,9 @@ def plot_pcat(gdat=None, rtag=None):
         CCf = catlcond[2, :, 0]
         CCmag = gdat.magtzero - 2.5*np.log10(CCf)
         # temp
-        CCconf = catlcond[gdat.indxprvl, :]
+        CCconf = catlcond[gdat.indxprvl, :, 0]
+        print 'CCconf'
+        summgene(CCconf)
         CCs = catlcond[0, :, 0]
         
         CCc = np.zeros((CCx.shape[0], 2))
@@ -181,7 +185,7 @@ def plot_pcat(gdat=None, rtag=None):
         #print "max r CC", np.max(CCf)
         
         precPC = np.zeros(nbins)
-        #precCC = np.zeros(nbins)
+        precCC = np.zeros(nbins)
         
         # with sigfac < 8
         
@@ -213,15 +217,13 @@ def plot_pcat(gdat=None, rtag=None):
             inbin = np.logical_and(PCmag_all >= rlo, PCmag_all < rhi)
             precPC[i] = np.sum(np.logical_and(inbin, goodmatchPC)) / float(np.sum(inbin))
         
-        	#inbin = np.logical_and(CCf >= rlo, CCf < rhi)
-        	#precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
+            inbin = np.logical_and(CCmag >= rlo, CCmag < rhi)
+            precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
         
         plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
-        #plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-        #plt.xlabel('SDSS r magnitude')
-        #plt.ylabel('false discovery rate')
-        #plt.ylim((-0.05, 0.7))
-        #plt.xlim((15,24))
+        plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
+        plt.xlabel('reference magnitude')
+        plt.ylabel('false discovery rate')
         plt.legend(prop={'size':12}, loc = 'best')
         plt.tight_layout()
         plt.savefig(gdat.pathdatartag + 'fldr.pdf')
@@ -414,10 +416,11 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
             print xt, yt
 
     # temp -- sometimes phonions are outside image... what is best way to handle?
-    goodsrc = (x > 0) * (x < sizeimag[0] - 1) * (y > 0) * (y < sizeimag[1] - 1)
-    x = x.compress(goodsrc)
-    y = y.compress(goodsrc)
-    f = f.compress(goodsrc, axis=2)
+    if clib is not None:
+        goodsrc = (x > 0) * (x < sizeimag[0] - 1) * (y > 0) * (y < sizeimag[1] - 1)
+        x = x.compress(goodsrc)
+        y = y.compress(goodsrc)
+        f = f.compress(goodsrc, axis=2)
     
     if gdat.verbtype > 1:
         print 'x'
@@ -495,7 +498,7 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 chi2temp = np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi), dtype=np.float64)
                 
                 cntpmodltemp = np.full((sizeimag[1]+2*rad+1,sizeimag[0]+2*rad+1), 0., dtype=np.float32)
-                cntpmodltemp[rad:sizeimag[1]+rad, rad:sizeimag[0]+rad] = np.copy(cntpback)
+                cntpmodltemp[rad:sizeimag[1]+rad, rad:sizeimag[0]+rad] = np.copy(cntpback[i, :, :, t])
                 
                 #if gdat.boolspre:
                 #    cntpmodltemp = np.full((sizeimag[1]+2*rad+1,sizeimag[0]+2*rad+1), cntpback, dtype=np.float32)
@@ -518,9 +521,10 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                         cntpmodlstmp2[k, :, :] = retr_psfnbili(gdat, i, x[k] - ix[k], y[k] - iy[k]) * f[i, t, k]
                 else:
                     cntpmodlstmp2 = np.dot(desimatr[i, t, :, :], gdat.coefspix).reshape((numbphon, gdat.numbsidepsfn, gdat.numbsidepsfn))
-                
+                    
                 cntpmodlstmp = np.zeros((numbphon,gdat.numbsidepsfn,gdat.numbsidepsfn), dtype=np.float32)
                 cntpmodlstmp[:,:,:] = cntpmodlstmp2[:,:,:]
+                np.set_printoptions(5, linewidth=170)
                 for k in xrange(numbphon):
                     cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1] += cntpmodlstmp[k, :, :]
                 cntpmodl[i, :, :, t] = cntpmodltemp[rad:sizeimag[1]+rad,rad:sizeimag[0]+rad]
@@ -597,7 +601,7 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         for i in gdat.indxener:
             for t in gdat.indxtime:
                 
-                cntpmodltemp = np.copy(cntpback[i,:,:,t])
+                cntpmodltemp = np.copy(cntpback[i, :, :, t])
                 if gdat.boolspre:
                     cntpmodltemp = cntpmodltemp.astype(np.float32)
 
@@ -958,7 +962,7 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
         xpos = xpos.astype(np.float32)
         ypos = ypos.astype(np.float32)
         flux = flux.astype(np.float32)
-    cntpback = np.zeros((gdat.numbsidepsfn, gdat.numbsidepsfn))
+    cntpback = np.zeros((gdat.numbener, gdat.numbsidepsfn, gdat.numbsidepsfn, gdat.numbtime))
     sizeimag = [gdat.numbsidepsfn, gdat.numbsidepsfn]
     
     cntpmodlpsfn = eval_modl(gdat, xpos, ypos, flux, cntpback, clib=clib, sizeimag=sizeimag)
@@ -1007,7 +1011,9 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
         axis.set_position([0.1, 0.1, 0.7, 0.7], which='both')
         cbaxes = figr.add_axes([0.85, 0.1, 0.05, 0.7]) 
         cbar = figr.colorbar(imag, cax=cbaxes) 
-        plt.savefig(gdat.pathdatartag + '%s_psfnbilifres%04d_%04d.%s' % (gdat.rtag, i, k, gdat.strgplotfile))
+        path = gdat.pathdatartag + '%s_psfnbilifres%04d_%04d.%s' % (gdat.rtag, i, k, gdat.strgplotfile)
+        print 'Writing to %s...' % path
+        plt.savefig(path)
         plt.close()
 
 
@@ -1433,6 +1439,18 @@ def make_mock(gdat, gdatnotp):
         xpos[0] = np.array([0.5]) * (gdat.sizeimag[0] - 1)
         ypos[0] = np.array([0.5]) * (gdat.sizeimag[0] - 1)
         flux[:, :, 0] = gdat.truefluxcent
+        
+    if gdat.boolspre:
+        xpos = xpos.astype(np.float32)
+        ypos = ypos.astype(np.float32)
+        flux = flux.astype(np.float32)
+    
+    gdat.catlrefr = [{}]
+    gdat.catlrefr[0]['xpos'] = xpos
+    gdat.catlrefr[0]['ypos'] = ypos
+    gdat.catlrefr[0]['flux'] = flux
+    gdat.colrrefr = ['g']
+    gdat.lablrefr = ['True']
     
     if gdat.datatype == 'mock':
         print 'gdat.trueminmflux'
@@ -1442,6 +1460,13 @@ def make_mock(gdat, gdatnotp):
         print 'xpos'
         print xpos
         print
+
+    if gdat.datatype == 'mock':
+        if gdat.cntpbacktruedefa is None:
+            gdat.cntpbacktruedefa = 100.
+        gdat.cntpback = np.zeros((gdat.numbener, gdat.numbsidexpos, gdat.numbsideypos, gdat.numbtime)) + gdat.cntpbacktruedefa
+
+        print 'True backgroung: %.g ADU'
 
     # evaluate model
     gdat.cntpdata = eval_modl(gdat, xpos, ypos, flux, gdat.cntpback, clib=gdatnotp.clibeval, sizeimag=gdat.sizeimag)
@@ -1545,18 +1570,20 @@ def plot_fluxhist(gdat, flux, i, t, jj=None, plotmagt=False):
 
 def plot_imag(gdat, cntp, strgcbar, strgfile):
     
-    figr, axis = plt.subplots()
-    tick, labl, vmin, vmax = retr_cbar(gdat, strgcbar)
-    imagscal = retr_imagscal(gdat, cntp)
-    imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
-    setp_imaglimt(gdat, axis)
-    cbar = plt.colorbar(imag, ax=axis, fraction=0.05, aspect=15)
-    cbar.set_ticks(tick)
-    cbar.set_ticklabels(labl)
-    #supr_catl(gdat, axis, i, t)
-    plt.tight_layout()
-    plt.savefig(gdat.pathdatartag + '%s%s.%s' % (gdat.rtag, strgfile, gdat.strgplotfile))
-    plt.close()
+    for i in gdat.indxener:
+        for t in gdat.indxtime:
+            figr, axis = plt.subplots()
+            tick, labl, vmin, vmax = retr_cbar(gdat, strgcbar)
+            imagscal = retr_imagscal(gdat, cntp)
+            imag = axis.imshow(imagscal[i, :, :, t], origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
+            setp_imaglimt(gdat, axis)
+            cbar = plt.colorbar(imag, ax=axis, fraction=0.05, aspect=15)
+            cbar.set_ticks(tick)
+            cbar.set_ticklabels(labl)
+            supr_catl(gdat, axis, i, t)
+            plt.tight_layout()
+            plt.savefig(gdat.pathdatartag + '%s_%s_%02d%02d.%s' % (gdat.rtag, strgfile, i, t, gdat.strgplotfile))
+            plt.close()
 
 
 def main( \
@@ -1584,6 +1611,9 @@ def main( \
          # nonnormalized probabilities of proposals
          probprop=None, \
         
+         # margin size
+         marg=10, \
+
          inittype='refr', \
 
          initxpos=None, \
@@ -1613,6 +1643,8 @@ def main( \
          strgproc=None, \
         
          fudgpena=1., \
+
+         cntpbacktruedefa=100, \
 
          # Boolean flag to control tiling
          booltile=True, \
@@ -1681,6 +1713,9 @@ def main( \
          # string indicating the type of model
          strgmode='pcat', \
         
+         numbener=None, \
+         numbtime=None, \
+         
          # reference catalog
          catlrefr=None, \
 
@@ -1740,6 +1775,12 @@ def main( \
     else:
         gdat.datatype = 'inpt'
     
+    if gdat.datatype == 'mock':
+        if gdat.numbener is None:
+            gdat.numbener = 1
+        if gdat.numbtime is None:
+            gdat.numbtime = 1
+
     if gdat.strgproc is None:
         
         if gdat.cntpdata is None:
@@ -2016,6 +2057,10 @@ def main( \
         if gdat.boolplot and gdat.boolplotinit:
             
             # background
+            print 'gdat.cntpback'
+            summgene(gdat.cntpback)
+            print 'gdat.cntpdata'
+            summgene(gdat.cntpdata)
             plot_imag(gdat, gdat.cntpback, 'data', 'cntpback')
 
             ## PSF
@@ -4584,7 +4629,9 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     
     # features of the condensed sources
     featcond = np.zeros((gdat.numbsamp, numbsourseed, gdat.numbparastar))
-    
+    # prevalences of condensed sources
+    prvl = np.zeros(numbsourseed)
+
     #numpy mask for sources that have been matched
     mask = np.zeros(numbstarstck)
     
@@ -4632,6 +4679,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
                     #print
 
                     featcond[i, k, gdat.indxflux] = catlsort[i, match-indxstarloww, gdat.indxflux]
+                    prvl[k] += 1
     
     # generate condensed catalog from clusters
     numbsourseed = len(catlseed)
@@ -4645,7 +4693,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     stdvypos = np.zeros(numbsourseed)
     stdvflux = np.zeros((gdat.numbener, gdat.numbtime, numbsourseed))
     stdvmagt = np.zeros(numbsourseed)
-    prvl = np.zeros(numbsourseed)
     
     # confidence interval defined for err_(x,y,f)
     pctlhigh = 84
@@ -4660,8 +4707,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
 
         assert xpos.size == ypos.size
         
-        prvl[i] = xpos.size / gdat.numbsamp
-            
         xposmean[i] = np.mean(xpos)
         yposmean[i] = np.mean(ypos)
         fluxmean[:, :, i] = np.mean(flux, axis=0)
@@ -4680,7 +4725,8 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     catlcond[gdat.indxypos, :, 1] = stdvypos
     catlcond[gdat.indxflux, :, 0] = fluxmean
     catlcond[gdat.indxflux, :, 1] = stdvflux
-    catlcond[gdat.indxprvl, :, 0] = prvl
+    catlcond[gdat.indxprvl, :, 0] = prvl / float(gdat.numbsamp)
+    catlcond[gdat.indxprvl, :, 1] = np.sqrt(prvl) / float(gdat.numbsamp)
     
 
     ## h5 file path
@@ -4787,6 +4833,19 @@ def setp_varbiter(gdat, strgmodltemp, strgvarbtemp, valu):
             setattr(gdat, strgmodltemp + strgvarbtemp, valu)
    
 
+def cnfg_galx():
+    
+    strgdata = {}
+    numbside = 10
+    
+    main( \
+         
+         datatype='mock', \
+         boolplotinit=False, \
+        
+        )
+
+
 def cnfg_wise():
     
     # read the data
@@ -4810,6 +4869,18 @@ def cnfg_wise():
     cntpback = fits.open(pathback)[2].data[None, 0:smalbnds, 0:smalbnds, None]
     weig = 1. / fits.open(pathweig)[0].data[None, 0:smalbnds, 0:smalbnds, None]**2
     magtzero = 22.5 # if we were good people, we would read it in
+    
+    # read Cosmos catalog
+    pathcosm = os.environ['LION_DATA_PATH'] + '/unwise/astrometry.scosmos_irac_04076395.fits'
+    objtcosmcatl = fits.open(pathcosm)[1].data
+
+    objtwcss = WCS(fits.open(pathdata)[0].header)
+    arry = np.zeros((objtcosmcatl['ra'].size, 2))
+    arry[:, 0] = objtcosmcatl['ra']
+    arry[:, 1] = objtcosmcatl['dec']
+    temp = objtwcss.all_world2pix(arry, 0)
+    xposcosm = temp[:, 0]
+    yposcosm = temp[:, 1]
 
     gdat = gdatstrt()
     gdat.numbener = 1
@@ -4825,38 +4896,11 @@ def cnfg_wise():
         indxfnsh = origsize/2 + subssize/2 + 1
         
         subspsfn = thispsfnorig[indxstrt:indxfnsh,indxstrt:indxfnsh]
-        print 'subspsfn'
-        print subspsfn.shape
         cntppsfnusam[i,:,:] = scipy.misc.imresize(subspsfn, (125,125), interp='lanczos', mode='F')
 
     weig[~np.isfinite(weig)] = 0.
-    print 'weig'
-    summgene(weig)
 
-
-    print 'cntpdata'
-    summgene(cntpdata)
-    print 'cntpback'
-    summgene(cntpback)
-    #liststrgener = ['rbnd']
-    #read_psfn(pathdata, strgdata, liststrgener)
-    #strgdata = 'sdss0921'
-    #filepsfn = open(pathdata + strgdata + '_psfn.txt')
-    #numbsidepsfn, factusam = [np.int32(i) for i in filepsfn.readline().split()]
-    #filepsfn.close()
-    #cntppsfn = np.loadtxt(pathdata + strgdata + '_psfn.txt', skiprows=1)
-    #cntppsfn = cntppsfn[None, :, :] 
-    #numbtime = 1
-    #numbener = 1
-
-    #numbsidexpos = 100
-    #numbsideypos = 100
-
-    #strgmodl = 'star'
-    #datatype = 'mock'
-    #
-
-    catlrefr = []
+    catlrefr = [[], {}]
     # crowdsource catalog
     crsrdata = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.cat.fits'
     crsrcatl = fits.open(crsrdata)[1].data
@@ -4867,8 +4911,15 @@ def cnfg_wise():
     catlflux = (crsrcatl['flux'][mask])[None, None, :]
     crsrcatldict['flux'] = catlflux
     crsrcatldict['magt'] = magtzero - 2.5 * np.log10(catlflux)
-    catlrefr.append(crsrcatldict)
-
+    catlrefr[0] = crsrcatldict
+    
+    catlrefr[1]['xpos'] = xposcosm
+    catlrefr[1]['ypos'] = yposcosm
+    print repr(fits.open(pathcosm)[1].header)
+    print fits.open(pathcosm)[1].columns
+    
+    catlrefr[1]['magt'] = -2.5 * np.log10(1e-6 * objtcosmcatl['flux_c1_4'] / 3631) # 3.6 um at 4.1
+    catlrefr[1]['flux'] = 10**(-0.4 * (catlrefr[1]['magt']-magtzero))[None, None, :]
     #if datatype == 'mock':
     #    catlrefr.append(truecatl)
     #    #catlrefr[0]['flux'] = catlrefr[0]['flux'][None, None, :]
@@ -4890,8 +4941,8 @@ def cnfg_wise():
          weig=weig, \
 
          catlrefr=catlrefr, \
-         lablrefr=['CwdSrc'], \
-         colrrefr=['g'], \
+         lablrefr=['CwdSrc', 'Cosmos'], \
+         colrrefr=['g', 'orange'], \
         
          cntpback=cntpback, \
         
@@ -4912,7 +4963,7 @@ def cnfg_wise():
          #numbswep=100, \
          #numbloop=1000, \
          priotype = 'prio', \
-         strgproc='pcat_20190123_140543_cnfg_wise_100000'
+         #strgproc='pcat_20190124_101254_cnfg_wise_100000'
         )
 
 
