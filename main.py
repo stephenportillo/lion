@@ -64,7 +64,7 @@ def plot_varbsamp(gdat, varb, lablyaxi, strgplot, xaxitype='samp'):
     plt.close()
 
 
-def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False, plottext=False):
+def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False, plottext=False, colrmodl='b', shapmodl='x'):
     markers = ['+', '1'] # temp
     for k in gdat.indxrefr:
         # minimum size of gdat.sizemrkr at 100 ADU
@@ -88,11 +88,11 @@ def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False,
         if boolcond:
             colr = 'yellow'
         else:
-            colr = 'b'
+            colr = colrmodl
         #size = gdat.sizemrkr * (np.log10(flux) - 1.)
         #size[np.where(size < gdat.sizemrkr)] = gdat.sizemrkr
         size = gdat.sizemrkr * flux / gdat.fittminmflux
-        axis.scatter(xpos, ypos, marker='x', s=size, color=colr, lw=1, alpha=0.7)
+        axis.scatter(xpos, ypos, marker=shapmodl, s=size, color=colr, lw=1, alpha=0.7)
         if boolcond:
             for n in range(len(xpos)):
                 axis.text(xpos[n] + 1., ypos[n] + 1., str(n), \
@@ -423,8 +423,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         goodsrc = (x > 0) * (x < sizeimag[0] - 1) * (y > 0) * (y < sizeimag[1] - 1)
         x = x.compress(goodsrc)
         y = y.compress(goodsrc)
-        print 'f'
-        summgene(f)
         f = f.compress(goodsrc, axis=2)
     
     if gdat.verbtype > 1:
@@ -449,7 +447,7 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
     dx = ix - x
     iy = np.floor(y).astype(np.int32)
     dy = iy - y
-    
+     
     #print 'heeey'
     #print 'x'
     #print x
@@ -529,8 +527,21 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                     
                 cntpmodlstmp = np.zeros((numbphon,gdat.numbsidepsfn,gdat.numbsidepsfn), dtype=np.float32)
                 cntpmodlstmp[:,:,:] = cntpmodlstmp2[:,:,:]
-                np.set_printoptions(5, linewidth=170)
                 for k in xrange(numbphon):
+                    #print 'k'
+                    #print k
+                    #print 'gdat.numbsidepsfn'
+                    #print gdat.numbsidepsfn
+                    #print 'rad'
+                    #print rad
+                    #print 'iy'
+                    #print iy
+                    #print 'cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1]'
+                    #summgene(cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1])
+                    #print 'cntpmodlstmp[k, :, :]'
+                    #summgene(cntpmodlstmp[k, :, :])
+                    #print
+
                     cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1] += cntpmodlstmp[k, :, :]
                 cntpmodl[i, :, :, t] = cntpmodltemp[rad:sizeimag[1]+rad,rad:sizeimag[0]+rad]
                 
@@ -939,6 +950,9 @@ def setp(gdat):
     gdat.liststrgfeatstar = ['xpos', 'ypos', 'flux']
     gdat.liststrgparastar = list(gdat.liststrgfeatstar)
     gdat.liststrgparastar += ['numb']
+    gdat.liststrgfeatgalx = ['xpos', 'ypos', 'flux', 'xxmo', 'xymo', 'yymo']
+    gdat.liststrgparagalx = list(gdat.liststrgfeatgalx)
+    gdat.liststrgparagalx += ['numbgalx']
 
 
 def make_cmap(seq):
@@ -1592,8 +1606,6 @@ def retr_tranphon(gridphon, amplphon, galaxypars, convert=True):
     # spectrum of the phonions
     specphon = fluxgalx[:, None] * amplphon[None, :]
     
-    print 'specphon'
-    summgene(specphon)
     specphon = specphon.flatten()[None, None, :]
 
     return (xposphon.flatten()).astype(np.float32), (yposphon.flatten()).astype(np.float32), specphon.astype(np.float32)
@@ -1894,9 +1906,10 @@ def main( \
         setp_varbvalu(gdat, 'fluxdistslopgalx', 2.)
         setp_varbvalu(gdat, 'minmflux', 1000.)
         setp_varbvalu(gdat, 'minmradigalx', 1.)
-        setp_varbvalu(gdat, 'minmfluxgalx', 10000.)
+        setp_varbvalu(gdat, 'minmfluxgalx', 2000.)
         setp_varbvalu(gdat, 'cntpbackscal', 100., comm=True)
         setp_varbvalu(gdat, 'maxmnumbstar', 2000, comm=True)
+        setp_varbvalu(gdat, 'maxmnumbgalx', 2000, comm=True)
         setp_varbvalu(gdat, 'numbgalx', 100, strgmodl='true')
         setp_varbvalu(gdat, 'numbstar', 10, strgmodl='true')
         setp_varbvalu(gdat, 'gain', 1., comm=True)
@@ -1996,6 +2009,8 @@ def main( \
         gdat.numbparagalx = cntr.gets()
         gdat.indxprvl = cntr.incr()
         gdat.numbparacatlcond = 1 + gdat.numbparastar
+        if gdat.strgmodl == 'galx':
+            gdat.numbparacatlcond = 1 + gdat.numbparagalx
         
         # generate mock data
         if gdat.cntpdata is None:
@@ -2084,7 +2099,7 @@ def main( \
                 gdat.probprop = np.array([80., 40., 40.])
                     
                 if gdat.strgmodl == 'galx':
-                    gdat.probprop = np.array([80., 40., 40., 80., 40., 40., 40., 40., 40.])
+                    gdat.probprop = np.array([80., 40., 40., 80., 40., 40., 0., 40., 0.])
             else:
                 gdat.probprop = np.array([80., 0., 0.])
         gdat.probprop /= np.sum(gdat.probprop)
@@ -2273,12 +2288,7 @@ def main( \
                 if self.fphon.size == 0:
                     self.fphon = np.copy(fluxmult*stars[gdat.indxflux, :])
                 else:
-                    print '__add_phonions_stars'
-                    print 'self.fphon'
-                    summgene(self.fphon)
                     self.fphon = np.append(self.fphon, fluxmult*stars[gdat.indxflux, :], axis=2)
-                    print 'self.fphon'
-                    summgene(self.fphon)
                 
                 if gdat.boolspre:
                     self.assert_types()
@@ -2289,15 +2299,7 @@ def main( \
                 xtemp, ytemp, ftemp = retr_tranphon(gdat.gridphon, gdat.amplphon, galaxies)
                 self.xphon = np.append(self.xphon, xtemp)
                 self.yphon = np.append(self.yphon, ytemp)
-                print '__add_phonions_galaxies'
-                print 'ftemp'
-                summgene(ftemp)
-                print 'self.fphon'
-                summgene(self.fphon)
-                
-                self.fphon = np.append(self.fphon, fluxmult*ftemp)
-                print 'self.fphon'
-                summgene(self.fphon)
+                self.fphon = np.append(self.fphon, fluxmult*ftemp, axis=2)
                 if gdat.boolspre:
                     self.assert_types()
         
@@ -2385,7 +2387,6 @@ def main( \
             
             # should these be class or instance variables?
         
-            ngalx = 100
             trueminf_g = np.float32(250.)
             truealpha_g = np.float32(2.00)
             gdat.trueminmradigalx = np.float32(1.00)
@@ -2488,14 +2489,16 @@ def main( \
 
                 self.ng = 0
                 if gdat.strgmodl == 'galx':
-                    self.ng = np.random.randint(self.ngalx)+1
-                    self.galaxies = np.zeros((6,self.ngalx), dtype=np.float32)
+                    self.ng = np.random.randint(gdat.maxmnumbgalx)+1
+                    self.galaxies = np.zeros((6,gdat.maxmnumbgalx), dtype=np.float32)
                     # temp -- 3 should be generalized to temporal modeling
                     self.galaxies[[gdat.indxxpos,gdat.indxypos,gdat.indxflux],0:self.ng] = np.random.uniform(size=(3, self.ng))
                     self.galaxies[gdat.indxxpos, :self.ng] *= gdat.sizeimag[0] - 1
                     self.galaxies[gdat.indxypos, :self.ng] *= gdat.sizeimag[1]-1
                     self.galaxies[gdat.indxflux, :self.ng] **= -1./(gdat.fittfluxdistslopgalx - 1.)
                     self.galaxies[gdat.indxflux, :self.ng] *= gdat.fittminmfluxgalx
+                    print 'self.galaxies[gdat.indxflux, :self.ng]'
+                    summgene(self.galaxies[gdat.indxflux, :self.ng])
                     self.galaxies[[gdat.indxxxmo,gdat.indxxymo,gdat.indxyymo], :self.ng] = samp_prio_momegalx(gdat.trueminmradigalx, self.ng)
                 self.cntpback = gdat.cntpback
             
@@ -2663,6 +2666,7 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                            supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             ## limits
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.83, 0.1, 0.03, 0.8]) 
@@ -2680,6 +2684,7 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                            supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
@@ -2697,6 +2702,7 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap=gdat.cmapresi, vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                            supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
@@ -2711,17 +2717,6 @@ def main( \
                     plot_fluxhist(gdat, self.stars[gdat.indxflux, 0:self.n], 0, 0, jj=jj)
 
                 if gdat.diagmode:
-                    if abs(gdat.chi2totl - np.sum(gdat.chi2stat)) > 1.:
-                        print 'Warning! Chi2 calculated in python and C are different!'
-                        print 'gdat.cntpdata'
-                        summgene(gdat.cntpdata)
-                        print 'gdat.chi2totl'
-                        print gdat.chi2totl
-                        print 'gdat.chi2stat'
-                        summgene(gdat.chi2stat)
-                        print 'abs(gdat.chi2totl - np.sum(gdat.chi2stat)) > 1.'
-                        print abs(gdat.chi2totl - np.sum(gdat.chi2stat)) > 1.
-                        #raise Exception('')
                     if gdat.chi2totl < 0.:
                         raise Exception('')
 
@@ -2748,6 +2743,8 @@ def main( \
                                 if (self.stars[gdat.indxflux[i, t], :self.n] < gdat.fittminmflux).any():
                                     print 'gdat.fittminmflux'
                                     print gdat.fittminmflux
+                                    print 'self.n'
+                                    print self.n
                                     print 'self.stars[gdat.indxflux[i, t], :self.n]'
                                     print self.stars[gdat.indxflux[i, t], :self.n]
                                     raise Exception('')
@@ -2933,20 +2930,6 @@ def main( \
                                         gdat.chi2copy[v, u] = gdat.chi2prop[v, u]
                             gdat.chi2stat = gdat.chi2copy
                         
-                        if gdat.diagmode:
-                            if not (jj == 0 and a == 0):
-                                for v in range(gdat.numbregiyaxi):
-                                    for u in range(gdat.numbregixaxi):
-                                        if gdat.chi2stat[v, u] - gdat.chi2prev[v, u] > 30.:
-                                            print 'Warning! Chi2 decreased by too much!'
-                                            print 'gdat.cntpdata'
-                                            summgene(gdat.cntpdata)
-                                            print 'gdat.chi2stat'
-                                            print gdat.chi2stat
-                                            print 'gdat.chi2prev'
-                                            print gdat.chi2prev
-                                            #raise Exception('')
-                            
                         # calculate llik
                         llik = -0.5 * gdat.chi2stat
             
@@ -2965,6 +2948,8 @@ def main( \
                             if gdat.diagmode:
                                 if np.unique(proposal.starsp[gdat.indxflux, :]).size != proposal.starsp[gdat.indxflux, :].size and proposal.starsp[gdat.indxflux, :].size > 1:
                                     print 'Proposed flux not all unique'
+                                    print 'proposal.stars0[gdat.indxflux, :]'
+                                    print proposal.stars0[gdat.indxflux, :]
                                     print 'proposal.starsp[gdat.indxflux, :]'
                                     print proposal.starsp[gdat.indxflux, :]
                                     #raise Exception('')
@@ -3029,8 +3014,8 @@ def main( \
                             idx_kill_a = proposal.idx_kill_g.compress(acceptprop)
                             num_kill = idx_kill_a.size
                             # like above, ngalx is correct
-                            self.galaxies[:, 0:self.ngalx-num_kill] = np.delete(self.galaxies, idx_kill_a, axis=1)
-                            self.galaxies[:, self.ngalx-num_kill:] = 0
+                            self.galaxies[:, 0:gdat.maxmnumbgalx-num_kill] = np.delete(self.galaxies, idx_kill_a, axis=1)
+                            self.galaxies[:, gdat.maxmnumbgalx-num_kill:] = 0
                             self.ng -= num_kill
                         chan['dt03'][gdat.thisindxswlp] = time.clock() - t3
         
@@ -3039,7 +3024,7 @@ def main( \
                         chan['booloutb'][gdat.thisindxswlp] = 1
                     
                     if gdat.diagmode:
-                        if proposal.factor != None and not np.isfinite(proposal.factor).any():
+                        if proposal.factor is not None and not np.isfinite(proposal.factor).any():
                             print 'Warning! proposal.factor is not finite!'
                             #raise Exception('')
                     if proposal.factor is not None and proposal.factor != []:
@@ -3173,13 +3158,10 @@ def main( \
                 boolfluxoutb = -dff > fluxabov
                 dff[boolfluxoutb] = -2. * fluxabov[boolfluxoutb] - dff[boolfluxoutb]
                 pff = ff + dff
-                pf = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
+                explogdfpff = np.exp((logdf*pff).astype(np.float64)).astype(np.float32)
+                pf = 1./explogdfpff * (-lindf*lindf*logdf*logdf + explogdfpff**2) / (2*logdf*logdf)
                 # calculate flux distribution prior factor
                 dlogf = np.log(pf/f0)
-                if gdat.diagmode and (pf < gdat.fittminmflux).any():
-                    print 'proposed flux went below minimum'
-                    print f0 > gdat.fittminmflux
-                    raise Exception("")
                 # assumes flat priors over colors
                 # temp
                 if gdat.priotype == 'info':
@@ -3242,6 +3224,11 @@ def main( \
                             pass
                             #raise Exception('')
 
+                if gdat.diagmode and (pf < gdat.fittminmflux).any():
+                    print 'proposed flux went below minimum'
+                    print f0 > gdat.fittminmflux
+                    raise Exception("")
+                
                 if not gdat.strgmode == 'forc':
                     psfx = gdat.cntppsfnusam[0, 0:gdat.numbsidepsfnusam:gdat.factusam, 1:gdat.numbsidepsfnusam:gdat.factusam]
                     dpdx = (psfx - psf0) * gdat.factusam
@@ -3356,6 +3343,8 @@ def main( \
                         starsk = self.stars.take(idx_kill, axis=1)
                         factor = np.full(nbd, self.penalty)
                         proposal.add_death_stars(idx_kill, starsk)
+                    else:
+                        factor = float('-inf')
                 else:
                     factor = float('-inf')
                 
@@ -3675,21 +3664,31 @@ def main( \
                 galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                 f0g = galaxies0[gdat.indxflux,:]
         
-                lindf = np.float32(60.*134/np.sqrt(25.))
-                logdf = np.float32(0.01/np.sqrt(25.))
+                psf0 = gdat.cntppsfnusam[0,:gdat.numbsidepsfnusam:gdat.factusam, :gdat.numbsidepsfnusam:gdat.factusam]
+                stdf = 1./np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(psf0*psf0)) # assumes single band
+                nest = 0.5 * gdat.maxmnumbstar / (gdat.numbregixaxi * gdat.numbregiyaxi)
+                lindf = stdf / np.sqrt(nest * (2+gdat.numbener)) # put numbtime here? 60
+                logdf = 0.01 / np.sqrt(nest * (2+gdat.numbener))
                 ff = np.log(logdf*logdf*f0g + logdf*np.sqrt(lindf*lindf + logdf*logdf*f0g*f0g)) / logdf
-                ffmin = np.log(logdf*logdf*gdat.fittminmfluxgalx + logdf*np.sqrt(lindf*lindf + logdf*logdf*gdat.fittminmfluxgalx*gdat.fittminmfluxgalx)) / logdf
-                dff = np.random.normal(size=nw).astype(np.float32)
+                ffmin = np.log(logdf*logdf*gdat.fittminmfluxgalx + logdf*np.sqrt(lindf*lindf + \
+                                                                logdf*logdf*gdat.fittminmfluxgalx*gdat.fittminmfluxgalx)) / logdf
+                dff = np.random.normal(size=(gdat.numbener, gdat.numbtime, nw)).astype(np.float32)
                 fluxabov = ff - ffmin
                 boolfluxoutb = (-dff > fluxabov)
                 dff[boolfluxoutb] = -2*fluxabov[boolfluxoutb] - dff[boolfluxoutb]
                 pff = ff + dff
-                pfg = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
-        
+                #pfg = np.exp(-logdf*pff) * (-lindf*lindf*logdf*logdf+np.exp(2*logdf*pff)) / (2*logdf*logdf)
+       
+                explogdfpff = np.exp((logdf*pff).astype(np.float64)).astype(np.float32)
+                pfg = 1./explogdfpff * (-lindf*lindf*logdf*logdf + explogdfpff**2) / (2*logdf*logdf)
+
                 dlogfg = np.log(pfg/f0g)
-                factor = -gdat.fittfluxdistslopgalx*dlogfg
-        
-                dpos_rms = np.float32(60.*134/np.sqrt(25.))/(np.maximum(f0g, pfg))
+                factor = -np.sum(gdat.fittfluxdistslopgalx*dlogfg, axis=(0, 1))
+                 
+                psfx = gdat.cntppsfnusam[0, 0:gdat.numbsidepsfnusam:gdat.factusam, 1:gdat.numbsidepsfnusam:gdat.factusam]
+                dpdx = (psfx - psf0) * gdat.factusam
+                dpos_rms = 1./ np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(dpdx*dpdx) * nest * (2+gdat.numbener) ) / \
+                        np.amax(np.amax(np.maximum(f0g, pfg), axis=0), axis=0)
                 dxg = np.random.normal(size=nw).astype(np.float32)*dpos_rms
                 dyg = np.random.normal(size=nw).astype(np.float32)*dpos_rms
                 dxxg = np.random.normal(size=nw, scale=0.1).astype(np.float32)
@@ -3733,8 +3732,8 @@ def main( \
                 nbd = (self.nregx * self.nregy) / 4
                 proposal = Proposal()
                 # birth
-                if lifeordeath and self.ng < self.ngalx: # need room for at least one source
-                    nbd = min(nbd, self.ngalx-self.ng) # add nbd sources, or just as many as will fit
+                if lifeordeath and self.ng < gdat.maxmnumbgalx: # need room for at least one source
+                    nbd = min(nbd, gdat.maxmnumbgalx-self.ng) # add nbd sources, or just as many as will fit
                                             # mildly violates detailed balance when n close to maxmnumbstar
                     # want number of regions in each direction, divided by two, rounded up
                     mregx = ((gdat.sizeimag[0] / gdat.sizeregi + 1) + 1) / 2 # assumes that sizeimag are multiples of sizeregi
@@ -3773,9 +3772,9 @@ def main( \
                 nsg = (self.nregx * self.nregy) / 4
                 proposal = Proposal()
                 # star -> galaxy
-                if starorgalx and self.n > 0 and self.ng < self.ngalx:
+                if starorgalx and self.n > 0 and self.ng < gdat.maxmnumbgalx:
                     idx_reg = self.idx_parity_stars()
-                    nsg = min(nsg, min(idx_reg.size, self.ngalx-self.ng))
+                    nsg = min(nsg, min(idx_reg.size, gdat.maxmnumbgalx-self.ng))
                     if nsg > 0:
                         idx_kill = np.random.choice(idx_reg, size=nsg, replace=False)
                         starsk = self.stars.take(idx_kill, axis=1)
@@ -3868,7 +3867,7 @@ def main( \
                     weigoverpairs[weigoverpairs == 0] = 1
                 # merge
                 elif not boolsplt and idx_reg.size > 1: # need two things to merge!
-                    numbspmr = min(numbspmr, idx_reg.size/2, self.ngalx-self.ng)
+                    numbspmr = min(numbspmr, idx_reg.size/2, gdat.maxmnumbgalx-self.ng)
                     idx_kill = np.empty((numbspmr, 2), dtype=np.int)
                     choosable = np.zeros(gdat.maxmnumbstar, dtype=np.bool)
                     choosable[idx_reg] = True
@@ -3996,7 +3995,7 @@ def main( \
                         ytemp = np.concatenate([ytemp, galaxiesp[gdat.indxypos, k:k+1], starsb[gdat.indxypos, k:k+1]])
         
                         invpairs[k] =  1./neighbours(xtemp, ytemp, self.scalspmrposi_g, self.n)
-                # merge star into galaxy
+                # merge galaxy + star into galaxy
                 elif not boolsplt and idx_reg_g.size > 1: # need two things to merge!
                     numbspmr = min(numbspmr, idx_reg_g.size)
                     idx_move_g = np.random.choice(idx_reg_g, size=numbspmr, replace=False) # choose galaxies and then see if they have neighbours
@@ -4028,8 +4027,14 @@ def main( \
         
                     galaxies0 = self.galaxies.take(idx_move_g, axis=1)
                     starsk = self.stars.take(idx_kill, axis=1)
-                    fluxspmrtotl = galaxies0[gdat.indxflux,:] + starsk[gdat.indxflux,:]
-                    frac = galaxies0[gdat.indxflux,:] / fluxspmrtotl
+                    if gdat.priotype == 'prio':
+                        indxfluxtemp = gdat.indxflux[0, 0]
+                    else:
+                        indxfluxtemp = gdat.indxflux
+                    fluxspmrtotl = galaxies0[indxfluxtemp, :] + starsk[indxfluxtemp, :]
+                    frac = galaxies0[indxfluxtemp, :] / fluxspmrtotl
+                    if gdat.priotype != 'prio':
+                        frac = np.mean(frac, axis=(0, 1))
                     dx = galaxies0[gdat.indxxpos,:] - starsk[gdat.indxxpos,:]
                     dy = galaxies0[gdat.indxypos,:] - starsk[gdat.indxypos,:]
                     pxxg = frac*galaxies0[gdat.indxxxmo,:] + frac*(1-frac)*dx*dx
@@ -4088,8 +4093,8 @@ def main( \
                 goodmove = False
                 proposal = Proposal()
                 # split
-                if boolsplt and self.ng > 0 and self.ng < self.ngalx and numbbrgt > 0: # need something to split, but don't exceed maxmnumbstar
-                    numbspmr = min(numbspmr, numbbrgt, self.ngalx-self.ng) # need bright source AND room for split source
+                if boolsplt and self.ng > 0 and self.ng < gdat.maxmnumbgalx and numbbrgt > 0: # need something to split, but don't exceed maxmnumbstar
+                    numbspmr = min(numbspmr, numbbrgt, gdat.maxmnumbgalx-self.ng) # need bright source AND room for split source
                     dx = (np.random.normal(size=numbspmr)*self.scalspmrposi_g).astype(np.float32)
                     dy = (np.random.normal(size=numbspmr)*self.scalspmrposi_g).astype(np.float32)
                     idx_move_g = np.random.choice(idx_bright, size=numbspmr, replace=False)
@@ -4155,13 +4160,13 @@ def main( \
                     numbspmr = min(numbspmr, idx_reg.size/2)
                     idx_move_g = np.empty(numbspmr, dtype=np.int)
                     idx_kill_g = np.empty(numbspmr, dtype=np.int)
-                    choosable = np.zeros(self.ngalx, dtype=np.bool)
+                    choosable = np.zeros(gdat.maxmnumbgalx, dtype=np.bool)
                     choosable[idx_reg] = True
                     nchoosable = float(idx_reg.size)
                     invpairs = np.empty(numbspmr)
         
                     for k in xrange(numbspmr):
-                        idx_move_g[k] = np.random.choice(self.ngalx, p=choosable/nchoosable)
+                        idx_move_g[k] = np.random.choice(gdat.maxmnumbgalx, p=choosable/nchoosable)
                         invpairs[k], idx_kill_g[k] = neighbours(self.galaxies[gdat.indxxpos, 0:self.ng], \
                                                                 self.galaxies[gdat.indxypos, 0:self.ng], self.scalspmrposi_g, idx_move_g[k], generate=True)
                         if invpairs[k] > 0:
@@ -4243,14 +4248,6 @@ def main( \
         ntemps = 1
         temps = np.sqrt(2) ** np.arange(ntemps)
         
-        ngsample = np.zeros(gdat.numbsamp, dtype=np.int32)
-        xgsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-        ygsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-        fgsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-        xxgsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-        xygsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-        yygsample = np.zeros((gdat.numbsamp, gdat.maxmnumbstar), dtype=np.float32)
-        
         # construct model for each temperature
         listobjtmodl = [Model() for k in xrange(ntemps)]
         
@@ -4273,6 +4270,8 @@ def main( \
         gdat.indxswlp = np.arange(gdat.numbswlp)
         chan = {}
         chan['numb'] = np.zeros(gdat.numbsamp, dtype=np.int32)
+        if gdat.strgmodl == 'galx':
+            chan['numbgalx'] = np.zeros(gdat.numbsamp, dtype=np.int32)
         chan['chi2'] = np.zeros(gdat.numbsamp)
         chan['lposterm'] = np.zeros((gdat.numbswlp, gdat.numbregixaxi, gdat.numbregiyaxi))
         for strgfeat in gdat.liststrgfeatstar:
@@ -4281,6 +4280,13 @@ def main( \
             else:
                 chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.maxmnumbstar))
         
+        for strgfeat in gdat.liststrgfeatgalx:
+            if strgfeat == 'numbgalx':
+                chan[strgfeat] = np.zeros((gdat.numbsamp, gdat.numbener, gdat.numbtime, gdat.maxmnumbgalx))
+            elif strgfeat == 'flux':
+                chan[strgfeat + 'galx'] = np.zeros((gdat.numbsamp, gdat.numbener, gdat.numbtime, gdat.maxmnumbgalx))
+            else:
+                chan[strgfeat + 'galx'] = np.zeros((gdat.numbsamp, gdat.maxmnumbgalx))
         
         chan['proptype'] = np.zeros((gdat.numbswlp))
         chan['booloutb'] =  np.zeros((gdat.numbswlp))
@@ -4330,15 +4336,14 @@ def main( \
                 for strgfeat in gdat.liststrgfeatstar:
                     indx = getattr(gdat, 'indx' + strgfeat)
                     chan[strgfeat][j-gdat.numbswepburn, :] = listobjtmodl[0].stars[indx, :]
-                chan['chi2'][j-gdat.numbswepburn] = np.sum(listchi2totl[0])
                 if gdat.strgmodl == 'galx':
-                    ngsample[j] = listobjtmodl[0].ng
-                    xgsample[j,:] = listobjtmodl[0].galaxies[gdat.indxxpos, :]
-                    ygsample[j,:] = listobjtmodl[0].galaxies[gdat.indxypos, :]
-                    fgsample[j,:] = listobjtmodl[0].galaxies[gdat.indxflux, :]
-                    xxgsample[j,:] = listobjtmodl[0].galaxies[gdat.indxxxmo, :]
-                    xygsample[j,:] = listobjtmodl[0].galaxies[gdat.indxxymo, :]
-                    yygsample[j,:] = listobjtmodl[0].galaxies[gdat.indxyymo, :]
+                    chan['numbgalx'][j-gdat.numbswepburn] = listobjtmodl[0].ng
+                    for strgfeat in gdat.liststrgfeatgalx:
+                        indx = getattr(gdat, 'indx' + strgfeat)
+                        if strgfeat != 'numbgalx':
+                            strgfeat += 'galx'
+                        chan[strgfeat][j-gdat.numbswepburn, :] = listobjtmodl[0].galaxies[indx, :]
+                chan['chi2'][j-gdat.numbswepburn] = np.sum(listchi2totl[0])
    
         writ_catl(gdat, chan, pathh5py)
         
@@ -4373,6 +4378,8 @@ def main( \
         
     # calculate the condensed catalog
     gdat.catlcond = retr_catlcond(gdat.rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag)
+    if gdat.strgmodl == 'galx':
+        gdat.catlcond = retr_catlcond(gdat.rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag, boolgalx=True)
     
     if gdat.catlcond is not None:
         gdat.numbsourcond = gdat.catlcond.shape[1]
@@ -4541,29 +4548,21 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None):
     if np.sum(mask) == 0:
         return
     PCc_all = np.zeros((np.sum(mask), 2))
-    PCc_all[:, 0] = chan['xpos'][mask].flatten()
-    PCc_all[:, 1] = chan['ypos'][mask].flatten()
+    
+    if gdat.strgmodl == 'galx':
+        strgtemp = gdat.strgmodl
+    else:   
+        strgtemp = ''
+
+    PCc_all[:, 0] = chan['xpos' + strgtemp][mask].flatten()
+    PCc_all[:, 1] = chan['ypos' + strgtemp][mask].flatten()
     PCi = PCi[mask].flatten()
     
-    #pos = {}
-    #weig = {}
-    #for i in xrange(np.sum(mask)):
-    # pos[i] = (PCc_all[i, 0], PCc_all[i,1])
-    # weig[i] = 0.5
-    
-    #print pos[0]
-    #print PCc_all[0, :]
-    #print "graph..."
-    #G = networkx.read_gpickle('graph')
-    #G = networkx.geographical_threshold_graph(np.sum(mask), 1./0.75, alpha=1., dim=2., pos=pos, weig=weig)
-    
     print 'Constructing a KD tree...'
-
     kdtree = scipy.spatial.KDTree(PCc_all)
     matches = kdtree.query_ball_tree(kdtree, 0.75)
     
     print 'Constructing the network...'
-    
     G = networkx.Graph()
     G.add_nodes_from(xrange(0, PCc_all.shape[0]))
     
@@ -4625,30 +4624,40 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None):
     catlseedtemp = np.array(catlseed)
     
     catlseed = {}
-    print 'catlseedtemp'
-    summgene(catlseedtemp)
     gdat.numbsourseed = catlseedtemp.shape[0]
 
-    catlseed['numb'] = gdat.numbsourseed
-    catlseed['xpos'] = catlseedtemp[:, 0]
-    catlseed['ypos'] = catlseedtemp[:, 1]
-    catlseed['degr'] = catlseedtemp[:, 2]
-    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed.h5'
+    catlseed['numb' + strgtemp] = gdat.numbsourseed
+    catlseed['xpos' + strgtemp] = catlseedtemp[:, 0]
+    catlseed['ypos' + strgtemp] = catlseedtemp[:, 1]
+    catlseed['degr' + strgtemp] = catlseedtemp[:, 2]
+    
+    if gdat.strgmodl == 'galx':
+        strgtemptemp = '_'
+    else:
+        strgtemptemp = ''
+    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed%s%s.h5' % (strgtemptemp, strgtemp)
     writ_catl(gdat, catlseed, pathcatlseed)
 
 
-def retr_catlcond(rtag, pathdata, pathdatartag=None):
+def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
 
     strgtimestmp = rtag[:15]
     
     # paths
     pathlion, pathdata = retr_path()
     
+    if gdat.strgmodl == 'galx':
+        strgtemp = gdat.strgmodl
+        strgtemptemp = '_'
+    else:   
+        strgtemp = ''
+        strgtemptemp = ''
+    
     if pathdatartag is None:
         pathdatartag = pathdata + rtag + '/'
     os.system('mkdir -p %s' % pathdatartag)
 
-    pathcatlcond = pathdatartag + rtag + '_catlcond.h5'
+    pathcatlseed = pathdatartag + rtag + '_catlcond%s%s.h5' % (strgtemptemp, strgtemp)
     
     # search radius
     radisrch = 0.75
@@ -4670,12 +4679,21 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     chan = read_catl(gdat, pathchan)
 
     # sort the catalog in decreasing flux
-    catlsort = np.zeros((gdat.numbsamp, gdat.maxmnumbstar, gdat.numbparastar))
+    if gdat.strgmodl == 'galx':
+        numbpara = gdat.numbparagalx
+    else:
+        numbpara = gdat.numbparastar
+    catlsort = np.zeros((gdat.numbsamp, gdat.maxmnumbstar, numbpara))
     for b in gdat.indxsamp:
         catl = np.zeros((gdat.maxmnumbstar, gdat.numbparastar))
-        catl[:, gdat.indxxpos] = chan['xpos'][b, :]
-        catl[:, gdat.indxypos] = chan['ypos'][b, :]
-        catl[:, gdat.indxflux.flatten()] = chan['flux'][b, :, :, :].reshape((gdat.numbflux, gdat.maxmnumbstar)).T
+        catl[:, gdat.indxxpos] = chan['xpos' + strgtemp][b, :]
+        catl[:, gdat.indxypos] = chan['ypos' + strgtemp][b, :]
+        catl[:, gdat.indxflux.flatten()] = chan['flux' + strgtemp][b, :, :, :].reshape((gdat.numbflux, gdat.maxmnumbstar)).T
+        if gdat.strgmodl == 'galx':
+            catl[:, gdat.indxxxmo] = chain['xxmogalx'][b,:]
+            catl[:, gdat.indxxymo] = chain['xymogalx'][b,:]
+            catl[:, gdat.indxyymo] = chain['yymogalx'][b,:]
+
         # temp
         catlsort[b, :, :] = np.flipud(catl[catl[:, gdat.indxflux[0, 0]].argsort(), :])
         #print 'b'
@@ -4698,15 +4716,15 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     catlstck = np.zeros((numbstarstck, 2))
     cntr = 0
     for b in gdat.indxsamp:
-        catlstck[cntr:cntr+chan['numb'][b], 0] = catlsort[b, :chan['numb'][b], gdat.indxxpos]
-        catlstck[cntr:cntr+chan['numb'][b], 1] = catlsort[b, :chan['numb'][b], gdat.indxypos]
-        cntr += chan['numb'][b]
+        catlstck[cntr:cntr+chan['numb' + strgtemp][b], 0] = catlsort[b, :chan['numb' + strgtemp][b], gdat.indxxpos]
+        catlstck[cntr:cntr+chan['numb' + strgtemp][b], 1] = catlsort[b, :chan['numb' + strgtemp][b], gdat.indxypos]
+        cntr += chan['numb' + strgtemp][b]
 
-    retr_catlseed(rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag)
+    retr_catlseed(rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag, boolgalx=boolgalx)
     
     # seed catalog
     ## load the catalog
-    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed.h5'
+    pathcatlseed = gdat.pathdatartag + rtag + '_catlseed%s%s.h5' % (strgtemptemp, strgtemp)
     if not os.path.exists(pathcatlseed):
         return None
 
@@ -4833,6 +4851,9 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None):
     catlcond[gdat.indxypos, :, 1] = stdvypos
     catlcond[gdat.indxflux, :, 0] = fluxmean
     catlcond[gdat.indxflux, :, 1] = stdvflux
+    if gdat.strgmodl == 'galx':
+        catlcond[gdat.indxxxmo, :, 0] = xxmomean
+        catlcond[gdat.indxxxmo, :, 1] = stdvxxmo
     catlcond[gdat.indxprvl, :, 0] = prvl / float(gdat.numbsamp)
     catlcond[gdat.indxprvl, :, 1] = np.sqrt(prvl) / float(gdat.numbsamp)
     
@@ -4941,6 +4962,9 @@ def cnfg_galx():
     
     main( \
          #verbtype=2, \
+         inittype='rand', \
+         maxmnumbstar=200, \
+         maxmnumbgalx=200, \
          diagmode=True, \
          datatype='mock', \
          boolplotinit=False, \
