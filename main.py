@@ -2551,9 +2551,9 @@ def main( \
                 
                 cntpresi = gdat.cntpdata.copy() # residual for zero image is data
                 if gdat.strgmodl == 'star':
-                    xposeval = xposself.stars[gdat.indxxpos, :self.n]
-                    yposeval = yposself.stars[gdat.indxypos, :self.n]
-                    fluxeval = fluxself.stars[gdat.indxflux, :self.n]
+                    xposeval = self.stars[gdat.indxxpos, :self.n]
+                    yposeval = self.stars[gdat.indxypos, :self.n]
+                    fluxeval = self.stars[gdat.indxflux, :self.n]
                 else:
                     xposphon, yposphon, specphon = retr_tranphon(gdat.gridphon, gdat.amplphon, self.galaxies[:,0:self.ng])
                     print 'self.stars[gdat.indxxpos, :self.n]'
@@ -2666,7 +2666,8 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
+                            if gdat.strgmodl == 'galx':
+                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             ## limits
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.83, 0.1, 0.03, 0.8]) 
@@ -2684,7 +2685,8 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
+                            if gdat.strgmodl == 'galx':
+                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
@@ -2702,7 +2704,8 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap=gdat.cmapresi, vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
+                            if gdat.strgmodl == 'galx':
+                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
@@ -4516,7 +4519,7 @@ def samp_prio_momegalx(truermin_g, ngalx, slope=np.float32(4)):
     return to_moments(rg, thetag, phig)
             
 
-def retr_catlseed(rtag, pathdata, pathdatartag=None):
+def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     
     strgtimestmp = rtag[:15]
     
@@ -4645,6 +4648,14 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     
     # paths
     pathlion, pathdata = retr_path()
+
+    path = pathdatartag + 'gdat.p'
+    filepick = open(path, 'rb')
+    print 'Reading %s...' % path
+    gdat = cPickle.load(filepick)
+    filepick.close()
+
+    setp(gdat)
     
     if gdat.strgmodl == 'galx':
         strgtemp = gdat.strgmodl
@@ -4657,21 +4668,13 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
         pathdatartag = pathdata + rtag + '/'
     os.system('mkdir -p %s' % pathdatartag)
 
-    pathcatlseed = pathdatartag + rtag + '_catlcond%s%s.h5' % (strgtemptemp, strgtemp)
+    pathcatlcond = pathdatartag + rtag + '_catlcond%s%s.h5' % (strgtemptemp, strgtemp)
     
     # search radius
     radisrch = 0.75
     
     # confidence cut
     minmdegr = 2 
-    
-    path = pathdatartag + 'gdat.p'
-    filepick = open(path, 'rb')
-    print 'Reading %s...' % path
-    gdat = cPickle.load(filepick)
-    filepick.close()
-    
-    setp(gdat)
     
     # read the chain
     print 'Reading the chain...'    
@@ -5044,7 +5047,6 @@ def cnfg_wise():
     catlrefr[0] = crsrcatldict
     # cosmos catalog
     maskcosm = (objtcosmcatl['flux_c1_4'] > 0) * (xposcosm > 0) * (xposcosm < smalbnds) * (yposcosm > 0) * (yposcosm < smalbnds)
-    print 'maskcosm', np.sum(maskcosm)
     # take only objects with positive flux and within bounds
     catlrefr[1]['xpos'] = xposcosm[maskcosm]
     catlrefr[1]['ypos'] = yposcosm[maskcosm]
