@@ -4546,7 +4546,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     
     PCi, junk = np.mgrid[:numbsampseed, :gdat.maxmnumbstar]
     
-    # temp
+    # temp - uses only first energy, first time
     mask = chan['flux'][:, 0, 0, :] > 0
     if np.sum(mask) == 0:
         return
@@ -4568,7 +4568,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     print 'Constructing the network...'
     G = networkx.Graph()
     G.add_nodes_from(xrange(0, PCc_all.shape[0]))
-    
+    # for each source, add edges to all other sources from other catalogues within match radius
     for i in xrange(PCc_all.shape[0]):
         for j in matches[i]:
             if PCi[i] != PCi[j]:
@@ -4576,13 +4576,14 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     
     print 'Iterating over sources...'
 
-    current_catalogue = 0
     for i in xrange(PCc_all.shape[0]):
+        # sort matches so they are in order of catalogues they belong to
         matches[i].sort()
-        bincount = np.bincount(PCi[matches[i]]).astype(np.int)
-        ending = np.cumsum(bincount).astype(np.int)
+        bincount = np.bincount(PCi[matches[i]]).astype(np.int) # how many matches are from each catalogue
+        ending = np.cumsum(bincount).astype(np.int) # ending index for each catalogue
         starting = np.zeros(bincount.size).astype(np.int)
-        starting[1:bincount.size] = ending[0:bincount.size-1]
+        starting[1:bincount.size] = ending[0:bincount.size-1] # starting index for each catalogue
+        # for each other catalogue
         for j in xrange(bincount.size):
             if j == PCi[i]: # do not match to same catalogue
                 continue
@@ -4591,6 +4592,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
             if bincount[j] == 1: # exactly one match to catalogue j
                 continue
             if bincount[j] > 1:
+                # find closest match in catalogue j
                 dist2 = 0.75**2
                 l = -1
                 for k in xrange(starting[j], ending[j]):
@@ -4600,16 +4602,16 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
                         l = m
                         dist2 = newdist2
                 if l == -1:
-                    print "didn't find edge even though mutiple matches from this catalogue?"
+                    print "didn't find edge even though multiple matches from this catalogue?"
+                # only keep edge to closest match
                 for k in xrange(starting[j], ending[j]):
                     m = matches[i][k]
                     if m != l:
                         if G.has_edge(i, m):
                             G.remove_edge(i, m)
-                            #print "killed", i, m
     
     catlseed = []
-    
+    # make seed catalogue by taking graph nodes in order of most edges, updating graph as we go
     while networkx.number_of_nodes(G) > 0:
         deg = networkx.degree(G)
         maxmdegr = 0
@@ -4697,25 +4699,14 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
             catl[:, gdat.indxxymo] = chain['xymogalx'][b,:]
             catl[:, gdat.indxyymo] = chain['yymogalx'][b,:]
 
-        # temp
+        # temp - sorts by first energy, first time
         catlsort[b, :, :] = np.flipud(catl[catl[:, gdat.indxflux[0, 0]].argsort(), :])
-        #print 'b'
-        #print b
-        #print 'chan[flux][b, 0, :, :5]'
-        #print chan['flux'][b, 0, 0, :5]
-        #print 'chan[flux][b, 0, 1, :5]'
-        #print chan['flux'][b, 0, 1, :5]
-        #print 'chan[flux][b, 0, 2, :5]'
-        #print chan['flux'][b, 0, 2, :5]
-        #print 'catlsort[b, :10, :]'
-        #print catlsort[b, :10, :]
-        #print
     print "Stacking catalogs..."
     
     # number of stacked stars
     numbstarstck = np.sum(chan['numb'])
     
-    # create array for KD tree creation
+    # create stacked array for KD tree creation
     catlstck = np.zeros((numbstarstck, 2))
     cntr = 0
     for b in gdat.indxsamp:
@@ -4735,7 +4726,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     
     ## perform confidence cut
     
-    # temp
     indxstar = np.where(catlseed['degr'] >= minmdegr)[0]
     catlseed['xpos'] = catlseed['xpos'][indxstar]
     catlseed['ypos'] = catlseed['ypos'][indxstar]
@@ -4750,7 +4740,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     catlseedtemp = np.empty((numbsourseed, 2)) 
     catlseedtemp[:, 0] = catlseed['xpos']
     catlseedtemp[:, 1] = catlseed['ypos']
-    #catlseedtemp[:, 2] = catlseed['degr']
     catlseed = catlseedtemp
     
     #creates tree, where tree is Pcc_stack
@@ -4792,7 +4781,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
                 #if there are matches remaining, we then find the brightest and update
                 if culled_matches.size > 0:
     
-                    #find brightest
+                    #find brightest (first in the sorted catalogue)
                     match = np.min(culled_matches)
     
                     #flag it in the mask
@@ -4801,19 +4790,13 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
                     #add information to cluster array
                     featcond[i, k, gdat.indxxpos] = catlsort[i, match-indxstarloww, gdat.indxxpos]
                     featcond[i, k, gdat.indxypos] = catlsort[i, match-indxstarloww, gdat.indxypos]
-                    #print 'catlsort[i, match-indxstarloww, gdat.indxflux]'
-                    #print catlsort[i, match-indxstarloww, gdat.indxflux]
-                    #print 'catlsort[i, match-indxstarloww, gdat.indxxpos]'
-                    #print catlsort[i, match-indxstarloww, gdat.indxxpos]
-                    #print
-
                     featcond[i, k, gdat.indxflux] = catlsort[i, match-indxstarloww, gdat.indxflux]
                     prvl[k] += 1
     
     # generate condensed catalog from clusters
     numbsourseed = len(catlseed)
     
-    #arrays to store 'classical' catalog parameters
+    #arrays to store condensed catalog parameters
     xposmean = np.zeros(numbsourseed)
     yposmean = np.zeros(numbsourseed)
     fluxmean = np.zeros((gdat.numbener, gdat.numbtime, numbsourseed))
@@ -4827,12 +4810,13 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     pctlhigh = 84
     pctlloww = 16
     for i in indxsourseed:
-        xpos = featcond[:, i, gdat.indxxpos]
-        ypos = featcond[:, i, gdat.indxypos]
-        flux = featcond[:, i, gdat.indxflux]
+        # only calculate means and variances for matches
+        indxmtch = np.where(featcond[:, i, gdat.indxflux[0,0]] > 0)[0]
+        xpos = featcond[indxmtch, i, gdat.indxxpos]
+        ypos = featcond[indxmtch, i, gdat.indxypos]
+        flux = featcond[:, i, gdat.indxflux][indxmtch, :]
         if (featcond[:, i, gdat.indxflux] - np.mean(featcond[:, i, gdat.indxflux]) == 0.).all():
             print 'Warning! condensed catalog flux uncertainties vanish!'
-        # temp -- check zeros here, np.nonzero(featcond[:, i, gdat.indxypos])
 
         assert xpos.size == ypos.size
         
@@ -4845,7 +4829,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
             stdvypos[i] = np.percentile(ypos, pctlhigh) - np.percentile(ypos, pctlloww)
             stdvflux[:, :, i] = np.percentile(flux, pctlhigh, axis=0) - np.percentile(flux, pctlloww, axis=0)
             if (stdvflux[:, :, i] == 0.).any():
-                print 'Warning! Samples of condensed catalog elements have vanishing variance!'
+                print 'Warning! Samples of condensed catalog elements have vanishing variance! matches: '+str(xpos.size)
 
     catlcond = np.zeros((gdat.numbparacatlcond, numbsourseed, 2))
     catlcond[gdat.indxxpos, :, 0] = xposmean
@@ -5052,18 +5036,9 @@ def cnfg_wise():
     catlrefr[1]['ypos'] = yposcosm[maskcosm]
     catlrefr[1]['magt'] = (-2.5 * np.log10(1e-6 * objtcosmcatl['flux_c1_4'][maskcosm] / 3631) - 2.699)[None, None, :] # 3.6 um at 4.1, and AB->Vega conversion for W1
     catlrefr[1]['flux'] = 10**(-0.4 * (catlrefr[1]['magt']-magtzero))[None, None, :]
-    #if datatype == 'mock':
-    #    catlrefr.append(truecatl)
-    #    #catlrefr[0]['flux'] = catlrefr[0]['flux'][None, None, :]
-    #    lablrefr = ['True']
-    #    colrrefr = ['g']
-    #else:
-    #    lablrefr = ['HST 606W']
-    #    colrrefr = ['m']
    
     factusam = 5
 
-    #exprtype = 'sdss'
     main( \
          cntpdata=cntpdata, \
          cntppsfnusam=cntppsfnusam, \
@@ -5091,10 +5066,10 @@ def cnfg_wise():
          #diagmode=True, \
          magtzero=magtzero, \
          verbtype=1, \
-         numbswep=200, \
+         numbswep=1000, \
          #numbloop=1000, \
          priotype = 'prio', \
-         #strgproc='pcat_20190125_184612_cnfg_wise_200000'
+         strgproc='pcat_20190301_143248_cnfg_wise_1000000'
         )
 
 
