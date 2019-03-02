@@ -101,9 +101,6 @@ def supr_catl(gdat, axis, i, t, xpos=None, ypos=None, flux=None, boolcond=False,
         
 def plot_pcat(gdat=None, rtag=None):
     
-    # temp
-    #rtag = 'pcat_20180711_105422_cnfg_time_000020'
-
     pathlion, pathdata = retr_path()
     
     if gdat is None:
@@ -117,228 +114,246 @@ def plot_pcat(gdat=None, rtag=None):
     
     psf0 = gdat.cntppsfnusam[:gdat.numbsidepsfnusam:gdat.factusam, :gdat.numbsidepsfnusam:gdat.factusam]
     
-    #if len(gdat.catlrefr) > 0:
-    for a in xrange(len(gdat.catlrefr)):
-        print 'gdat.strgdata'
-        print gdat.strgdata
-        if gdat.datatype == 'mock':
-            path = pathdata + '%04d%04d%04d_mock.h5' % (gdat.numbener, gdat.numbtime, gdat.truenumbstar)
-            print 'Reading %s...' % path
-            filetemp = h5py.File(path, 'r')
-            HTcat = read_catl(gdat, path, boolmock=True)
-        else:
-            # temp
-            HTcat = gdat.catlrefr[a]
-        
-        HTx = HTcat['xpos']
-        HTy = HTcat['ypos']
-        HTmag = HTcat['magt'][0, 0, :] # temp
-        HTc = np.zeros((HTx.shape[0], 2))
-        HTc[:, 0] = HTx
-        HTc[:, 1] = HTy
-        HTkd = scipy.spatial.KDTree(HTc)
-        
-        path = gdat.pathdatartag + gdat.rtag + '_catlcond.h5'
-        filetemp = h5py.File(path, 'r')
+    print 'gdat.strgdata'
+    print gdat.strgdata
+    # if mock data, find mock catalogue, otherwise assume first reference catalogue is ground truth
+    if gdat.datatype == 'mock':
+        path = pathdata + '%04d%04d%04d_mock.h5' % (gdat.numbener, gdat.numbtime, gdat.truenumbstar)
         print 'Reading %s...' % path
-        catlcond = filetemp['catlcond'][()]
-        filetemp.close()
-        CCx = catlcond[0, :, 0]
-        CCy = catlcond[1, :, 0]
-        CCf = catlcond[2, :, 0]
-        CCmag = gdat.magtzero - 2.5*np.log10(CCf)
-        # temp
-        CCconf = catlcond[gdat.indxprvl, :, 0]
-        print 'CCconf'
-        summgene(CCconf)
-        CCs = catlcond[0, :, 0]
-        
-        CCc = np.zeros((CCx.shape[0], 2))
-        if gdat.numbsourcond > 0:
-            CCc[:,0] = CCx
-            CCc[:,1] = CCy
-            CCkd = scipy.spatial.KDTree(CCc)
-        
-        pathchan = gdat.pathdatartag + gdat.rtag + '_chan.h5'
-        chan = read_catl(gdat, pathchan)
-        maxn = 3000
-        PCn = chan['numb']
-        PCx = chan['xpos']
-        PCy = chan['ypos']
-        PCf = chan['flux'][:, 0, 0, :]
-        PCmag = gdat.magtzero - 2.5*np.log10(PCf)
-        mask = (PCx > 0) * (PCy > 0) * (PCf > 0)
-        PCc_all = np.zeros((np.sum(mask), 2))
-        PCc_all[:, 0] = PCx[mask].flatten()
-        PCc_all[:, 1] = PCy[mask].flatten()
-        PCkd = scipy.spatial.KDTree(PCc_all)
-        PCmag_all = PCmag[mask]
-        
-        sizefac = 1360.
-        n = PCn[-1]
-        
-        dr = 0.75
-        dmag = 0.5
-        
-        nbins = 16
-        minr, maxr = np.amin(HTmag) - 0.1, gdat.magtzero - 2.5*np.log10(gdat.fittminmflux)
-        binw = (maxr - minr) / float(nbins)
-        #print "max r CC", np.max(CCf)
-        
-        precPC = np.zeros(nbins)
-        precCC = np.zeros(nbins)
-        
-        # with sigfac < 8
-        
-        gdat.distmtch, gdat.indxmtch = CCkd.query(np.vstack((HTx, HTy)).T, k=1, distance_upper_bound=dr, p=2)
-        if gdat.verbtype > 1:
-            print 'HTx'
-            print HTx
-            print 'HTy'
-            print HTy
-            print 'HTf'
-            print HTf
-            print 'CCx'
-            print CCx
-            print 'CCy'
-            print CCy
-            print 'CCf'
-            print CCf
-            print 'gdat.indxmtch'
-            print gdat.indxmtch
-            print
+        filetemp = h5py.File(path, 'r')
+        HTcat = read_catl(gdat, path, boolmock=True)
+    else:
+        HTcat = gdat.catlrefr[0]
+    
+    HTx = HTcat['xpos']
+    HTy = HTcat['ypos']
+    HTmag = HTcat['magt'][0, 0, :] # temp
+    HTc = np.zeros((HTx.shape[0], 2))
+    HTc[:, 0] = HTx
+    HTc[:, 1] = HTy
+    HTkd = scipy.spatial.KDTree(HTc)
 
-        goodmatchCC, indxmtch = associate(CCkd, CCmag, HTkd, HTmag, dr, dmag)
-        goodmatchPC, indxmtch = associate(PCkd, PCmag_all, HTkd, HTmag, dr, dmag)
-        
-        for i in xrange(nbins):
-            rlo = minr + i * binw
-            rhi = rlo + binw
-        
-            inbin = np.logical_and(PCmag_all >= rlo, PCmag_all < rhi)
-            precPC[i] = np.sum(np.logical_and(inbin, goodmatchPC)) / float(np.sum(inbin))
-        
-            inbin = np.logical_and(CCmag >= rlo, CCmag < rhi)
-            precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
-        
-        plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
-        plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-        plt.xlabel('reference magnitude')
-        plt.ylabel('false discovery rate')
-        plt.legend(prop={'size':12}, loc = 'best')
-        plt.tight_layout()
-        plt.savefig(gdat.pathdatartag + 'fldr%02i.pdf' % (a))
-        plt.close()
-        #
-        #plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-        #plt.xlabel('SDSS r magnitude')
-        #plt.ylabel('false discovery rate')
-        #plt.ylim((-0.05, 0.7))
-        #plt.xlim((15,24))
-        #plt.legend(prop={'size':12}, loc = 'best')
-        #plt.tight_layout()
-        #plt.savefig('fdr_sigfac.pdf')
-        
-        completeCC, indxmtchtrue, confmatchCC, sigfCC = associate(HTkd, HTmag, CCkd, CCmag, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
-        #completeCC = associate(HTkd, HTf, CCkd, CCf, dr, dmag)
-        
-        completePC = np.zeros((PCx.shape[0], HTx.size))
-        for i in xrange(PCx.shape[0]):
-            n = PCn[i]
-            CCc_one = np.zeros((n,2))
-            CCc_one[:, 0] = PCx[i, 0:n]
-            CCc_one[:, 1] = PCy[i, 0:n]
-            CCf_one = PCmag[i, 0:n]
-            plt.scatter(PCx[i,0:n], PCy[i,0:n], marker='x', c='r', s=10**(-0.4*(PCmag[i,0:n]-21)))
-            plt.scatter(HTx, HTy, marker='+', c='g', s=10**(-0.4*(HTmag-21)))
-            plt.close()
+    kdtrrefr = []
+    magtrefr = []
+    for a in xrange(1, len(gdat.catlrefr)):
+        catlthis = gdat.catlrefr[a]
+        catlcord = np.dstack((catlthis['xpos'], catlthis['ypos']))[0]
+        kdtrrefr.append(scipy.spatial.KDTree(catlcord))
+        magtrefr.append(catlthis['magt'][0,0,:])
+    
+    path = gdat.pathdatartag + gdat.rtag + '_catlcond.h5'
+    filetemp = h5py.File(path, 'r')
+    print 'Reading %s...' % path
+    catlcond = filetemp['catlcond'][()]
+    filetemp.close()
+    CCx = catlcond[0, :, 0]
+    CCy = catlcond[1, :, 0]
+    CCf = catlcond[2, :, 0]
+    CCmag = gdat.magtzero - 2.5*np.log10(CCf)
+    CCconf = catlcond[gdat.indxprvl, :, 0]
+    print 'CCconf'
+    summgene(CCconf)
+    CCs = catlcond[0, :, 0]
+    
+    CCc = np.zeros((CCx.shape[0], 2))
+    if gdat.numbsourcond > 0:
+        CCc[:,0] = CCx
+        CCc[:,1] = CCy
+        CCkd = scipy.spatial.KDTree(CCc)
+    
+    pathchan = gdat.pathdatartag + gdat.rtag + '_chan.h5'
+    chan = read_catl(gdat, pathchan)
+    maxn = 3000
+    PCn = chan['numb']
+    PCx = chan['xpos']
+    PCy = chan['ypos']
+    PCf = chan['flux'][:, 0, 0, :]
+    PCmag = gdat.magtzero - 2.5*np.log10(PCf)
+    mask = (PCx > 0) * (PCy > 0) * (PCf > 0)
+    PCc_all = np.zeros((np.sum(mask), 2))
+    PCc_all[:, 0] = PCx[mask].flatten()
+    PCc_all[:, 1] = PCy[mask].flatten()
+    PCkd = scipy.spatial.KDTree(PCc_all)
+    PCmag_all = PCmag[mask]
+    
+    sizefac = 1360.
+    n = PCn[-1]
+    
+    dr = 0.75
+    dmag = 0.5
+    
+    nbins = 16
+    minr, maxr = np.amin(HTmag) - 0.1, gdat.magtzero - 2.5*np.log10(gdat.fittminmflux)
+    binw = (maxr - minr) / float(nbins)
+    #print "max r CC", np.max(CCf)
+    
+    precPC = np.zeros(nbins)
+    precCC = np.zeros(nbins)
+    if len(gdat.catlrefr) > 1:
+        precrefr = np.zeros((len(gdat.catlrefr) - 1, nbins))
+        goodmtchrefr = []
 
-            outp, indxmtchtrue = associate(HTkd, HTmag, scipy.spatial.KDTree(CCc_one), CCf_one, dr, dmag)
-            completePC[i, :] = outp
-        completePC = np.sum(completePC, axis=0) / float(PCx.shape[0])
-        
-        reclPC = np.zeros(nbins)
-        reclCC = np.zeros(nbins)
-        
-        for i in xrange(nbins):
-            rlo = minr + i * binw
-            rhi = rlo + binw
-            inbin = np.logical_and(HTmag >= rlo, HTmag < rhi)
-            reclPC[i] = np.sum(completePC[inbin]) / float(np.sum(inbin))
-            reclCC[i] = np.sum(confmatchCC[inbin]) / float(np.sum(inbin))
-        
-        plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
-        plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-        plt.xlabel('Reference magnitude')
-        plt.ylabel('completeness')
-        plt.ylim((-0.1, 1.1))
-        plt.legend(prop={'size':12}, loc = 'best')
-        plt.tight_layout()
-        plt.savefig(gdat.pathdatartag + 'cmpl%02i.pdf' % (a))
+    # with sigfac < 8
+    
+    gdat.distmtch, gdat.indxmtch = CCkd.query(np.vstack((HTx, HTy)).T, k=1, distance_upper_bound=dr, p=2)
+    if gdat.verbtype > 1:
+        print 'HTx'
+        print HTx
+        print 'HTy'
+        print HTy
+        print 'HTf'
+        print HTf
+        print 'CCx'
+        print CCx
+        print 'CCy'
+        print CCy
+        print 'CCf'
+        print CCf
+        print 'gdat.indxmtch'
+        print gdat.indxmtch
+        print
+
+    goodmatchCC, indxmtch = associate(CCkd, CCmag, HTkd, HTmag, dr, dmag)
+    goodmatchPC, indxmtch = associate(PCkd, PCmag_all, HTkd, HTmag, dr, dmag)
+    for a in xrange(len(gdat.catlrefr) - 1):
+        goodmtchthis, indxmtch = associate(kdtrrefr[a], magtrefr[a], HTkd, HTmag, dr, dmag)
+        goodmtchrefr.append(goodmtchthis)
+    
+    for i in xrange(nbins):
+        rlo = minr + i * binw
+        rhi = rlo + binw
+    
+        inbin = np.logical_and(PCmag_all >= rlo, PCmag_all < rhi)
+        precPC[i] = np.sum(np.logical_and(inbin, goodmatchPC)) / float(np.sum(inbin))
+    
+        inbin = np.logical_and(CCmag >= rlo, CCmag < rhi)
+        precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
+
+        # loop only runs if more than one reference catalogue; assumes catalogues after first are not ground truth
+        for a in xrange(len(gdat.catlrefr) - 1):
+            inbin = np.logical_and(magtrefr[a] >= rlo, magtrefr[a] < rhi)
+            precrefr[a,i] = np.sum(np.logical_and(inbin, goodmtchrefr[a])) / float(np.sum(inbin))
+
+    plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
+    plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
+    for a in xrange(len(gdat.catlrefr) - 1):
+        plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precrefr[a,:], c=gdat.colrrefr[a+1], label=gdat.lablrefr[a+1], marker='+', markersize=10, mew=2)
+    plt.xlabel(gdat.lablrefr[0] + ' magnitude')
+    plt.ylabel('false discovery rate')
+    plt.legend(prop={'size':12}, loc = 'best')
+    plt.tight_layout()
+    plt.savefig(gdat.pathdatartag + 'fldr.pdf')
+    plt.close()
+    
+    completeCC, indxmtchtrue, confmatchCC, sigfCC = associate(HTkd, HTmag, CCkd, CCmag, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
+    
+    completePC = np.zeros((PCx.shape[0], HTx.size))
+    for i in xrange(PCx.shape[0]):
+        n = PCn[i]
+        CCc_one = np.zeros((n,2))
+        CCc_one[:, 0] = PCx[i, 0:n]
+        CCc_one[:, 1] = PCy[i, 0:n]
+        CCf_one = PCmag[i, 0:n]
+        plt.scatter(PCx[i,0:n], PCy[i,0:n], marker='x', c='r', s=10**(-0.4*(PCmag[i,0:n]-21)))
+        plt.scatter(HTx, HTy, marker='+', c='g', s=10**(-0.4*(HTmag-21)))
         plt.close()
+
+        outp, indxmtchtrue = associate(HTkd, HTmag, scipy.spatial.KDTree(CCc_one), CCf_one, dr, dmag)
+        completePC[i, :] = outp
+    completePC = np.sum(completePC, axis=0) / float(PCx.shape[0])
+    
+    reclPC = np.zeros(nbins)
+    reclCC = np.zeros(nbins)
+    if len(gdat.catlrefr) > 1:
+        reclrefr = np.zeros((len(gdat.catlrefr) - 1, nbins))
+        cmplrefr = []
+    for a in xrange(len(gdat.catlrefr) - 1):
+        cmplthis, indxmtchtrue = associate(HTkd, HTmag, kdtrrefr[a], magtrefr[a], dr, dmag)
+        cmplrefr.append(cmplthis)
+    
+    for i in xrange(nbins):
+        rlo = minr + i * binw
+        rhi = rlo + binw
+        inbin = np.logical_and(HTmag >= rlo, HTmag < rhi)
+        reclPC[i] = np.sum(completePC[inbin]) / float(np.sum(inbin))
+        reclCC[i] = np.sum(confmatchCC[inbin]) / float(np.sum(inbin))
+        for a in xrange(len(gdat.catlrefr) - 1):
+            reclrefr[a,i] = np.sum(cmplrefr[a][inbin]) / float(np.sum(inbin))
+    
+    plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
+    plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
+    for a in xrange(len(gdat.catlrefr) - 1):
+        plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclrefr[a], c=gdat.colrrefr[a+1], label=gdat.lablrefr[a+1], marker='+', markersize=10, mew=2)
+    plt.xlabel(gdat.lablrefr[0] + ' magnitude')
+    plt.ylabel('completeness')
+    plt.ylim((-0.1, 1.1))
+    plt.legend(prop={'size':12}, loc = 'best')
+    plt.tight_layout()
+    plt.savefig(gdat.pathdatartag + 'cmpl.pdf')
+    plt.close()
+    
+    nbins = 4
+    nsigf = 71
+    minr, maxr = 17.5, 21.5
+    binw = (maxr - minr) / float(nbins)
+    sigfaccuts = np.logspace(0, 1.4, num=nsigf)
+    
+    #table
+    reclCCt = np.zeros((nbins, nsigf))
+    precCCt = np.zeros((nbins, nsigf))
+    
+    for i in xrange(nbins):
+        rlo = minr + i * binw
+        rhi = rlo + binw
+        inbinHT = np.logical_and(HTmag >= rlo, HTmag < rhi)
+        inbinCC = np.logical_and(CCmag >= rlo, CCmag < rhi)
+        for j in xrange(nsigf):
+            sigfaccut = sigfaccuts[j]
+            reclCCt[i,j] = np.sum(confmatchCC[np.logical_and(inbinHT, sigfCC < sigfaccut)]) / float(np.sum(inbinHT))
+            precCCt[i,j] = np.sum(CCconf[np.logical_and(inbinCC, np.logical_and(goodmatchCC, CCs < sigfaccut))]) / float(np.sum(CCconf[np.logical_and(inbinCC, CCs < sigfaccut)]))
+    
+    
+    linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
+    markers = ['o', 'v', 's', 'D', 'p', '*']
+    #markers = ['$1.8$', '$3.2$', '$5.6$', '$10$', '$18$']
+    
+    for i in xrange(nbins):
+        rlo = minr + i * binw
+        rme = rlo + 0.5*binw
+        rhi = rlo + binw
         
-        nbins = 4
-        nsigf = 71
-        minr, maxr = 17.5, 21.5
-        binw = (maxr - minr) / float(nbins)
-        sigfaccuts = np.logspace(0, 1.4, num=nsigf)
+        if i == 0:
+            label1 = 'DAOPHOT Catalog mag %2.0f' % rme
+            label2 = 'Condensed Catalog mag %2.0f' % rme
+        else:
+            label1 = None
+            label2 = 'mag %2.0f' % rme
+        # make it convex: more stringent cuts that worsen precision are not used
+        for j in xrange(nsigf-2, -1, -1):
+            if precCCt[i,j] < precCCt[i,j+1]:
+                precCCt[i,j] = precCCt[i,j+1]
+                reclCCt[i,j] = reclCCt[i,j+1]
         
-        #table
-        reclCCt = np.zeros((nbins, nsigf))
-        precCCt = np.zeros((nbins, nsigf))
-        
-        for i in xrange(nbins):
-        	rlo = minr + i * binw
-        	rhi = rlo + binw
-        	inbinHT = np.logical_and(HTmag >= rlo, HTmag < rhi)
-        	inbinCC = np.logical_and(CCmag >= rlo, CCmag < rhi)
-        	for j in xrange(nsigf):
-        		sigfaccut = sigfaccuts[j]
-        		reclCCt[i,j] = np.sum(confmatchCC[np.logical_and(inbinHT, sigfCC < sigfaccut)]) / float(np.sum(inbinHT))
-        		precCCt[i,j] = np.sum(CCconf[np.logical_and(inbinCC, np.logical_and(goodmatchCC, CCs < sigfaccut))]) / float(np.sum(CCconf[np.logical_and(inbinCC, CCs < sigfaccut)]))
-        
-        
-        linestyles = ['solid', 'dashed', 'dashdot', 'dotted']
-        markers = ['o', 'v', 's', 'D', 'p', '*']
-        #markers = ['$1.8$', '$3.2$', '$5.6$', '$10$', '$18$']
-        
-        for i in xrange(nbins):
-            rlo = minr + i * binw
-            rme = rlo + 0.5*binw
-            rhi = rlo + binw
-            
+        # repeats make it maximally convex as allowed by data points
+        plt.plot(1-np.repeat(precCCt[i,:], 2)[:-1], np.repeat(reclCCt[i,:], 2)[1:], c='purple', ls=linestyles[i], label=label2, zorder=2)
+    
+    for i in xrange(nbins):
+        for j in xrange(len(markers)):
             if i == 0:
-        		label1 = 'DAOPHOT Catalog mag %2.0f' % rme
-        		label2 = 'Condensed Catalog mag %2.0f' % rme
+                if j == 0:
+                    label3 = 'DF = %2.1f' % sigfaccuts[10*j+10]
+                else:
+                    label3 = '%2.1f' % sigfaccuts[10*j+10]
             else:
-        		label1 = None
-        		label2 = 'mag %2.0f' % rme
-        	# make it convex: more stringent cuts that worsen precision are not used
-            for j in xrange(nsigf-2, -1, -1):
-        		if precCCt[i,j] < precCCt[i,j+1]:
-        			precCCt[i,j] = precCCt[i,j+1]
-        			reclCCt[i,j] = reclCCt[i,j+1]
-        	
-        	# repeats make it maximally convex as allowed by data points
-            plt.plot(1-np.repeat(precCCt[i,:], 2)[:-1], np.repeat(reclCCt[i,:], 2)[1:], c='purple', ls=linestyles[i], label=label2, zorder=2)
-        
-        for i in xrange(nbins):
-        	for j in xrange(len(markers)):
-        		if i == 0:
-        			if j == 0:
-        				label3 = 'DF = %2.1f' % sigfaccuts[10*j+10]
-        			else:
-        				label3 = '%2.1f' % sigfaccuts[10*j+10]
-        		else:
-        			label3 = None
-        		plt.scatter(1-precCCt[i,10*j+10], reclCCt[i,10*j+10], c='purple', marker=markers[j], s=100, label=label3, zorder=2)
-        plt.xlabel('false discovery rate')
-        plt.ylabel('completeness')
-        plt.xlim((-0.025,0.4))
-        plt.ylim((-0.1,1.1))
-        plt.tight_layout()
-        plt.savefig(gdat.pathdatartag + 'rofc.%s' % gdat.strgplotfile)
-        plt.close()
+                label3 = None
+            plt.scatter(1-precCCt[i,10*j+10], reclCCt[i,10*j+10], c='purple', marker=markers[j], s=100, label=label3, zorder=2)
+    plt.xlabel('false discovery rate')
+    plt.ylabel('completeness')
+    plt.xlim((-0.1,1.1))
+    plt.ylim((-0.1,1.1))
+    plt.tight_layout()
+    plt.savefig(gdat.pathdatartag + 'rofc%02i.%s' % (a, gdat.strgplotfile))
+    plt.close()
     
 
 def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
@@ -5016,26 +5031,24 @@ def cnfg_wise():
     maskwise = fits.open(pathmask)[0].data
     weig *= np.logical_or(maskwise == 0, maskwise == 64)[None,:smalbnds,:smalbnds,None] # is 0 too restrictive? 64 might be OK
 
-    catlrefr = [[], {}]
+    catlrefr = [{}, {}]
+    # cosmos catalog
+    maskcosm = (objtcosmcatl['flux_c1_4'] > 0) * (xposcosm > 0) * (xposcosm < smalbnds) * (yposcosm > 0) * (yposcosm < smalbnds)
+    # take only objects with positive flux and within bounds
+    catlrefr[0]['xpos'] = xposcosm[maskcosm]
+    catlrefr[0]['ypos'] = yposcosm[maskcosm]
+    catlrefr[0]['magt'] = (-2.5 * np.log10(1e-6 * objtcosmcatl['flux_c1_4'][maskcosm] / 3631) - 2.699)[None, None, :] # 3.6 um at 4.1, and AB->Vega conversion for W1
+    catlrefr[0]['flux'] = 10**(-0.4 * (catlrefr[0]['magt']-magtzero))[None, None, :]
     # crowdsource catalog
     crsrdata = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.cat.fits'
     crsrcatl = fits.open(crsrdata)[1].data
     #xy convention flipped in crowdsource catalog
     mask = (crsrcatl['x'] > ymin) * (crsrcatl['x'] < ymin+smalbnds) * (crsrcatl['y'] > xmin) * (crsrcatl['y'] < xmin+smalbnds)
-    crsrcatldict = {}
-    crsrcatldict['xpos'] = crsrcatl['y'][mask] - xmin
-    crsrcatldict['ypos'] = crsrcatl['x'][mask] - ymin
+    catlrefr[1]['xpos'] = crsrcatl['y'][mask] - xmin
+    catlrefr[1]['ypos'] = crsrcatl['x'][mask] - ymin
     catlflux = (crsrcatl['flux'][mask])[None, None, :]
-    crsrcatldict['flux'] = catlflux
-    crsrcatldict['magt'] = magtzero - 2.5 * np.log10(catlflux)
-    catlrefr[0] = crsrcatldict
-    # cosmos catalog
-    maskcosm = (objtcosmcatl['flux_c1_4'] > 0) * (xposcosm > 0) * (xposcosm < smalbnds) * (yposcosm > 0) * (yposcosm < smalbnds)
-    # take only objects with positive flux and within bounds
-    catlrefr[1]['xpos'] = xposcosm[maskcosm]
-    catlrefr[1]['ypos'] = yposcosm[maskcosm]
-    catlrefr[1]['magt'] = (-2.5 * np.log10(1e-6 * objtcosmcatl['flux_c1_4'][maskcosm] / 3631) - 2.699)[None, None, :] # 3.6 um at 4.1, and AB->Vega conversion for W1
-    catlrefr[1]['flux'] = 10**(-0.4 * (catlrefr[1]['magt']-magtzero))[None, None, :]
+    catlrefr[1]['flux'] = catlflux
+    catlrefr[1]['magt'] = magtzero - 2.5 * np.log10(catlflux)
    
     factusam = 5
 
@@ -5047,8 +5060,8 @@ def cnfg_wise():
          weig=weig, \
 
          catlrefr=catlrefr, \
-         lablrefr=['CwdSrc', 'Cosmos'], \
-         colrrefr=['g', 'orange'], \
+         lablrefr=['Cosmos', 'CwdSrc'], \
+         colrrefr=['orange', 'g'], \
         
          cntpback=cntpback, \
         
@@ -5069,7 +5082,7 @@ def cnfg_wise():
          numbswep=1000, \
          #numbloop=1000, \
          priotype = 'prio', \
-         strgproc='pcat_20190301_143248_cnfg_wise_1000000'
+         #strgproc='pcat_20190301_143248_cnfg_wise_1000000'
         )
 
 
