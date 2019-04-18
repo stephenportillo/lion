@@ -458,9 +458,9 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         for xt, yt in zip(x, y):
             print xt, yt
 
-    ix = np.floor(x).astype(np.int32)
+    ix = np.rint(x).astype(np.int32)
     dx = ix - x
-    iy = np.floor(y).astype(np.int32)
+    iy = np.rint(y).astype(np.int32)
     dy = iy - y
      
     #print 'heeey'
@@ -749,19 +749,23 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
 
 def retr_coefspix(gdat):
    
-    # pad by one row and one column
+    # pad by one row and one column on each side
     if gdat.boolspre:
-        gdat.cntppsfnusampadd = np.zeros((gdat.numbener, gdat.numbsidepsfnusam, gdat.numbsidepsfnusam), dtype=np.float32)
+        gdat.cntppsfnusampadd = np.zeros((gdat.numbener, gdat.numbsidepsfnusam+2, gdat.numbsidepsfnusam+2), dtype=np.float32)
     else:
-        gdat.cntppsfnusampadd = np.zeros((gdat.numbener, gdat.numbsidepsfnusam, gdat.numbsidepsfnusam))
-    gdat.cntppsfnusampadd[:, :gdat.numbsidepsfnusam, :gdat.numbsidepsfnusam] = gdat.cntppsfnusam
+        gdat.cntppsfnusampadd = np.zeros((gdat.numbener, gdat.numbsidepsfnusam+2, gdat.numbsidepsfnusam+2))
+    gdat.cntppsfnusampadd[:, 1:gdat.numbsidepsfnusam+1, 1:gdat.numbsidepsfnusam+1] = gdat.cntppsfnusam
 
-    # make design matrix for each factusam x factusam region
+    # make design matrix for each original pixel
     gdat.numbsidepsfn = gdat.numbsidepsfnusam / gdat.factusam # dimension of original psf
-    nx = gdat.factusam
-    y, x = np.mgrid[0:nx, 0:nx] / np.float32(gdat.factusam - 1.)
-    x = x.flatten() - 0.5
-    y = y.flatten() - 0.5
+    assert(gdat.numbsidepsfn % 2 == 1)
+    rad = gdat.factusam / 2 # upsampling factor / 2, rounded down
+    # eg, factusam = 4 -> rad 2 -> subpixel shifts [-3/4, -1/2, -1/4, 0, 1/4, 1/2, 3/4]
+    #     factusam = 5 -> rad 2 -> subpixel shifts [-3/5, -2/5, -1/5, 0, 1/5, 2/5, 3/5]
+    nx = 2*rad + 3
+    y, x = np.mgrid[-rad-1:rad+2, -rad-1:rad+2] / np.float32(gdat.factusam)
+    x = x.flatten()
+    y = y.flatten()
     if gdat.boolspre:
         A = np.column_stack([np.full(nx*nx, 1, dtype=np.float32), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y]).astype(np.float32)
     else:
@@ -781,7 +785,7 @@ def retr_coefspix(gdat):
         for a in xrange(gdat.numbsidepsfn):
             for j in xrange(gdat.numbsidepsfn):
                 # solve p = A gdat.coefspix for gdat.coefspix
-                p = gdat.cntppsfnusampadd[i, a*gdat.factusam:(a+1)*gdat.factusam, j*gdat.factusam:(j+1)*gdat.factusam].flatten()
+                p = gdat.cntppsfnusampadd[i, a*gdat.factusam:a*gdat.factusam+nx, j*gdat.factusam:j*gdat.factusam+nx].flatten()
                 gdat.coefspix[i, :, a, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
         
         if gdat.diagmode:
