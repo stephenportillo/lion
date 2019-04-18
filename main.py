@@ -7,8 +7,8 @@ import matplotlib
 from astropy.wcs import WCS
 
 # temp
-import seaborn as sns
-sns.set(context='poster', style='ticks', color_codes=True)
+#import seaborn as sns
+#sns.set(context='poster', style='ticks', color_codes=True)
 
 from scipy import ndimage
 
@@ -1386,7 +1386,7 @@ def make_mock(gdat, gdatnotp):
     flux = np.ones((gdat.numbener, gdat.numbtime, gdat.truenumbstar)) \
                 * gdat.trueminmflux * np.exp(np.random.exponential(scale=1./(gdat.truefluxdistslop - 1.), size=gdat.truenumbstar))[None, None, :]
     
-    if gdat.strgmodl == 'galx':
+    if gdat.trueboolgalx:
         xposgalx = np.random.uniform(size=gdat.truenumbgalx) * (gdat.sizeimag[0] - 1)
         yposgalx = np.random.uniform(size=gdat.truenumbgalx) * (gdat.sizeimag[1] - 1)
         fluxgalx = np.ones((gdat.numbener, gdat.numbtime, gdat.truenumbgalx)) \
@@ -1435,30 +1435,38 @@ def make_mock(gdat, gdatnotp):
         xpos = xpos.astype(np.float32)
         ypos = ypos.astype(np.float32)
         flux = flux.astype(np.float32)
-        if gdat.strgmodl == 'galx':
+        if gdat.fittboolgalx:
             xposgalx = xposgalx.astype(np.float32)
             yposgalx = yposgalx.astype(np.float32)
             fluxgalx = fluxgalx.astype(np.float32)
             
     gdat.catlrefr = [{}]
+    gdat.lablrefr = []
+    gdat.colrrefr = []
     gdat.catlrefr[0]['xpos'] = xpos
     gdat.catlrefr[0]['ypos'] = ypos
     gdat.catlrefr[0]['flux'] = flux
-    if gdat.strgmodl == 'star':
-        gdat.lablrefr = ['True']
-        gdat.colrrefr = ['g']
-    else:
-        gdat.catlrefr.append({})
-        gdat.lablrefr = ['True Star', 'True Galaxy']
-        gdat.colrrefr = ['g', 'darkgreen']
-        gdat.catlrefr[1]['xpos'] = xposgalx
-        gdat.catlrefr[1]['ypos'] = yposgalx
-        gdat.catlrefr[1]['flux'] = fluxgalx
+    if gdat.trueboolstar:
+        gdat.lablrefr.append('True Star')
+        gdat.colrrefr.append('g')
+        gdat.catlrefr[0]['xpos'] = xposgalx
+        gdat.catlrefr[0]['ypos'] = yposgalx
+        gdat.catlrefr[0]['flux'] = fluxgalx
+    if gdat.trueboolgalx:
+        gdat.lablrefr = ['True Galaxy']
+        gdat.colrrefr = ['darkgreen']
+        if gdat.trueboolstar:
+            indxtemp = 1
+        else:
+            indxtemp = 0
+            gdat.catlrefr[indxtemp]['xpos'] = xposgalx
+            gdat.catlrefr[indxtemp]['ypos'] = yposgalx
+            gdat.catlrefr[indxtemp]['flux'] = fluxgalx
     
     if gdat.verbtype > 1 and gdat.datatype == 'mock':
         print 'gdat.truenumbstar'
         print gdat.truenumbstar
-        if gdat.strgmodl == 'galx':
+        if gdat.trueboolgalx:
             print 'gdat.truenumbgalx'
             print gdat.truenumbgalx
 
@@ -1467,11 +1475,11 @@ def make_mock(gdat, gdatnotp):
         print 'True background: %.g ADU' % gdat.cntpbackscal
 
     # evaluate model
-    if gdat.strgmodl == 'star':
+    if gdat.trueboolstar:
         xposeval = xpos
         yposeval = ypos
         fluxeval = flux
-    else:
+    if gdat.trueboolgalx:
         paragalx = np.empty((gdat.numbparagalx, gdat.truenumbgalx))
         paragalx[gdat.indxxpos, :] = xposgalx
         paragalx[gdat.indxypos, :] = yposgalx
@@ -1852,7 +1860,8 @@ def main( \
 
          # string to indicate the ingredients of the photometric model
          # 'star' for star only, 'galx' for star and galaxy
-         strgmodl='star', \
+         trueliststrgmodlobjt=['star'], \
+         fittliststrgmodlobjt=['star'], \
 
          **args \
 
@@ -1888,6 +1897,26 @@ def main( \
     else:
         gdat.datatype = 'inpt'
     
+    gdat.liststrgmodl = ['fitt']
+    if gdat.datatype == 'mock':
+        gdat.liststrgmodl += ['true']
+    
+    # define convenience Boolean flags about whether a model contains stars, galaxies or both
+    for strgmodl in gdat.liststrgmodl:
+        liststrgmodlobjt = getattr(gdat, strgmodl + 'liststrgmodlobjt')
+        for strgobjt in ['star', 'galx']:
+            print 'liststrgmodlobjt'
+            print liststrgmodlobjt
+            if strgobjt in liststrgmodlobjt:
+                booltemp = True
+            else:
+                booltemp = False
+            print 'strgmodl'
+            print strgmodl
+            print 'strgobjt'
+            print strgobjt
+            setattr(gdat, strgmodl + 'bool' + strgobjt, booltemp)
+        
     if gdat.datatype == 'mock':
         if gdat.numbener is None:
             gdat.numbener = 1
@@ -1970,7 +1999,7 @@ def main( \
 
         # show critical inputs
         print 'strgdata: ', gdat.strgdata
-        print 'Model type:', gdat.strgmodl
+        print 'List of model types:', gdat.fittliststrgmodlobjt
         print 'Data type:', datatype
         print 'Photometry mode: ', strgmode
         print 'booltile: ', gdat.booltile
@@ -1998,7 +2027,7 @@ def main( \
 
         retr_coefspix(gdat)
         
-        if gdat.strgmodl == 'galx':
+        if gdat.fittboolgalx or gdat.datatype == 'mock' and gdat.trueboolgalx:
             gdat.gridphon, gdat.amplphon = retr_sers(gdat)
   
         # construct C library
@@ -2017,14 +2046,14 @@ def main( \
             for l in gdat.indxtime:
                 gdat.indxflux[k, l] = cntr.incr()
         gdat.numbparastar = cntr.gets()
-        if gdat.strgmodl == 'galx':
+        if gdat.fittboolgalx:
             gdat.indxxxmo = cntr.incr()
             gdat.indxxymo = cntr.incr()
             gdat.indxyymo = cntr.incr()
         gdat.numbparagalx = cntr.gets()
         gdat.indxprvl = cntr.incr()
         gdat.numbparacatlcond = 1 + gdat.numbparastar
-        if gdat.strgmodl == 'galx':
+        if gdat.fittboolgalx:
             gdat.numbparacatlcond = 1 + gdat.numbparagalx
         
         # generate mock data
@@ -2111,9 +2140,11 @@ def main( \
         if gdat.probprop is None:
             if strgmode == 'pcat':
                 
-                gdat.probprop = np.array([80., 40., 40.])
-                    
-                if gdat.strgmodl == 'galx':
+                if gdat.fittboolstar and gdat.fittboolgalx:
+                    gdat.probprop = np.array([80., 40., 40., 80., 40., 40., 0., 40., 0.])
+                elif gdat.fittboolstar:
+                    gdat.probprop = np.array([80., 40., 40.])
+                else:
                     gdat.probprop = np.array([80., 40., 40., 80., 40., 40., 0., 40., 0.])
             else:
                 gdat.probprop = np.array([80., 0., 0.])
@@ -2503,7 +2534,7 @@ def main( \
                         print
 
                 self.ng = 0
-                if gdat.strgmodl == 'galx':
+                if gdat.fittboolgalx:
                     self.ng = np.random.randint(gdat.maxmnumbgalx)+1
                     self.galaxies = np.zeros((6,gdat.maxmnumbgalx), dtype=np.float32)
                     # temp -- 3 should be generalized to temporal modeling
@@ -2565,11 +2596,11 @@ def main( \
                     print self.nregy
                 
                 cntpresi = gdat.cntpdata.copy() # residual for zero image is data
-                if gdat.strgmodl == 'star':
+                if gdat.fittboolstar:
                     xposeval = self.stars[gdat.indxxpos, :self.n]
                     yposeval = self.stars[gdat.indxypos, :self.n]
                     fluxeval = self.stars[gdat.indxflux, :self.n]
-                else:
+                if gdat.fittboolgalx:
                     xposphon, yposphon, specphon = retr_tranphon(gdat.gridphon, gdat.amplphon, self.galaxies[:,0:self.ng])
                     print 'self.stars[gdat.indxxpos, :self.n]'
                     summgene(self.stars[gdat.indxxpos, :self.n])
@@ -2680,9 +2711,11 @@ def main( \
                             
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                             ## overplot point sources
-                            supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            if gdat.strgmodl == 'galx':
-                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
+                            supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], \
+                                            self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                            if gdat.fittstrgmodlobjt == 'galx':
+                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], \
+                                              self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             ## limits
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.83, 0.1, 0.03, 0.8]) 
@@ -2699,9 +2732,11 @@ def main( \
                             imagscal = retr_imagscal(gdat, cntpmodl[i, :, :, t] - gdat.cntpback[i, :, :, t])
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap='Greys_r', vmin=vmin, vmax=vmax)
                             ## overplot point sources
-                            supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            if gdat.strgmodl == 'galx':
-                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
+                            supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], \
+                                                self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
+                            if gdat.fittstrgmodlobjt == 'galx':
+                                supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], \
+                                            self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             
                             setp_imaglimt(gdat, axis)
                             cbaxes = figr.add_axes([0.8, 0.1, 0.03, 0.8]) 
@@ -2719,7 +2754,7 @@ def main( \
                             imag = axis.imshow(imagscal, origin='lower', interpolation='nearest', cmap=gdat.cmapresi, vmin=vmin, vmax=vmax)
                             ## overplot point sources
                             supr_catl(gdat, axis, i, t, self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.stars[gdat.indxflux[i, t], 0:self.n])
-                            if gdat.strgmodl == 'galx':
+                            if gdat.fittstrgmodlobjt == 'galx':
                                 supr_catl(gdat, axis, i, t, self.galaxies[gdat.indxxpos, 0:self.ng], self.galaxies[gdat.indxypos, 0:self.ng], self.galaxies[gdat.indxflux[i, t], 0:self.ng], colrmodl='purple')
                             
                             setp_imaglimt(gdat, axis)
@@ -4288,7 +4323,7 @@ def main( \
         gdat.indxswlp = np.arange(gdat.numbswlp)
         chan = {}
         chan['numb'] = np.zeros(gdat.numbsamp, dtype=np.int32)
-        if gdat.strgmodl == 'galx':
+        if gdat.fittboolgalx:
             chan['numbgalx'] = np.zeros(gdat.numbsamp, dtype=np.int32)
         chan['chi2'] = np.zeros(gdat.numbsamp)
         chan['lposterm'] = np.zeros((gdat.numbswlp, gdat.numbregixaxi, gdat.numbregiyaxi))
@@ -4354,7 +4389,7 @@ def main( \
                 for strgfeat in gdat.liststrgfeatstar:
                     indx = getattr(gdat, 'indx' + strgfeat)
                     chan[strgfeat][j-gdat.numbswepburn, :] = listobjtmodl[0].stars[indx, :]
-                if gdat.strgmodl == 'galx':
+                if gdat.fittstrgmodlobjt == 'galx':
                     chan['numbgalx'][j-gdat.numbswepburn] = listobjtmodl[0].ng
                     for strgfeat in gdat.liststrgfeatgalx:
                         indx = getattr(gdat, 'indx' + strgfeat)
@@ -4396,7 +4431,7 @@ def main( \
         
     # calculate the condensed catalog
     gdat.catlcond = retr_catlcond(gdat.rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag)
-    if gdat.strgmodl == 'galx':
+    if gdat.fittstrgmodlobjt == 'galx':
         gdat.catlcond = retr_catlcond(gdat.rtag, gdat.pathdata, pathdatartag=gdat.pathdatartag, boolgalx=True)
     
     if gdat.catlcond is not None:
@@ -4567,8 +4602,8 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
         return
     PCc_all = np.zeros((np.sum(mask), 2))
     
-    if gdat.strgmodl == 'galx':
-        strgtemp = gdat.strgmodl
+    if gdat.fittstrgmodlobjt == 'galx':
+        strgtemp = gdat.fittstrgmodlobjt
     else:   
         strgtemp = ''
 
@@ -4651,7 +4686,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     catlseed['ypos' + strgtemp] = catlseedtemp[:, 1]
     catlseed['degr' + strgtemp] = catlseedtemp[:, 2]
     
-    if gdat.strgmodl == 'galx':
+    if gdat.fittstrgmodlobjt == 'galx':
         strgtemptemp = '_'
     else:
         strgtemptemp = ''
@@ -4674,8 +4709,8 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
 
     setp(gdat)
     
-    if gdat.strgmodl == 'galx':
-        strgtemp = gdat.strgmodl
+    if gdat.fittstrgmodlobjt == 'galx':
+        strgtemp = gdat.fittstrgmodlobjt
         strgtemptemp = '_'
     else:   
         strgtemp = ''
@@ -4699,7 +4734,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     chan = read_catl(gdat, pathchan)
 
     # sort the catalog in decreasing flux
-    if gdat.strgmodl == 'galx':
+    if gdat.fittstrgmodlobjt == 'galx':
         numbpara = gdat.numbparagalx
     else:
         numbpara = gdat.numbparastar
@@ -4709,7 +4744,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
         catl[:, gdat.indxxpos] = chan['xpos' + strgtemp][b, :]
         catl[:, gdat.indxypos] = chan['ypos' + strgtemp][b, :]
         catl[:, gdat.indxflux.flatten()] = chan['flux' + strgtemp][b, :, :, :].reshape((gdat.numbflux, gdat.maxmnumbstar)).T
-        if gdat.strgmodl == 'galx':
+        if gdat.fittstrgmodlobjt == 'galx':
             catl[:, gdat.indxxxmo] = chain['xxmogalx'][b,:]
             catl[:, gdat.indxxymo] = chain['xymogalx'][b,:]
             catl[:, gdat.indxyymo] = chain['yymogalx'][b,:]
@@ -4853,7 +4888,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     catlcond[gdat.indxypos, :, 1] = stdvypos
     catlcond[gdat.indxflux, :, 0] = fluxmean
     catlcond[gdat.indxflux, :, 1] = stdvflux
-    if gdat.strgmodl == 'galx':
+    if gdat.fittstrgmodlobjt == 'galx':
         catlcond[gdat.indxxxmo, :, 0] = xxmomean
         catlcond[gdat.indxxxmo, :, 1] = stdvxxmo
     catlcond[gdat.indxprvl, :, 0] = prvl / float(gdat.numbsamp)
@@ -4900,14 +4935,14 @@ def retr_catltrue(pathdata, strgmodl, strgdata):
     '''
     
     catltrue = {}
-    if gdat.strgmodl == 'star':
+    if gdat.fittstrgmodlobjt == 'star':
         truth = np.loadtxt(pathdata + strgdata + '_true.txt')
         catltrue['numb'] = truth[:, 0].size
         catltrue['xpos'] = truth[:, 0]
         catltrue['ypos'] = truth[:, 1]
         catltrue['flux'] = truth[:, 2]
     
-    if gdat.strgmodl == 'galx':
+    if gdat.fittstrgmodlobjt == 'galx':
         truth_s = np.loadtxt(pathdata + strgdata + '_str.txt')
         catlrefr['xpos'] = truth_s[:, 0]
         catlrefr['ypos'] = truth_s[:, 1]
@@ -4970,7 +5005,8 @@ def cnfg_galx():
          diagmode=True, \
          datatype='mock', \
          boolplotinit=False, \
-         strgmodl='galx'
+         trueliststrgmodlobjt=['galx'], \
+         fittliststrgmodlobjt=['galx'], \
         )
 
 
@@ -5626,7 +5662,6 @@ def cnfg_ener():
     
     strgmode = 'pcat'
     #strgmode = 'forc'
-    gdat.strgmodl = 'star'
     
     #catlinit = retr_catltrue(pathdata, gdat.strgmodl, strgdata)
     # temp
