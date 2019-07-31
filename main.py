@@ -1,4 +1,4 @@
-#import numpy as np
+import numpy as np
 import numpy.ctypeslib as npct
 from ctypes import c_int, c_double
 import h5py, datetime
@@ -16,7 +16,7 @@ import copy
 
 import matplotlib.pyplot as plt
 
-import cPickle, inspect
+import pickle, inspect
 
 import scipy.spatial
 import networkx
@@ -106,7 +106,6 @@ def plot_pcat(gdat=None, rtag=None):
     if gdat is None:
         path = pathdata + rtag + '/gdat.p'
         filepick = open(path, 'rb')
-        print 'Reading %s...' % path
         gdat = cPickle.load(filepick)
         filepick.close()
     
@@ -114,12 +113,9 @@ def plot_pcat(gdat=None, rtag=None):
     
     psf0 = gdat.cntppsfnusam[:gdat.numbsidepsfnusam:gdat.factusam, :gdat.numbsidepsfnusam:gdat.factusam]
     
-    print 'gdat.strgdata'
-    print gdat.strgdata
     # if mock data, find mock catalogue, otherwise assume first reference catalogue is ground truth
     if gdat.datatype == 'mock':
         path = pathdata + '%04d%04d%04d_mock.h5' % (gdat.numbener, gdat.numbtime, gdat.truenumbstar)
-        print 'Reading %s...' % path
         filetemp = h5py.File(path, 'r')
         HTcat = read_catl(gdat, path, boolmock=True)
     else:
@@ -143,7 +139,6 @@ def plot_pcat(gdat=None, rtag=None):
     
     path = gdat.pathdatartag + gdat.rtag + '_catlcond.h5'
     filetemp = h5py.File(path, 'r')
-    print 'Reading %s...' % path
     catlcond = filetemp['catlcond'][()]
     filetemp.close()
     CCx = catlcond[0, :, 0]
@@ -151,8 +146,6 @@ def plot_pcat(gdat=None, rtag=None):
     CCf = catlcond[2, :, 0]
     CCmag = gdat.magtzero - 2.5*np.log10(CCf)
     CCconf = catlcond[gdat.indxprvl, :, 0]
-    print 'CCconf'
-    summgene(CCconf)
     CCs = catlcond[0, :, 0]
     
     CCc = np.zeros((CCx.shape[0], 2))
@@ -185,7 +178,6 @@ def plot_pcat(gdat=None, rtag=None):
     nbins = 16
     minr, maxr = np.amin(HTmag) - 0.1, gdat.magtzero - 2.5*np.log10(gdat.fittminmflux)
     binw = (maxr - minr) / float(nbins)
-    #print "max r CC", np.max(CCf)
     
     precPC = np.zeros(nbins)
     precCC = np.zeros(nbins)
@@ -196,22 +188,6 @@ def plot_pcat(gdat=None, rtag=None):
     # with sigfac < 8
     
     gdat.distmtch, gdat.indxmtch = CCkd.query(np.vstack((HTx, HTy)).T, k=1, distance_upper_bound=dr, p=2)
-    if gdat.verbtype > 1:
-        print 'HTx'
-        print HTx
-        print 'HTy'
-        print HTy
-        print 'HTf'
-        print HTf
-        print 'CCx'
-        print CCx
-        print 'CCy'
-        print CCy
-        print 'CCf'
-        print CCf
-        print 'gdat.indxmtch'
-        print gdat.indxmtch
-        print
 
     goodmatchCC, indxmtch = associate(CCkd, CCmag, HTkd, HTmag, dr, dmag)
     goodmatchPC, indxmtch = associate(PCkd, PCmag_all, HTkd, HTmag, dr, dmag)
@@ -393,9 +369,6 @@ def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
 
 def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntprefr=None, clib=None, sizeimag=None):
         
-    if gdat.verbtype > 1:
-        print 'eval_modl()'
-    
     if gdat.boolspre:
         assert x.dtype == np.float32
         assert y.dtype == np.float32
@@ -426,13 +399,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         #if x.size < 1 or y.size < 1 or f.size < 1:
         #    raise Exception('')
     
-    if gdat.verbtype > 2:
-        print 'sizeimag'
-        print sizeimag
-        print 'x y'
-        for xt, yt in zip(x, y):
-            print xt, yt
-
     # temp -- sometimes phonions are outside image... what is best way to handle?
     if clib is not None:
         goodsrc = (x > 0) * (x < sizeimag[0] - 1) * (y > 0) * (y < sizeimag[1] - 1)
@@ -440,47 +406,18 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         y = y.compress(goodsrc)
         f = f.compress(goodsrc, axis=2)
     
-    if gdat.verbtype > 1:
-        print 'x'
-        summgene(x)
-        print 'y'
-        summgene(y)
-        print 'f'
-        summgene(f)
-        print
-
     numbphon = x.size
     rad = gdat.numbsidepsfn / 2
     
-    if gdat.verbtype > 2:
-        print 'After compressing:'
-        print 'x y'
-        for xt, yt in zip(x, y):
-            print xt, yt
-
     ix = np.rint(x).astype(np.int32)
     dx = ix - x
     iy = np.rint(y).astype(np.int32)
     dy = iy - y
      
-    #print 'heeey'
-    #print 'x'
-    #print x
-    #print 'y'
-    #print y
-    #print 'ix'
-    #print ix
-    #print 'iy'
-    #print iy
-    #print 'dx'
-    #print dx
-    #print 'dy'
-    #print dy
-    
     # construct the design matrix
     if gdat.boolspre:
         desimatr = np.column_stack((np.full(numbphon, 1., dtype=np.float32), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, \
-                                                                                    dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32)[None, None, :, :] * f[:, :, :, None]
+                                                                     dx*dx*dy, dx*dy*dy, dy*dy*dy)).astype(np.float32)[None, None, :, :] * f[:, :, :, None]
     else:
         desimatr = np.column_stack((np.full(numbphon, 1.), dx, dy, dx*dx, dx*dy, dy*dy, dx*dx*dx, \
                                                                                     dx*dx*dy, dx*dy*dy, dy*dy*dy))[None, None, :, :] * f[:, :, :, None]
@@ -500,17 +437,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
     
     if clib is None:
         
-        if gdat.verbtype > 1:
-            print 'Not using the C library...'
-    
-        
-        if gdat.verbtype > 2:
-            print 'gdat.coefspix'
-            summgene(gdat.coefspix)
-            print 'numbphon'
-            print numbphon
-            print 'gdat.numbsidepsfn'
-            print gdat.numbsidepsfn
         for i in gdat.indxener:
             for t in gdat.indxtime:
                 chi2temp = np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi), dtype=np.float64)
@@ -527,15 +453,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                     # temp -- make this compatible with float32
                     cntpmodlstmp2 = np.empty((numbphon, gdat.numbsidepsfn, gdat.numbsidepsfn))
                     for k in range(numbphon):
-                        #print 'x[k]'
-                        #print x[k]
-                        #print 'y[k]'
-                        #print y[k]
-                        #print 'ix[k]'
-                        #print ix[k]
-                        #print 'iy[k]'
-                        #print iy[k]
-                        #print 'Calling retr_psfnbili()'
                         cntpmodlstmp2[k, :, :] = retr_psfnbili(gdat, i, x[k] - ix[k], y[k] - iy[k]) * f[i, t, k]
                 else:
                     cntpmodlstmp2 = np.dot(desimatr[i, t, :, :], gdat.coefspix).reshape((numbphon, gdat.numbsidepsfn, gdat.numbsidepsfn))
@@ -543,20 +460,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 cntpmodlstmp = np.zeros((numbphon,gdat.numbsidepsfn,gdat.numbsidepsfn), dtype=np.float32)
                 cntpmodlstmp[:,:,:] = cntpmodlstmp2[:,:,:]
                 for k in xrange(numbphon):
-                    #print 'k'
-                    #print k
-                    #print 'gdat.numbsidepsfn'
-                    #print gdat.numbsidepsfn
-                    #print 'rad'
-                    #print rad
-                    #print 'iy'
-                    #print iy
-                    #print 'cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1]'
-                    #summgene(cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1])
-                    #print 'cntpmodlstmp[k, :, :]'
-                    #summgene(cntpmodlstmp[k, :, :])
-                    #print
-
                     cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1] += cntpmodlstmp[k, :, :]
                 cntpmodl[i, :, :, t] = cntpmodltemp[rad:sizeimag[1]+rad,rad:sizeimag[0]+rad]
                 
@@ -571,12 +474,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 if cntprefr is not None:
                     cntpdiff = cntprefr[i, :, :, t] - cntpmodl[i, :, :, t]
                 
-                if gdat.verbtype > 1:
-                    print 'cntpdiff'
-                    summgene(cntpdiff)
-                    print 'weig'
-                    summgene(weig)
-                
                 for v in xrange(gdat.numbregiyaxi):
                     y0 = max(v*sizeregi - offsypos - gdat.marg, 0)
                     y1 = min((v+1)*sizeregi - offsypos + gdat.marg, sizeimag[1])
@@ -588,19 +485,7 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 
                 chi2 += chi2temp
                 
-                #print 'it'
-                #print i, t
-                #print 'chi2temp'
-                #print chi2temp
-                #print 'np.sum(weig[i, :, :, t] * (cntpdiff)**2)'
-                #print np.sum(weig[i, :, :, t] * (cntpdiff)**2)
-        #print 'chi2'
-        #print chi2
-
     else:
-        
-        if gdat.verbtype > 1:
-            print 'Using the C library...'
     
         # counts per pixel of model evaluated over postage stamps
         if gdat.boolspre:
@@ -608,26 +493,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         else:
             cntpmodlstmp = np.zeros((numbphon, gdat.numbpixlpsfn))
         
-        if gdat.verbtype > 2:
-            print 'f'
-            summgene(f)
-            print 'gdat.numbregiyaxi'
-            print gdat.numbregiyaxi
-            print 'gdat.numbregixaxi'
-            print gdat.numbregixaxi
-            print 'gdat.coefspix'
-            summgene(gdat.coefspix)
-            print 'iy'
-            summgene(iy)
-            print 'cntpmodl'
-            summgene(cntpmodl)
-            print 'cntprefr'
-            summgene(cntprefr)
-            print 'weig'
-            print weig.shape
-            print 'chi2'
-            print chi2.shape
-
         chi2temp = np.empty((gdat.numbregiyaxi, gdat.numbregixaxi), dtype=np.float64)
         for i in gdat.indxener:
             for t in gdat.indxtime:
@@ -647,72 +512,10 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 #weigtemp = weig[i, :, :, t]
                 weigtemp = np.ascontiguousarray(weig[i, :, :, t])
                 
-                if gdat.verbtype > 2:
-                    print 'it'
-                    print i, t
-                    print 'sizeimag'
-                    print sizeimag
-                    print 'numbphon'
-                    print numbphon
-                    print 'gdat.numbsidepsfn'
-                    print gdat.numbsidepsfn
-                    print 'gdat.numbparaspix'
-                    print gdat.numbparaspix
-                    print 'desimatr[i, t, :, :]'
-                    summgene(desimatr[i, t, :, :])
-                    print 'gdat.coefspix[i, :, :]'
-                    summgene(gdat.coefspix[i, :, :])
-                    print 'cntpmodlstmp'
-                    summgene(cntpmodlstmp)
-                    print 'ix'
-                    print ix
-                    print 'iy'
-                    print iy
-                    print 'cntpmodltemp'
-                    summgene(cntpmodltemp)
-                    print 'cntprefrtemp'
-                    summgene(cntprefrtemp)
-                    print 'weigtemp'
-                    summgene(weigtemp)
-                    print 'sizeregi'
-                    print sizeregi
-                    print 'gdat.marg'
-                    print gdat.marg
-                    print 'offsxpos'
-                    print offsxpos
-                    print 'offsypos'
-                    print offsypos
-                    print 'gdat.booltile'
-                    print gdat.booltile
-                    print 'desimatr[i, t, :, :].flags[C_CONTIGUOUS]'
-                    print desimatr[i, t, :, :].flags['C_CONTIGUOUS']
-                    print 'gdat.coefspix[i, :, :].flags[C_CONTIGUOUS]'
-                    print gdat.coefspix[i, :, :].flags['C_CONTIGUOUS']
-                    print 'cntpmodlstmp.flags[C_CONTIGUOUS]'
-                    print cntpmodlstmp.flags['C_CONTIGUOUS']
-                    print 'cntpmodltemp.flags[C_CONTIGUOUS]'
-                    print cntpmodltemp.flags['C_CONTIGUOUS']
-                    print 'cntprefrtemp.flags[C_CONTIGUOUS]'
-                    print cntprefrtemp.flags['C_CONTIGUOUS']
-                    print 'weigtemp.flags[C_CONTIGUOUS]'
-                    print weigtemp.flags['C_CONTIGUOUS']
-                    print 'chi2temp.flags[C_CONTIGUOUS]'
-                    print chi2temp.flags['C_CONTIGUOUS']
-
                 clib(sizeimag[0], sizeimag[1], numbphon, gdat.numbsidepsfn, gdat.numbparaspix, desimatr[i, t, :, :], \
                                                                gdat.coefspix[i, :, :], cntpmodlstmp, ix, iy, cntpmodltemp, \
                                                                cntprefrtemp, weigtemp, chi2temp, sizeregi, gdat.marg, offsxpos, offsypos, gdat.booltile)
                
-                # temp
-                #chi2temp = np.array([[np.sum((cntprefrtemp - cntpmodltemp)**2 * weig[i, :, :, t])]]).astype(np.float64)
-                
-                if gdat.verbtype > 1:
-                    print 'chi2temp'
-                    summgene(chi2temp)
-                    print 'cntpmodltemp'
-                    summgene(cntpmodltemp)
-                    print
-                
                 if gdat.diagmode:
                     if not np.isfinite(chi2temp).all():
                         raise Exception('')
@@ -723,23 +526,9 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 chi2 += chi2temp
                 cntpmodl[i, :, :, t] = cntpmodltemp
                 
-                #print 'it'
-                #print i, t
-                #print 'np.sum((cntprefrtemp - cntpmodl[i, :, :, t])**2 * weig[i, :, :, t])'
-                #print np.sum((cntprefrtemp - cntpmodl[i, :, :, t])**2 * weig[i, :, :, t])
-                #print 'chi2temp'
-                #print chi2temp
-
-    #print 'Exiting eval_modl()'
-    
     if gdat.diagmode:
         if not np.isfinite(cntpmodl).all():
             raise Exception('')
-
-    if gdat.verbtype > 2:
-        print 'cntpmodl'
-        summgene(cntpmodl)
-        print 'eval_modl() ended'
 
     if boolretrdoub:
         return cntpmodl, chi2
@@ -815,9 +604,6 @@ def neighbours(x,y,neigh,i,generate=False):
     if generate:
         if neighbours:
             # temp
-            #print 'adjacency'
-            #summgene(adjacency)
-            #print 'neighbours'
             '''print neighbours
             np.set_printoptions(precision=15)
             print 'THIS SHOULD BE ZERO'
@@ -853,17 +639,6 @@ def idx_parity(x, y, n, offsxpos, offsypos, parity_x, parity_y, sizeregi):
     
     match_x = (get_region(x[0:n], offsxpos, sizeregi) % 2) == parity_x
     match_y = (get_region(y[0:n], offsypos, sizeregi) % 2) == parity_y
-    
-    #print 'offsxpos'
-    #print offsxpos
-    #print 'sizeregi'
-    #print sizeregi
-    #print 'parity_x'
-    #print parity_x
-    #print 'get_region(x[0:n], offsxpos, sizeregi)'
-    #print get_region(x[0:n], offsxpos, sizeregi)
-    #print 'match_x'
-    #print match_x
     
     return np.flatnonzero(np.logical_and(match_x, match_y))
 
@@ -904,7 +679,7 @@ class cntrstrt():
 def writ_catl(gdat, catl, path):
     
     filetemp = h5py.File(path, 'w')
-    print 'Writing to %s...' % path
+    print('Writing to %s...' % path)
     filetemp.create_dataset('numb', data=catl['numb'])
     for strgfeat in gdat.liststrgfeatstar:
         if strgfeat == 'flux' and 'catlseed' in path:
@@ -922,7 +697,7 @@ def writ_catl(gdat, catl, path):
 def read_catl(gdat, path, boolmock=False):
     
     filetemp = h5py.File(path, 'r')
-    print 'Reading %s...' % path
+    print('Reading %s...' % path)
     catl = {}
     catl['numb'] = filetemp['numb'][()]
     for strgfeat in gdat.liststrgfeatstar:
@@ -953,10 +728,6 @@ def setp(gdat):
             gdat.sizeregi = gdat.sizeimag[0]
     
     if gdat.sizeimag[0] % gdat.sizeregi != 0 or gdat.sizeimag[1] % gdat.sizeregi != 0:
-        print 'gdat.sizeimag'
-        print gdat.sizeimag
-        print 'gdat.sizeregi'
-        print gdat.sizeregi
         raise Exception('')
         
     if gdat.booltile:
@@ -991,8 +762,6 @@ def make_cmap(seq):
 
 def plot_psfn(gdat, k, ix, iy, clib=None):
     
-    print 'Plotting the PSF...'
-    
     xpos = np.array([gdat.numbsidepsfn / 2 + ix])
     ypos = np.array([gdat.numbsidepsfn / 2 + iy])
     flux = np.ones((gdat.numbener, gdat.numbtime, 1))
@@ -1009,11 +778,6 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
         vmax = 0.5
     else:
         vmax = None
-    #print 'ix'
-    #print ix
-    #print 'iy'
-    #print iy
-    #np.set_printoptions(1)
     for i in gdat.indxener:
         
         figr, axis = plt.subplots(figsize=(20, 20))
@@ -1050,7 +814,6 @@ def plot_psfn(gdat, k, ix, iy, clib=None):
         cbaxes = figr.add_axes([0.85, 0.1, 0.05, 0.7]) 
         cbar = figr.colorbar(imag, cax=cbaxes) 
         path = gdat.pathdatartag + '%s_psfnbilifres%04d_%04d.%s' % (gdat.rtag, i, k, gdat.strgplotfile)
-        print 'Writing to %s...' % path
         plt.savefig(path)
         plt.close()
 
@@ -1065,38 +828,12 @@ def retr_psfnbili(gdat, i, xpos, ypos):
     iix = iix % gdat.factusam
     iiy = iiy % gdat.factusam
     
-    #print 'retr_psfnbili'
-    #print 'xpos'
-    #print xpos
-    #print 'ypos'
-    #print ypos
-    #print 'iix'
-    #print iix
-    #print 'iiy'
-    #print iiy
-    #print 'dix'
-    #print dix
-    #print 'diy'
-    #print diy
-    
     f00 = gdat.cntppsfnusam[i, iiy-1:gdat.numbsidepsfnusam:gdat.factusam,   iix-1:gdat.numbsidepsfnusam:gdat.factusam]
     f01 = gdat.cntppsfnusam[i, iiy:gdat.numbsidepsfnusam:gdat.factusam, iix-1:gdat.numbsidepsfnusam:gdat.factusam]
     f10 = gdat.cntppsfnusam[i, iiy-1:gdat.numbsidepsfnusam:gdat.factusam,   iix:gdat.numbsidepsfnusam:gdat.factusam]
     f11 = gdat.cntppsfnusam[i, iiy:gdat.numbsidepsfnusam:gdat.factusam, iix:gdat.numbsidepsfnusam:gdat.factusam]
     psfnbili = f00 * (1. - dix) * (1. - diy) + f10 * dix * (1. - diy) + f01 * (1. - dix) * diy + f11 * dix * diy
     
-    #print 'f00'
-    #print f00
-    #print 'f01'
-    #print f01
-    #print 'f10'
-    #print f10
-    #print 'f11'
-    #print f11
-    #print 'psfnbili'
-    #print psfnbili
-    #print 
-
     return psfnbili
 
 
@@ -1109,15 +846,7 @@ def plot_lcur(gdat, boolsimp=False):
     for plottype in listplottype:
         cntr = 0
         for k in gdat.indxsourcond:
-            print 'boolsimp'
-            print boolsimp
-            print 'plottype'
-            print plottype
-            print 'k'
-            print k
-            
             numblcurplot = min(4, gdat.numbsourcond - k)
-            
             meanlcur = np.mean(gdat.catlcond[gdat.indxflux, k, 0], axis=0)
             if not boolsimp:
                 errrlcur = np.empty((2, gdat.numbtime))
@@ -1125,12 +854,8 @@ def plot_lcur(gdat, boolsimp=False):
                     errrlcur[i, :] = np.mean(gdat.catlcond[gdat.indxflux, k, 1], axis=0)
             
             if (gdat.catlcond[gdat.indxflux, k, 1] == 0.).any():
-                print 'Warning! Condensed catalog flux uncertainties vanish!'
-                print 'gdat.catlcond[gdat.indxflux, k, 1]'
-                print gdat.catlcond[gdat.indxflux, k, 1]
-                print 'gdat.catlcond[gdat.indxflux, k, 0]'
-                print gdat.catlcond[gdat.indxflux, k, 0]
-                #raise Exception('')
+                print('Warning! Condensed catalog flux uncertainties vanish!')
+                raise Exception('')
 
             if k % numblcurplot == 0:
                 figr, axis = plt.subplots(numblcurplot, 1, figsize=(12, 4 * numblcurplot))
@@ -1140,9 +865,7 @@ def plot_lcur(gdat, boolsimp=False):
                 indxtrue = np.where(gdat.indxmtch == k)[0]
                 if indxtrue.size > 0:
                     if indxtrue.size > 1:
-                        print 'Warning! indxtrue size is larger than 1'
-                        print 'indxtrue'
-                        print indxtrue
+                        print('Warning! indxtrue size is larger than 1')
                     indxtrue = indxtrue[0]
                     meanlcurtrue = np.mean(gdat.catlrefr[0]['flux'][:, :, indxtrue], axis=0)
                     if plottype == 'nomi':
@@ -1150,11 +873,6 @@ def plot_lcur(gdat, boolsimp=False):
             
                     if gdat.datatype == 'mock':
                         ydattemp = np.mean(gdat.catlrefr[0]['apho'][:, :, indxtrue], axis=0)
-                        if plottype == 'nomi' and not boolsimp:
-                            print 'Aperture RMS'
-                            print np.sqrt(np.mean((ydattemp - np.mean(ydattemp))**2))
-                            print 'np.mean(ydattemp)'
-                            print np.mean(ydattemp)
                         ydattemp /= np.mean(ydattemp)
                         ydattemp *= np.mean(meanlcur)
                         if plottype == 'resi':
@@ -1182,11 +900,6 @@ def plot_lcur(gdat, boolsimp=False):
             if boolsimp:
                 axis[k%numblcurplot].plot(gdat.indxtime, meanlcur, color='b', marker='o', ls='', markersize=10, alpha=1.)
             else:
-                if plottype == 'nomi' and not boolsimp:
-                    print 'PCAT RMS'
-                    print np.sqrt(np.mean((meanlcur - np.mean(meanlcur))**2))
-                    print 'np.mean(meanlcur)'
-                    print np.mean(meanlcur)
                 temp, listcaps, temp = axis[k%numblcurplot].errorbar(gdat.indxtime, meanlcur, yerr=errrlcur, color='b', marker='o', ls='', markersize=10, alpha=0.5)
                 for caps in listcaps:
                     caps.set_markeredgewidth(10)
@@ -1213,7 +926,7 @@ def plot_lcur(gdat, boolsimp=False):
                 try:
                     plt.tight_layout()
                 except:
-                    print 'Tight layout failed.'
+                    pass
                 if boolsimp:
                     strgsimp = 'simp'
                 else:
@@ -1362,8 +1075,6 @@ def retr_imagscal(gdat, imag):
 
 def make_mock(gdat, gdatnotp):
     
-    print 'Generating mock data...'
-   
     if gdat.truefluxcent != None:
         boolcent = True
     else:
@@ -1395,11 +1106,6 @@ def make_mock(gdat, gdatnotp):
         yposgalx = np.random.uniform(size=gdat.truenumbgalx) * (gdat.sizeimag[1] - 1)
         fluxgalx = np.ones((gdat.numbener, gdat.numbtime, gdat.truenumbgalx)) \
                 * gdat.trueminmfluxgalx * np.exp(np.random.exponential(scale=1./(gdat.truefluxdistslop - 1.), size=gdat.truenumbgalx))[None, None, :]
-
-    print 'flux'
-    summgene(flux)
-    print 'fluxgalx'
-    summgene(fluxgalx)
 
     if gdat.numbener > 1:
         # spectral parameters
@@ -1467,16 +1173,8 @@ def make_mock(gdat, gdatnotp):
             gdat.catlrefr[indxtemp]['ypos'] = yposgalx
             gdat.catlrefr[indxtemp]['flux'] = fluxgalx
     
-    if gdat.verbtype > 1 and gdat.datatype == 'mock':
-        print 'gdat.truenumbstar'
-        print gdat.truenumbstar
-        if gdat.trueboolgalx:
-            print 'gdat.truenumbgalx'
-            print gdat.truenumbgalx
-
     if gdat.datatype == 'mock':
         gdat.cntpback = np.zeros((gdat.numbener, gdat.numbsidexpos, gdat.numbsideypos, gdat.numbtime)) + gdat.cntpbackscal
-        print 'True background: %.g ADU' % gdat.cntpbackscal
 
     # evaluate model
     if gdat.trueboolstar:
@@ -1496,8 +1194,6 @@ def make_mock(gdat, gdatnotp):
     gdat.cntpdata = eval_modl(gdat, xposeval, yposeval, fluxeval, gdat.cntpback, clib=gdatnotp.clibeval, sizeimag=gdat.sizeimag)
     
     if not np.isfinite(gdat.cntpdata).all():
-        print 'gdat.cntpdata'
-        summgene(gdat.cntpdata)
         raise Exception('')
 
     gdat.cntpdata[gdat.cntpdata < 1] = 1.
@@ -1517,14 +1213,12 @@ def make_mock(gdat, gdatnotp):
             for t in gdat.indxtime:
                 apho[i, t, k] = np.sum(gdat.cntpdata[i, indxpixl[0], indxpixl[1], t])
     if not np.isfinite(gdat.cntpdata).all() or np.amin(gdat.cntpdata) < 0.:
-        print 'gdat.cntpdata'
-        summgene(gdat.cntpdata)
         raise Exception('')
     
     strg = ['%d' % k for k in range(gdat.truenumbstar)]
     # write to file
     path = gdat.pathdata + '%04d%04d%04d_mock.h5' % (gdat.numbener, gdat.numbtime, gdat.truenumbstar)
-    print 'Writing to %s...' % path
+    print('Writing to %s...' % path)
     filetemp = h5py.File(path, 'w')
     filetemp.create_dataset('cntpdata', data=gdat.cntpdata)
     filetemp.create_dataset('numb', data=gdat.truenumbstar)
@@ -1550,10 +1244,6 @@ def to_moments(r, theta, phi):
     yy = r*r*(1.+u*u-(1.-u*u)*np.cos(2.*phi))/4.
     if (xy*xy > xx*yy).any():
      mask = xy*xy > xx*yy
-     print r[mask], theta[mask]/np.pi, phi[mask]/np.pi
-     print np.cos(theta[mask])
-     print xx[mask], xy[mask], yy[mask]
-     print xx[mask]*yy[mask], xy[mask]*xy[mask]
      assert False
     return xx, xy, yy
 
@@ -1909,16 +1599,10 @@ def main( \
     for strgmodl in gdat.liststrgmodl:
         liststrgmodlobjt = getattr(gdat, strgmodl + 'liststrgmodlobjt')
         for strgobjt in ['star', 'galx']:
-            print 'liststrgmodlobjt'
-            print liststrgmodlobjt
             if strgobjt in liststrgmodlobjt:
                 booltemp = True
             else:
                 booltemp = False
-            print 'strgmodl'
-            print strgmodl
-            print 'strgobjt'
-            print strgobjt
             setattr(gdat, strgmodl + 'bool' + strgobjt, booltemp)
         
     if gdat.datatype == 'mock':
@@ -1999,21 +1683,21 @@ def main( \
         gdat.indxswepsave = np.arange(gdat.numbswepburn, gdat.numbswepburn + gdat.numbsamp)
         gdat.boolsaveswep[gdat.indxswepsave] = True
 
-        print 'Lion initialized at %s' % gdat.strgtimestmp
+        print('Lion initialized at %s' % gdat.strgtimestmp)
 
         # show critical inputs
-        print 'strgdata: ', gdat.strgdata
-        print 'List of model types:', gdat.fittliststrgmodlobjt
-        print 'Data type:', datatype
-        print 'Photometry mode: ', strgmode
-        print 'booltile: ', gdat.booltile
-        print 'sizeregi: ', gdat.sizeregi
-        print 'boolspre: ', gdat.boolspre
-        print 'gdat.numbswep: ', gdat.numbswep
-        print 'gdat.numbsamp: ', gdat.numbsamp
-        print 'gdat.numbloop: ', gdat.numbloop
-        print 'gdat.gain: ', gdat.gain
-        print 'gdat.fittminmflux', gdat.fittminmflux
+        print('strgdata: ', gdat.strgdata)
+        print('List of model types:', gdat.fittliststrgmodlobjt)
+        print('Data type:', datatype)
+        print('Photometry mode: ', strgmode)
+        print('booltile: ', gdat.booltile)
+        print('sizeregi: ', gdat.sizeregi)
+        print('boolspre: ', gdat.boolspre)
+        print('gdat.numbswep: ', gdat.numbswep)
+        print('gdat.numbsamp: ', gdat.numbsamp)
+        print('gdat.numbloop: ', gdat.numbloop)
+        print('gdat.gain: ', gdat.gain)
+        print('gdat.fittminmflux', gdat.fittminmflux)
 
         gdat.cmapresi = make_cmapdivg('Red', 'Orange')
         if colrstyl == 'pcat':
@@ -2068,35 +1752,21 @@ def main( \
             gdat.numbsideypos = gdat.cntpdata.shape[1]
             gdat.numbsidexpos = gdat.cntpdata.shape[2]
     
-        print 'gdat.numbener: ', gdat.numbener
-        print 'gdat.numbtime: ', gdat.numbtime
-        
         if gdat.cntpdata.ndim != 4:
             raise Exception('Input image should be four dimensional.')
         
         gdat.vari = gdat.cntpdata / gdat.gain
         if gdat.weig is None:
             gdat.weig = 1. / gdat.vari # inverse variance
-        print 'gdat.weig'
-        summgene(gdat.weig)
         
         if not np.isfinite(gdat.cntpdata).all() or np.amin(gdat.cntpdata) < 0.:
-            print 'Input count map goes either negative or infinite.'
-            print 'gdat.cntpdata'
-            summgene(gdat.cntpdata)
-            #raise Exception('')
+            raise Exception('')
 
         if not np.isfinite(gdat.vari).all() or np.amin(gdat.vari) < 0.:
-            print 'Variance map goes either negative or infinite.'
-            print 'gdat.vari'
-            summgene(gdat.vari)
-            #raise Exception('')
+            raise Exception('')
 
         if not np.isfinite(gdat.weig).all() or np.amin(gdat.weig) < 0.:
-            print 'Weight map goes either negative or infinite.'
-            print 'gdat.weig'
-            summgene(gdat.weig)
-            #raise Exception('')
+            raise Exception('')
         
         if gdat.boolspre:
             if not isinstance(gdat.cntpdata, np.float32):
@@ -2104,9 +1774,6 @@ def main( \
                 gdat.weig = gdat.weig.astype(np.float32)
         
         assert gdat.cntpdata.shape[0] == gdat.cntppsfnusam.shape[0]
-
-        if gdat.boolstatread and gdat.strgstat != None and gdat.catlinit != None:
-            print 'strgstat and catlinit defined at the same time. catlinit takes precedence for the initial catalog.'
 
         # plotting
     
@@ -2136,8 +1803,6 @@ def main( \
             if gdat.catlrefr is None:
                 gdat.catlrefr = []
 
-        print 'len(gdat.catlrefr)'
-        print len(gdat.catlrefr)
         gdat.numbrefr = len(gdat.catlrefr)
         gdat.indxrefr = np.arange(gdat.numbrefr)
         
@@ -2182,8 +1847,6 @@ def main( \
                 if os.path.isfile(gdat.pathstat):
                     gdat.catlinit = read_catl(gdat, gdat.pathstat)
                     gdat.boolinitcatl = True
-                else:
-                    print 'No initialization catalog found. Initializing randomly...'
 
         # check if source has been changed after compilation
         if os.path.getmtime(gdat.pathlion + 'blas.c') > os.path.getmtime(gdat.pathlion + 'blas.so'):
@@ -2200,23 +1863,12 @@ def main( \
         #gdat.numbsidepsfnusam = cntppsfn.shape[1]
         #numbsidepsfn = gdat.numbsidepsfnusam / factusam
         
-        if gdat.verbtype > 2:
-            print 'gdat.numbsidepsfn'
-            print gdat.numbsidepsfn
-            print 'factusam'
-            print factusam
-  
         # read data
         if not isinstance(gdat.cntpdata, np.ndarray):
             raise Exception('')
         
-
         numbpixl = gdat.numbsidexpos * gdat.numbsideypos
-
         gdat.numbflux = gdat.numbener * gdat.numbtime
-
-        print 'Image width and height: %d %d pixels' % (gdat.numbsidexpos, gdat.numbsideypos)
-        
         gdat.numbdata = numbpixl * gdat.numbtime
   
         # hyperparameters
@@ -2228,10 +1880,6 @@ def main( \
         if gdat.boolplot and gdat.boolplotinit:
             
             # background
-            print 'gdat.cntpback'
-            summgene(gdat.cntpback)
-            print 'gdat.cntpdata'
-            summgene(gdat.cntpdata)
             plot_imag(gdat, gdat.cntpback, 'data', 'cntpback')
 
             ## PSF
@@ -2267,20 +1915,16 @@ def main( \
                         plt.savefig(gdat.pathdatartag + '%s_cntpdataenti_fram%04d%04d.%s' % (gdat.rtag, i, t, gdat.strgplotfile))
                         
                         plt.close()
-                print 'Making animations of cadence images...'
                 cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdataenti_fram*.%s %s/%s_cntpdataenti.gif' % \
                                                                             (gdat.pathdatartag, gdat.rtag, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag)
-                print cmnd
                 os.system(cmnd)
-                print 'Done.'
-        
         
         class Proposal:
         
             def __init__(self):
                 
                 if gdat.verbtype > 1:
-                    print 'Initializing the proposal...'
+                    print('Initializing the proposal...')
 
                 self.idx_move = None
                 self.idx_move_g = None
@@ -2313,27 +1957,7 @@ def main( \
             
             def __add_phonions_stars(self, stars, remove=False):
                 fluxmult = -1 if remove else 1
-                
-                if gdat.verbtype > 1:
-                    print '__add_phonions_stars()'
-                
-                if gdat.verbtype > 2:
-                    print 'before:'
-                    print 'self.xphon'
-                    summgene(self.xphon)
-                    print 'stars'
-                    print stars
-                    summgene(stars)
-                    print 'stars[gdat.indxxpos, :]'
-                    summgene(stars[gdat.indxxpos, :])
-                
                 self.xphon = np.append(self.xphon, stars[gdat.indxxpos, :])
-                
-                if gdat.verbtype > 2:
-                    print 'after:'
-                    print 'self.xphon'
-                    summgene(self.xphon)
-                
                 self.yphon = np.append(self.yphon, stars[gdat.indxypos, :])
                 if self.fphon.size == 0:
                     self.fphon = np.copy(fluxmult*stars[gdat.indxflux, :])
@@ -2355,9 +1979,6 @@ def main( \
         
             
             def add_move_stars(self, idx_move, stars0, starsp):
-                
-                if gdat.verbtype > 2:
-                    print 'add_move_stars()'
 
                 self.idx_move = idx_move
                 self.stars0 = stars0
@@ -2410,11 +2031,6 @@ def main( \
             
             def get_ref_xy(self):
                 if self.idx_move is not None:
-                    #print 'self.stars0[gdat.indxxpos,:]'
-                    #summgene(self.stars0[gdat.indxxpos,:])
-                    #print 'self.stars0[gdat.indxypos,:]'
-                    #summgene(self.stars0[gdat.indxypos,:])
-                    #print
                     return self.stars0[gdat.indxxpos,:], self.stars0[gdat.indxypos,:]
                 elif self.idx_move_g is not None:
                     return self.galaxies0[gdat.indxxpos,:], self.galaxies0[gdat.indxypos,:]
@@ -2458,16 +2074,10 @@ def main( \
                     self.n = np.random.randint(gdat.maxmnumbstar) + 1
                 else:
                     self.n = gdat.catlinit['numb']
-                if gdat.verbtype > 1:
-                    print 'Initializing the model...'
                 if gdat.boolspre:
                     self.stars = np.zeros((gdat.numbparastar, gdat.maxmnumbstar), dtype=np.float32)
                 else:
                     self.stars = np.zeros((gdat.numbparastar, gdat.maxmnumbstar), dtype=np.float32)
-                
-                if gdat.verbtype > 2:
-                    print 'self.stars'
-                    summgene(self.stars)
                 
                 if gdat.initxpos is not None:
                     if gdat.initxpos < 0. or gdat.initxpos > gdat.sizeimag[0] or gdat.initxpos > gdat.sizeimag[1]:
@@ -2481,29 +2091,19 @@ def main( \
                     self.stars[gdat.indxxpos, :self.n] *= gdat.sizeimag[0] - 1
                     self.stars[gdat.indxypos, :self.n] *= gdat.sizeimag[1] - 1
                 else:
-                    print 'Initializing positions from the catalog...'
                     self.stars[gdat.indxxpos, :gdat.catlinit['numb']] = gdat.catlinit['xpos'][:gdat.catlinit['numb']]
                     self.stars[gdat.indxypos, :gdat.catlinit['numb']] = gdat.catlinit['ypos'][:gdat.catlinit['numb']]
                     
                     indxbadd = np.where((self.stars[gdat.indxxpos, :] < 0.) | (self.stars[gdat.indxypos, :] < 0.) | \
                                         (self.stars[gdat.indxxpos, :] > gdat.numbsidexpos) | (self.stars[gdat.indxypos, :] > gdat.numbsideypos))
                     if indxbadd[0].size > 0:
-                        print 'Some of the initialization positions are outside the positional priors.'
                         raise Exception('')
                 
                 if gdat.catlinit is None:
-                    print 'Initializing the fluxes randomly...'
                     self.stars[gdat.indxflux, :self.n] = np.random.uniform(size=(gdat.numbflux, self.n))  # refactor into some sort of prior function?
                     self.stars[gdat.indxflux, :self.n] **= -1. / (gdat.fittfluxdistslop - 1.)
                     self.stars[gdat.indxflux, :self.n] *= gdat.fittminmflux
                 else:
-                    print 'Initializing fluxes from the catalog...'
-                    #print 'gdat.indxflux'
-                    #summgene(gdat.indxflux)
-                    #print 'self.stars'
-                    #summgene(self.stars)
-                    #print 'self.stars[gdat.indxflux, :gdat.catlinit[numb]'
-                    #summgene(self.stars[gdat.indxflux, :gdat.catlinit['numb']])
                     numbtemp = min(gdat.catlinit['numb'], gdat.maxmnumbstar)
                     self.stars[gdat.indxflux, :numbtemp] = gdat.catlinit['flux'][:, :, :numbtemp]
             
@@ -2511,32 +2111,11 @@ def main( \
                         for t in gdat.indxtime:
                             indxbadd = np.where((self.stars[gdat.indxflux[i, t], :] < gdat.fittminmflux) & (self.stars[gdat.indxflux[i, t], :] > 0.))[0]
                             if indxbadd.size > 0:
-                                print 'self.stars[gdat.indxflux[i, t], :]'
-                                print self.stars[gdat.indxflux[i, t], :]
-                                print 'gdat.fittminmflux'
-                                print gdat.fittminmflux
-                                print 'Some of the initialization fluxes were below the minimum flux prior. Initializing them at the minimum flux.'
                                 raise Exception('')
                                 self.stars[gdat.indxflux[i, t], indxbadd] = np.random.uniform(size=indxbadd.size)
                                 self.stars[gdat.indxflux[i, t], indxbadd] **= -1. / (gdat.fittfluxdistslop - 1.)
                                 self.stars[gdat.indxflux[i, t], indxbadd] *= gdat.fittminmflux
                 
-                #for k in range(len(gdat.catlinit['xpos'])):
-                #    print 'gdat.catlinit'
-                #    print gdat.catlinit['xpos'][k], gdat.catlinit['ypos'][k], gdat.catlinit['flux'][:, :, k].flatten()
-                #    print 'self.stars'
-                #    print self.stars[gdat.indxxpos, k], self.stars[gdat.indxypos, k], self.stars[gdat.indxflux.flatten(), k]
-                #    print
-
-                if gdat.verbtype > 2:
-                    print 'numb'
-                    print self.n
-                    for strgfeat in gdat.liststrgfeatstar:
-                        indx = getattr(gdat, 'indx' + strgfeat)
-                        print strgfeat
-                        summgene(self.stars[indx, :self.n])
-                        print
-
                 self.ng = 0
                 if gdat.fittboolgalx:
                     self.ng = np.random.randint(gdat.maxmnumbgalx)+1
@@ -2547,8 +2126,6 @@ def main( \
                     self.galaxies[gdat.indxypos, :self.ng] *= gdat.sizeimag[1]-1
                     self.galaxies[gdat.indxflux, :self.ng] **= -1./(gdat.fittfluxdistslopgalx - 1.)
                     self.galaxies[gdat.indxflux, :self.ng] *= gdat.fittminmfluxgalx
-                    print 'self.galaxies[gdat.indxflux, :self.ng]'
-                    summgene(self.galaxies[gdat.indxflux, :self.ng])
                     self.galaxies[[gdat.indxxxmo,gdat.indxxymo,gdat.indxyymo], :self.ng] = samp_prio_momegalx(gdat.trueminmradigalx, self.ng)
                 self.cntpback = gdat.cntpback
             
@@ -2562,9 +2139,6 @@ def main( \
             
             def run_sampler(self, gdat, chan, temperature, jj):
                 
-                if gdat.verbtype > 1:
-                    print 'Sample %d started.' % jj
-                
                 t0 = time.clock()
                 
                 if gdat.booltile:
@@ -2574,30 +2148,12 @@ def main( \
                     self.offsxpos = 0
                     self.offsypos = 0
 
-                if gdat.verbtype > 2:
-                    print 'self.offsxpos'
-                    print self.offsxpos
-                    print 'self.offsypos'
-                    print self.offsypos
-                    print 'gdat.sizeregi'
-                    print gdat.sizeregi
-                
                 if gdat.booltile:
                     self.nregx = gdat.sizeimag[0] / gdat.sizeregi + 1
                     self.nregy = gdat.sizeimag[1] / gdat.sizeregi + 1
                 else:
                     self.nregx = 1
                     self.nregy = 1
-                
-                if gdat.verbtype > 1:
-                    print 'self.n'
-                    print self.n
-                
-                if gdat.verbtype > 2:
-                    print 'self.nregx'
-                    print self.nregx
-                    print 'self.nregy'
-                    print self.nregy
                 
                 cntpresi = gdat.cntpdata.copy() # residual for zero image is data
                 if gdat.fittboolstar:
@@ -2606,15 +2162,8 @@ def main( \
                     fluxeval = self.stars[gdat.indxflux, :self.n]
                 if gdat.fittboolgalx:
                     xposphon, yposphon, specphon = retr_tranphon(gdat.gridphon, gdat.amplphon, self.galaxies[:,0:self.ng])
-                    print 'self.stars[gdat.indxxpos, :self.n]'
-                    summgene(self.stars[gdat.indxxpos, :self.n])
-                    print 'xposphon'
-                    summgene(xposphon)
-                    print 'specphon'
-                    summgene(specphon)
                     if gdat.numbener > 1:
                         specphon = retr_spec(gdat, specphon, gdat.colrgalx)
-                    print
                     xposeval = np.concatenate([self.stars[gdat.indxxpos, :self.n], xposphon]).astype(np.float32)
                     yposeval = np.concatenate([self.stars[gdat.indxypos, :self.n], yposphon]).astype(np.float32)
                     fluxeval = np.concatenate([self.stars[gdat.indxflux, :self.n], specphon], axis=2).astype(np.float32)
@@ -2629,36 +2178,6 @@ def main( \
                                                                    offsxpos=self.offsxpos, offsypos=self.offsypos)
                 llik = -0.5 * gdat.chi2stat
                 
-                if gdat.diagmode and jj > 0:
-                    if np.amax(np.abs(gdat.chi2last - gdat.chi2stat)) > 0.2:
-                        print 'Warning! Chi2 state changed during loops!'
-                        print 'gdat.cntpdata'
-                        summgene(gdat.cntpdata)
-                        print 'gdat.chi2last'
-                        print gdat.chi2last
-                        print 'gdat.chi2stat'
-                        print gdat.chi2stat
-                        print
-                        #raise Exception('')
-
-                #print 'gdat.chi2stat'
-                #print gdat.chi2stat
-                #print 'llik'
-                #print llik
-    
-                if gdat.verbtype > 1:
-                    print 'cntpmodl'
-                    summgene(cntpmodl)
-                    print 'gdat.chi2stat'
-                    summgene(gdat.chi2stat)
-                    print 'llik'
-                    summgene(llik)
-                    print 'gdat.cntpdata'
-                    summgene(gdat.cntpdata)
-                    print 'cntpresi'
-                    summgene(cntpresi)
-                    print 
-                
                 cntpresi -= cntpmodl
                 
                 # log
@@ -2669,37 +2188,18 @@ def main( \
                     
                     numbdoff = gdat.numbdata - numbpara
                     chi2doff = gdat.chi2totl / numbdoff
-                    if gdat.diagmode:
-                        if chi2doff < 0.:
-                            print 'Chi2 per dof went negative.'
-                            print 'gdat.cntpdata'
-                            summgene(gdat.cntpdata)
-                            print 'self.n'
-                            print self.n
-                            print 'numbdoff'
-                            print numbdoff
-                            print 'gdat.numbdata'
-                            print gdat.numbdata
-                            print 'numbpara'
-                            print numbpara
-                            raise Exception('')
                     fmtstr = '\t(all) %0.3f (P) %0.3f (B-D) %0.3f (M-S) %0.3f (Pg) %0.3f (BDg) %0.3f (S-g) %0.3f (gSg) %0.3f (gMS) %0.3f'
-                    print 'Sample %d' % jj
-                    print 'temp: ', temperature, ', numbstar: ', self.n, ', numbgalx: ', self.ng, ', numbphon: ', numbphon, \
-                                                             ', chi2totl: ', gdat.chi2totl, ', numbpara: ', numbpara, ', chi2totldoff: ', chi2doff
+                    print('Sample %d' % jj)
+                    print('temp: ', temperature, ', numbstar: ', self.n, ', numbgalx: ', self.ng, ', numbphon: ', numbphon, \
+                                                             ', chi2totl: ', gdat.chi2totl, ', numbpara: ', numbpara, ', chi2totldoff: ', chi2doff)
                 
                 # assertions
                 if gdat.diagmode:
                     if not np.isfinite(cntpresi).all():
-                        print 'cntpresi'
-                        summgene(cntpresi)
                         raise Exception('')
 
                 # frame plots
                 if (gdat.boolplotsave) and jj % gdat.factthinplot == 0:
-                    
-                    if gdat.verbtype > 1:
-                        print 'Making frame plots...'
                         
                     for i in gdat.indxener:
                         for t in gdat.indxtime:
@@ -2777,16 +2277,7 @@ def main( \
                     if gdat.chi2totl < 0.:
                         raise Exception('')
 
-                if gdat.verbtype > 1:
-                    print 'Starting the loops...'
-                if gdat.verbtype > 2:
-                    print 'self.stars'
-                    summgene(self.stars)
-
                 for a in xrange(gdat.numbloop):
-
-                    if gdat.verbtype > 1:
-                        print 'Loop %d started.' % a 
 
                     t1 = time.clock()
                     self.thisindxproptype = np.random.choice(np.arange(gdat.probprop.size, dtype=int), p=gdat.probprop)
@@ -2798,22 +2289,8 @@ def main( \
                         for i in gdat.indxener:
                             for t in gdat.indxtime:
                                 if (self.stars[gdat.indxflux[i, t], :self.n] < gdat.fittminmflux).any():
-                                    print 'gdat.fittminmflux'
-                                    print gdat.fittminmflux
-                                    print 'self.n'
-                                    print self.n
-                                    print 'self.stars[gdat.indxflux[i, t], :self.n]'
-                                    print self.stars[gdat.indxflux[i, t], :self.n]
                                     raise Exception('')
 
-                    if gdat.verbtype > 1:
-                        print 'self.thisindxproptype'
-                        print self.thisindxproptype
-                        print 'self.n'
-                        print self.n
-                        print 'gdat.chi2stat'
-                        summgene(gdat.chi2stat)
-                    
                     gdat.thisindxswlp = jj * gdat.numbloop + a
 
                     chan['proptype'][gdat.thisindxswlp] = self.thisindxproptype
@@ -2851,29 +2328,10 @@ def main( \
         
                         t3 = time.clock()
                         
-                        #if gdat.booltile:
-                            
                         refx, refy = proposal.get_ref_xy()
                         regionx = get_region(refx, self.offsxpos, gdat.sizeregi)
                         regiony = get_region(refy, self.offsypos, gdat.sizeregi)
                         
-                        if gdat.verbtype > 1:
-                            print 'gdat.chi2prop'
-                            summgene(gdat.chi2prop)
-                        if gdat.verbtype > 2:
-                            print 'refx'
-                            summgene(refx)
-                            print 'refy'
-                            summgene(refy)
-                            print 'self.offsxpos'
-                            print self.offsxpos
-                            print 'self.offsypos'
-                            print self.offsypos
-                        
-                        #else:
-                        #    regionx = np.zeros(self.n, dtype=int)
-                        #    regiony = np.zeros(self.n, dtype=int)
-                        ###
                         '''
                         if i == 0:
                             yy, xx = np.mgrid[0:100,0:100]
@@ -2896,11 +2354,6 @@ def main( \
                             llikprop[(1-self.parity_y)::2,:] = float('-inf') # don't accept off-parity regions
                             llikprop[:,(1-self.parity_x)::2] = float('-inf')
                         
-                        #if not (gdat.booltile and not np.isfinite(llikprop[1, 1])):
-                        #    print 'llikprop - llik'
-                        #    print llikprop - llik
-                        #    print 
-                        
                         dlogP = (llikprop - llik) / temperature
                         if proposal.factor is not None:
                             regifact[regiony, regionx] += proposal.factor
@@ -2910,75 +2363,19 @@ def main( \
                         chan['stdvposiprop'][gdat.thisindxswlp] = gdat.stdvposiprop
                         chan['stdvfluxprop'][gdat.thisindxswlp] = gdat.stdvfluxprop
                         
-                        if gdat.verbtype > 1:
-                            print 'llikprop'
-                            print llikprop
-                            print 'llik'
-                            print llik
-                            print 'dlogP'
-                            print dlogP
                         boolregiacpt = (np.log(np.random.uniform(size=(self.nregy, self.nregx))) < dlogP).astype(np.int32)
-                        if gdat.verbtype > 1:
-                            print 'boolregiacpt'
-                            print boolregiacpt
                         acceptprop = boolregiacpt[regiony, regionx]
                         
-                        if gdat.diagmode:
-                            if self.thisindxproptype == 0 and gdat.stdvfluxprop < 1e-10 and gdat.stdvposiprop < 1e-10 and np.count_nonzero(boolregiacpt) == 0:
-                                print 'Proposal not accepted despite small proposal scale.'
-                                print 'gdat.stdvfluxprop'
-                                print gdat.stdvfluxprop
-                                print 'gdat.stdvposiprop'
-                                print gdat.stdvposiprop
-                                print 'boolregiacpt'
-                                print boolregiacpt
-                                #raise Exception('')
                         # only keep cntpmodldiff in accepted regions+margins
                         for i in gdat.indxener:
                             for t in gdat.indxtime:
                                 cntpmodldiffacpt = np.zeros_like(cntpmodldiff[i, :, :, t])
-                                #cntpmodldiffacpt = np.ascontiguousarray(np.zeros_like(cntpmodldiff[i, :, :, t]))
                                 gdatnotp.clib.clib_updt_modl(gdat.sizeimag[0], gdat.sizeimag[1], cntpmodldiff[i, :, :, t], \
-                                #gdatnotp.clib.clib_updt_modl(gdat.sizeimag[0], gdat.sizeimag[1], np.ascontiguousarray(cntpmodldiff[i, :, :, t]), \
-                                                                                                        cntpmodldiffacpt, boolregiacpt, gdat.sizeregi, \
-                                                                                                               gdat.marg, self.offsxpos, self.offsypos, gdat.booltile)
-                                #print 'it'
-                                #print i, t
-                                #print 'cntpmodldiffacpt'
-                                #summgene(cntpmodldiffacpt)
-                                #print 'np.sum((cntpresi[i, :, :, t] - cntpmodldiffacpt)**2 * weig[i, :, :, t])'
-                                #print np.sum((cntpresi[i, :, :, t] - cntpmodldiffacpt)**2 * weig[i, :, :, t])
-                                # using this cntpmodldiff containing only accepted moves, update chi2proptemp
-                                
-                                #gdatnotp.clib.clib_eval_llik(gdat.sizeimag[0], gdat.sizeimag[1], cntpmodldiffacpt, cntpresi[i, :, :, t], weig[i, :, :, t], chi2proptemp, sizeregi, \
-                                #                                                                                          gdat.marg, self.offsxpos, self.offsypos, gdat.booltile)
-                                #print 'new chi2proptemp'
-                                #print np.sum(chi2proptemp)
-                                #print 'np.sum((gdat.cntpdata[i, :, :, t] - cntpmodl[i, :, :, t])**2 * weig[i, :, :, t])'
-                                #print np.sum((gdat.cntpdata[i, :, :, t] - cntpmodl[i, :, :, t])**2 * weig[i, :, :, t])
-                                
-                                # temp
-                                #chi2proptemp = np.array([[np.sum((cntpmodldiffacpt - cntpresi[i, :, :, t])**2 * weig[i, :, :, t])]], dtype=np.float64)
-                                
+                                                                                              cntpmodldiffacpt, boolregiacpt, gdat.sizeregi, \
+                                                                                              gdat.marg, self.offsxpos, self.offsypos, gdat.booltile)
                                 cntpresi[i, :, :, t] -= cntpmodldiffacpt # has to occur after clib_eval_llik, because cntpresi is used as cntprefr
                                 cntpmodl[i, :, :, t] += cntpmodldiffacpt
 
-
-                                #print 'chi2proptemp'
-                                #summgene(chi2proptemp)
-                                #print 'np.sum(chi2proptemp)'
-                                #print np.sum(chi2proptemp)
-                                
-                                #chi2prop += chi2proptemp
-                        
-                        #print 'chi2prop'
-                        #print chi2prop
-                        #print 'np.sum((cntpresi - cntpmodldiffacpt)**2 * weig)'
-                        ##print np.sum((cntpresi - cntpmodldiffacpt)**2 * weig)
-                        ##print 'np.sum((cntpdata - cntpmodl)**2 * weig)'
-                        #print np.sum((cntpdata - cntpmodl)**2 * weig)
-                        #print 'before: chi2'
-                        #print chi2
                         if np.count_nonzero(boolregiacpt) > 0:
                             gdat.chi2copy = np.copy(gdat.chi2stat)
                             for v in range(gdat.numbregiyaxi):
@@ -2990,12 +2387,6 @@ def main( \
                         # calculate llik
                         llik = -0.5 * gdat.chi2stat
             
-                        #print 'llik'
-                        #print llik
-
-                        if gdat.verbtype > 1:
-                            print 'Implementing accepted proposals...'
-
                         # implement accepted moves
                         if proposal.idx_move is not None:
                             starsp = proposal.starsp.compress(acceptprop, axis=1)
@@ -3003,56 +2394,19 @@ def main( \
                             self.stars[:, idx_move_a] = starsp
                             
                             if gdat.diagmode:
-                                if np.unique(proposal.starsp[gdat.indxflux, :]).size != proposal.starsp[gdat.indxflux, :].size and proposal.starsp[gdat.indxflux, :].size > 1:
-                                    print 'Proposed flux not all unique'
-                                    print 'proposal.stars0[gdat.indxflux, :]'
-                                    print proposal.stars0[gdat.indxflux, :]
-                                    print 'proposal.starsp[gdat.indxflux, :]'
-                                    print proposal.starsp[gdat.indxflux, :]
-                                    #raise Exception('')
+                                if np.unique(proposal.starsp[gdat.indxflux, :]).size != proposal.starsp[gdat.indxflux, :].size \
+                                                                                        and proposal.starsp[gdat.indxflux, :].size > 1:
+                                    raise Exception('')
                                     
-                            if gdat.verbtype > 1:
-                                print 'proposal.idx_move is not None'
-                                print 'proposal.starsp'
-                                summgene(proposal.starsp)
-                                print 'proposal.starsp[gdat.indxflux, :]'
-                                print proposal.starsp[gdat.indxflux, :]
-                                print 'idx_move_a'
-                                summgene(idx_move_a)
-                                print 'New self.stars'
-                                summgene(self.stars)
-                            
                         if proposal.idx_move_g is not None:
                             galaxiesp = proposal.galaxiesp.compress(acceptprop, axis=1)
                             idx_move_a = proposal.idx_move_g.compress(acceptprop)
                             self.galaxies[:, idx_move_a] = galaxiesp
                         
                         if proposal.do_birth:
-                            
-                            if gdat.verbtype > 1:
-                                print 'proposal.starsb'
-                                summgene(proposal.starsb)
-                            
                             starsb = proposal.starsb.compress(acceptprop, axis=1)
-                            
-                            if gdat.verbtype > 1:
-                                print 'starsb'
-                                summgene(starsb)
-                            
                             starsb = starsb.reshape((gdat.numbparastar, -1))
                             numbbrth = starsb.shape[1]
-                            
-                            if gdat.verbtype > 1:
-                                print 'starsb'
-                                summgene(starsb)
-                                print 'self.n'
-                                print self.n
-                                print 'numbbrth'
-                                print numbbrth
-                                print 'self.stars'
-                                summgene(self.stars)
-                                print
-                            
                             self.stars[:, self.n:self.n+numbbrth] = starsb
                             self.n += numbbrth
                         if proposal.do_birth_g:
@@ -3082,8 +2436,7 @@ def main( \
                     
                     if gdat.diagmode:
                         if proposal.factor is not None and not np.isfinite(proposal.factor).any():
-                            print 'Warning! proposal.factor is not finite!'
-                            #raise Exception('')
+                            raise Exception('')
                     if proposal.factor is not None and proposal.factor != []:
                         chan['lposterm'][gdat.thisindxswlp, :, :] = regifact
 
@@ -3097,21 +2450,7 @@ def main( \
                         indxsweplogg = np.arange(minmsweplogg, maxmsweplogg)
                     
                     if gdat.verbtype > 1:
-                        print 'gdat.chi2stat'
-                        summgene(gdat.chi2stat)
-                        print 'llik'
-                        summgene(llik)
-                        if proposal.goodmove:
-                            for i in gdat.indxener:
-                                for t in gdat.indxtime:
-                                    print 'cntpmodldiff[i, :, :, t]'
-                                    summgene(cntpmodldiff[i, :, :, t])
-                                    #print 'cntpmodldiffacpt[i, :, :, t]'
-                                    #summgene(cntpmodldiffacpt[i, :, :, t])
-                        print 'Loop %d ended.' % a
-                        print
-                        print
-                        print
+                        print('Loop %d ended.' % a)
 
                 if jj % gdat.factthinplot == 0:
                     chan['dt01'] *= 1e3
@@ -3123,25 +2462,12 @@ def main( \
                     statarrays = [np.mean(np.mean(chan['accp'], axis=0), axis=0), chan['booloutb'], chan['dt01'], chan['dt02'], chan['dt03']]
                     
                     for j in gdat.indxvarbdiag:
-                        print gdat.strgvarbdiag[j] + '\t(all) %0.3f' % np.mean(statarrays[j][indxsweplogg]),
+                        print(gdat.strgvarbdiag[j] + '\t(all) %0.3f' % np.mean(statarrays[j][indxsweplogg]))
                         for k in xrange(len(gdat.listproptype)):
-                            print '(' + gdat.listproptype[k] + ') %0.3f' % np.mean(statarrays[j][indxsweplogg][chan['proptype'][indxsweplogg] == k]),
-                        print
-                        if j == 1:
-                            print '-' * 16
-                    print '='*16
+                            print('(' + gdat.listproptype[k] + ') %0.3f' % np.mean(statarrays[j][indxsweplogg][chan['proptype'][indxsweplogg] == k]))
         
                 if gdat.verbtype > 1:
-                    print 'Sample %d ended' % jj
-                    print
-                    print
-                    print
-                    print
-                    print
-                    print
-                    print
-                    print
-                    print
+                    print('Sample %d ended' % jj)
         
                 return self.n, self.ng, gdat.chi2totl
         
@@ -3175,17 +2501,9 @@ def main( \
             
             def move_stars(self): 
                 
-                if gdat.verbtype > 1:
-                    print 'move_stars()'
-
                 idx_move = self.idx_parity_stars()
                 nw = idx_move.size
                 stars0 = self.stars.take(idx_move, axis=1)
-                if gdat.verbtype > 1:
-                    print 'idx_move'
-                    summgene(idx_move)
-                    print 'stars0'
-                    summgene(stars0)
                 starsp = np.empty_like(stars0)
                 if gdat.priotype == 'info':
                     f0 = stars0[gdat.indxflux[0, 0], :]
@@ -3194,7 +2512,6 @@ def main( \
                 
                 if gdat.diagmode:
                     if (f0 < gdat.fittminmflux).any():
-                        print 'Flux went below minimum'
                         raise Exception('')
 
                 psf0 = gdat.cntppsfnusam[0,:gdat.numbsidepsfnusam:gdat.factusam, :gdat.numbsidepsfnusam:gdat.factusam]
@@ -3226,76 +2543,21 @@ def main( \
                 else:
                     factor = -gdat.fittfluxdistslop * np.sum(dlogf)
                 
-                #print 'dlogf'
-                #summgene(dlogf)
-                #print 'factor'
-                #print factor
-                #print
-
-                #if False and 
-                if gdat.verbtype > 2:
-                    print 'f0'
-                    print f0
-                    print 'lindf'
-                    print lindf
-                    print 'logdf'
-                    print logdf
-                    #print 'ff'
-                    #print ff
-                    print 'ffmin'
-                    print ffmin
-                    print 'fluxabov'
-                    summgene(fluxabov)
-                    print 'boolfluxoutb'
-                    print boolfluxoutb
-                    print 'dff'
-                    print dff
-                    print 'pff'
-                    print pff
-                    print 'dlogf'
-                    print dlogf
-                    print 'pf'
-                    summgene(pf)
-                    print pf
-                    print 'factor'
-                    print factor
-                
                 if gdat.diagmode:
                     if (pf < gdat.fittminmflux).any():
-                        print 'pf'
-                        print pf
                         indx = np.where(pf < gdat.fittminmflux)
-                        print 'dff[indx]'
-                        print dff[indx]
-                        print 'fluxabov[indx]'
-                        print fluxabov[indx]
-                        print 'boolfluxoutb[indx]'
-                        print boolfluxoutb[indx]
-                        print 'pf[indx]'
-                        print pf[indx]
-                        print 'gdat.fittminmflux'
-                        print gdat.fittminmflux
-                        if gdat.boolspre:
-                            print 'Warning! Proposed flux is lower than the minimum flux!'
-                        else:
-                            pass
-                            #raise Exception('')
 
                 if gdat.diagmode and (pf < gdat.fittminmflux).any():
-                    print 'proposed flux went below minimum'
-                    print f0 > gdat.fittminmflux
                     raise Exception("")
                 
                 if not gdat.strgmode == 'forc':
                     psfx = gdat.cntppsfnusam[0, 0:gdat.numbsidepsfnusam:gdat.factusam, 1:gdat.numbsidepsfnusam:gdat.factusam]
                     dpdx = (psfx - psf0) * gdat.factusam
-                    #print 'rms', 1./ np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(dpdx*dpdx) * nest * gdat.numbener ), 'old', gdat.stdvposiprop                    
                     dpos_rms = 1./ np.sqrt(np.median(gdat.weig[0,:,:,0]) * np.sum(dpdx*dpdx) * nest * (2+gdat.numbener) ) / \
                             np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
                     #dpos_rms = gdat.stdvposiprop / np.amax(np.amax(np.maximum(f0, pf), axis=0), axis=0)
                     if gdat.stdvposiprop == 1e-100:
-                        print 'Not lower-bounding the positional position size at 1e-3...'
-                        print
+                        pass
                     else:
                         dpos_rms[dpos_rms < 1e-3] = 1e-3
                     
@@ -3306,15 +2568,6 @@ def main( \
                         dx = np.random.normal(size=nw)*dpos_rms
                         dy = np.random.normal(size=nw)*dpos_rms
                     
-                    if gdat.verbtype > 1:
-                        print 'dpos_rms'
-                        summgene(dpos_rms)
-                        print 'dx'
-                        summgene(dx)
-                        print 'dy'
-                        summgene(dy)
-                        print
-                    
                     starsp[gdat.indxxpos,:] = stars0[gdat.indxxpos,:] + dx
                     starsp[gdat.indxypos,:] = stars0[gdat.indxypos,:] + dy
                 else:
@@ -3323,15 +2576,6 @@ def main( \
                 starsp[gdat.indxflux, :] = pf
                 self.bounce_off_edges(starsp)
 
-                
-                if gdat.verbtype > 1:
-                    print 'stars0[gdat.indxflux]'
-                    summgene(stars0[gdat.indxflux])
-                    print 'starsp'
-                    summgene(starsp)
-                    print 'starsp[gdat.indxflux]'
-                    summgene(starsp[gdat.indxflux])
-        
                 proposal = Proposal()
                 proposal.add_move_stars(idx_move, stars0, starsp)
                 proposal.set_factor(factor)
@@ -3428,13 +2672,6 @@ def main( \
                 else:
                     numbspmr = 1
                 
-                if gdat.verbtype > 1:
-                    print 'Deciding to propose a split or merge...'
-                    print 'numbbrgt'
-                    print numbbrgt
-                    print 'numbspmr'
-                    print numbspmr
-
                 goodmove = False
                 proposal = Proposal()
                 # split
@@ -3446,22 +2683,8 @@ def main( \
                     else:
                         dx = (np.random.normal(size=numbspmr)*self.scalspmrposi)
                         dy = (np.random.normal(size=numbspmr)*self.scalspmrposi)
-                    if gdat.verbtype > 1:
-                        print 'Proposing a split...'
-                        print 'gdat.maxmnumbstar'
-                        print gdat.maxmnumbstar
-                        print 'self.n'
-                        print self.n
-                        print 'dx'
-                        print dx
-                        print 'dy'
-                        print dy
-                        print
                     idx_move = np.random.choice(idx_bright, size=numbspmr, replace=False)
                     stars0 = self.stars.take(idx_move, axis=1)
-                    if gdat.verbtype > 1:
-                        print 'stars0'
-                        summgene(stars0)
                     x0 = stars0[gdat.indxxpos, :]
                     y0 = stars0[gdat.indxypos, :]
                     if gdat.priotype == 'info':
@@ -3514,25 +2737,10 @@ def main( \
                         starsb[gdat.indxxpos, :] = x0 - frac[0, 0] * dx
                         starsb[gdat.indxypos, :] = y0 - frac[0, 0] * dy
 
-                    if gdat.verbtype > 1:
-                        print 'starsb[gdat.indxflux, :]'
-                        summgene(starsb[gdat.indxflux, :])
-                    
                     if gdat.priotype == 'info':
                         starsb[gdat.indxflux, :] = f0 * (1. - fracenti)
                     else:
                         starsb[gdat.indxflux, :] = f0 * (1. - frac)
-                    
-                    if gdat.verbtype > 1:
-                        print 'f0'
-                        summgene(f0)
-                        print 'frac'
-                        summgene(frac)
-                        print 'starsb[gdat.indxflux, :]'
-                        summgene(starsb[gdat.indxflux, :])
-                        if gdat.priotype == 'info':
-                            print 'fracenti'
-                            summgene(fracenti)
                     
                     inbounds = np.logical_and(self.in_bounds(starsp), self.in_bounds(starsb))
                     stars0 = stars0.compress(inbounds, axis=1)
@@ -3561,40 +2769,23 @@ def main( \
                         invpairs[k] =  1./neighbours(xtemp, ytemp, self.scalspmrposi, idx_move[k]) #divide by zero
                         invpairs[k] += 1./neighbours(xtemp, ytemp, self.scalspmrposi, self.n)
                     invpairs *= 0.5
-                    if gdat.verbtype > 1:
-                        print 'starsb'
-                        print starsb
-                        print 'starsp'
-                        print starsp
-                        print
                     
                     if gdat.diagmode:
                         if boolsplt:
                             if (starsp[gdat.indxflux, :] < gdat.fittminmflux).any():
-                                print 'starsp[gdat.indxflux, :]'
-                                summgene(starsp[gdat.indxflux, :])
-                                print 'gdat.fittminmflux'
-                                print gdat.fittminmflux
                                 raise Exception('')
                             
                             if gdat.priotype == 'info':
                                 if (starsb[gdat.indxflux[0, 0], :] < gdat.fittminmflux).any():
-                                    print 'starsb[gdat.indxflux[0, 0], :]'
-                                    summgene(starsb[gdat.indxflux[0, 0], :])
-                                    print 'gdat.fittminmflux'
-                                    print gdat.fittminmflux
                                     raise Exception('')
                                 if (starsb[gdat.indxflux[0, 0], :] < gdat.fittminmflux).any():
-                                    print 'starsb[gdat.indxflux[0, 0], :]'
-                                    summgene(starsb[gdat.indxflux[0, 0], :])
                                     raise Exception('')
                 
                 # merge
                 elif not boolsplt and idx_reg.size > 1: # need two things to merge!
                     
                     if gdat.verbtype > 1:
-                        print 'Proposing a merge...'
-                        print 'numbspmr'
+                        print('Proposing a merge...')
                     
                     numbspmr = min(numbspmr, idx_reg.size/2)
                     idx_move = np.empty(numbspmr, dtype=np.int)
@@ -3657,27 +2848,7 @@ def main( \
                     # turn numbbrgt into an array
                     numbbrgt = numbbrgt - (f0 > 2*gdat.fittminmflux) - (fk > 2*gdat.fittminmflux) + (starsp[gdat.indxflux,:] > 2*gdat.fittminmflux)
                     
-                    if gdat.verbtype > 1:
-                        print 'starsk'
-                        print starsk
-                        print 'starsp'
-                        print starsp
-                        print
-                    
-                else:
-                    if gdat.verbtype > 1:
-                        print 'Could not propose a split or merge.'
-                
                 if goodmove:
-                    if gdat.verbtype > 2:
-                        print 'numbspmr'
-                        print numbspmr
-                        print 'frac'
-                        summgene(frac)
-                        print 'invpairs'
-                        summgene(invpairs)
-                        print 'fluxspmrtotl'
-                        summgene(fluxspmrtotl)
                     factor = np.log(gdat.fittfluxdistslop - 1.) + \
                                                 (gdat.fittfluxdistslop - 1.) * np.log(gdat.fittminmflux) + \
                                                 -gdat.fittfluxdistslop * np.log(frac * (1. - frac) * fluxspmrtotl) + \
@@ -3702,16 +2873,7 @@ def main( \
                    
                     if gdat.diagmode:
                         if factor.size != 1:
-                            print 'factor'
-                            print factor
                             raise Exception('')
-                        if not np.isfinite(factor):
-                            print 'Warning! factor is not finite!'
-                            print 'self.thisindxproptype'
-                            print self.thisindxproptype
-                            print 'factor'
-                            print factor
-                            #raise Exception('')
                 return proposal
         
             
@@ -4369,11 +3531,9 @@ def main( \
             for k in xrange(ntemps-1, 0, -1):
                 logfac = (listchi2totl[k-1] - listchi2totl[k]) * (1./temps[k-1] - 1./temps[k]) / 2.
                 if np.log(np.random.uniform()) < logfac:
-                    print 'swapped', k-1, k
                     listobjtmodl[k-1], listobjtmodl[k] = listobjtmodl[k], listobjtmodl[k-1]
             
             if gdat.strgstat != None and j % gdat.factthinplot == 0:
-                print 'Updating the maximum likelihood catalog...'
                 # temp -- assumes single temperature
                 # save the sample and record the likelihood
                 if lliktotl > mlik:
@@ -4383,10 +3543,6 @@ def main( \
                         gdat.catlmlik[strgfeat] = listobjtmodl[0].stars[indx, :]
                     mlik = lliktotl
                     writ_catl(gdat, gdat.catlmlik, gdat.pathstat)
-                #print 'lliktotl'
-                #print lliktotl
-                #print 'mlik'
-                #print mlik
 
             if gdat.boolsaveswep[j]:
                 chan['numb'][j-gdat.numbswepburn] = listobjtmodl[0].n
@@ -4406,30 +3562,16 @@ def main( \
         
         path = gdat.pathdatartag + 'gdat.p'
         filepick = open(path, 'wb')
-        print 'Writing to %s...' % path
         
-        #for attr, valu in gdat.__dict__.iteritems():
-        #    print 'attr'
-        #    print attr
-        #    print 'valu'
-        #    print valu
-        #    gdattemp = gdatstrt()
-        #    gdattemp.temp = valu
-        #    filepick = open(path, 'wb')
-        #    cPickle.dump(gdattemp, filepick, protocol=cPickle.HIGHEST_PROTOCOL)
-        #    filepick.close()
         cPickle.dump(gdat, filepick, protocol=cPickle.HIGHEST_PROTOCOL)
         filepick.close()
     
     else:
         path = gdat.pathdata + gdat.strgproc + '/gdat.p'
         filepick = open(path, 'rb')
-        print 'Reading %s...' % path
         gdat = cPickle.load(filepick)
         filepick.close()
         
-        print 'gdat.pathdatartag'
-        print gdat.pathdatartag
         pathchan = gdat.pathdatartag + gdat.rtag + '_chan.h5'
         chan = read_catl(gdat, pathchan)
         
@@ -4440,15 +3582,12 @@ def main( \
     
     if gdat.catlcond is not None:
         gdat.numbsourcond = gdat.catlcond.shape[1]
-        print 'gdat.numbsourcond'
-        print gdat.numbsourcond
         gdat.indxsourcond = np.arange(gdat.numbsourcond)
     
     plot_pcat(gdat)
 
     if gdat.catlcond is not None:
         if gdat.numbtime > 1:
-            print 'Plotting light curves...'
             plot_lcur(gdat)
             plot_lcur(gdat, boolsimp=True)
 
@@ -4483,18 +3622,12 @@ def main( \
             #        for k in range(3):
             #            indxprop = np.where(chan['proptype'] == k)[0]
             #            temp = np.zeros_like(chan['accp'][v, u, :])
-            #            print 'chan[accp][v, u, :]'
-            #            summgene(chan['accp'][v, u, :])
-            #            print 'chan[accp][v, u, indxprop]'
-            #            summgene(chan['accp'][v, u, indxprop])
             #            #indx = temp[0]
             #            temp[indxprop] = retr_meanmove(chan['accp'][v, u, indxprop])
             #            plot_varbsamp(gdat, temp, '$A_{%d,%d,%d}$' % (v, u, k), 'accp%d%d%02d' % (v, u, k), xaxitype='swlp')
             #            deltlliktemp = np.zeros_like(chan['deltllik'][v, u, :])
             #            deltlliktemp[indxprop] = chan['deltllik'][v, u, indxprop]
             #            plot_varbsamp(gdat, deltlliktemp, '$\Delta\ln P(D|M)_{%d,%d,%d}$' % (v, u, k), 'deltllik%d%d%d' % (v, u, k), xaxitype='swlp')
-            
-            print 'Plotting the condensed catalog...'
             
             numbstarplot = min(10, gdat.maxmnumbstar)
             indxstarplot = np.arange(numbstarplot)
@@ -4534,8 +3667,6 @@ def main( \
                         plt.close()
         
     if gdat.boolplotsave:
-        print 'Making animations of frame plots...'
-        
         for i in gdat.indxener:
             for t in gdat.indxtime:
                 
@@ -4543,12 +3674,9 @@ def main( \
                     break
                                 
                 cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpdata%04d%04d_fram*.%s %s/%s_cntpdata%04d%04d.gif' % (gdat.pathdatartag, gdat.rtag, i, t, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag, i, t)
-                print cmnd
                 os.system(cmnd)
                 cmnd = 'convert -delay 20 -density 200x200 %s/%s_cntpresi%04d%04d_fram*.%s %s/%s_cntpresi%04d%04d.gif' % (gdat.pathdatartag, gdat.rtag, i, t, gdat.strgplotfile, gdat.pathdatartag, gdat.rtag, i, t)
-                print cmnd
                 os.system(cmnd)
-        print 'Done.'
     
 
 def retr_meanmove(arry, numbkern=10):
@@ -4583,7 +3711,6 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
         pathdatartag = pathdata + rtag + '/'
     path = pathdatartag + 'gdat.p'
     filepick = open(path, 'rb')
-    print 'Reading %s...' % path
     gdat = cPickle.load(filepick)
     filepick.close()
 
@@ -4615,11 +3742,9 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     PCc_all[:, 1] = chan['ypos' + strgtemp][mask].flatten()
     PCi = PCi[mask].flatten()
     
-    print 'Constructing a KD tree...'
     kdtree = scipy.spatial.KDTree(PCc_all)
     matches = kdtree.query_ball_tree(kdtree, 0.75)
     
-    print 'Constructing the network...'
     G = networkx.Graph()
     G.add_nodes_from(xrange(0, PCc_all.shape[0]))
     # for each source, add edges to all other sources from other catalogues within match radius
@@ -4628,7 +3753,6 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
             if PCi[i] != PCi[j]:
                 G.add_edge(i, j)
     
-    print 'Iterating over sources...'
 
     for i in xrange(PCc_all.shape[0]):
         # sort matches so they are in order of catalogues they belong to
@@ -4656,7 +3780,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
                         l = m
                         dist2 = newdist2
                 if l == -1:
-                    print "didn't find edge even though multiple matches from this catalogue?"
+                    print("didn't find edge even though multiple matches from this catalogue?")
                 # only keep edge to closest match
                 for k in xrange(starting[j], ending[j]):
                     m = matches[i][k]
@@ -4707,7 +3831,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
 
     path = pathdatartag + 'gdat.p'
     filepick = open(path, 'rb')
-    print 'Reading %s...' % path
     gdat = cPickle.load(filepick)
     filepick.close()
 
@@ -4733,7 +3856,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     minmdegr = 2 
     
     # read the chain
-    print 'Reading the chain...'    
     pathchan = pathdatartag + rtag + '_chan.h5'
     chan = read_catl(gdat, pathchan)
 
@@ -4755,7 +3877,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
 
         # temp - sorts by first energy, first time
         catlsort[b, :, :] = np.flipud(catl[catl[:, gdat.indxflux[0, 0]].argsort(), :])
-    print "Stacking catalogs..."
     
     # number of stacked stars
     numbstarstck = np.sum(chan['numb'])
@@ -4870,7 +3991,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
         ypos = featcond[indxmtch, i, gdat.indxypos]
         flux = featcond[:, i, gdat.indxflux][indxmtch, :]
         if (featcond[:, i, gdat.indxflux] - np.mean(featcond[:, i, gdat.indxflux]) == 0.).all():
-            print 'Warning! condensed catalog flux uncertainties vanish!'
+            print('Warning! condensed catalog flux uncertainties vanish!')
 
         assert xpos.size == ypos.size
         
@@ -4883,7 +4004,7 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
             stdvypos[i] = np.percentile(ypos, pctlhigh) - np.percentile(ypos, pctlloww)
             stdvflux[:, :, i] = np.percentile(flux, pctlhigh, axis=0) - np.percentile(flux, pctlloww, axis=0)
             if (stdvflux[:, :, i] == 0.).any():
-                print 'Warning! Samples of condensed catalog elements have vanishing variance! matches: '+str(xpos.size)
+                print('Warning! Samples of condensed catalog elements have vanishing variance! matches: '+str(xpos.size))
 
     catlcond = np.zeros((gdat.numbparacatlcond, numbsourseed, 2))
     catlcond[gdat.indxxpos, :, 0] = xposmean
@@ -4900,7 +4021,6 @@ def retr_catlcond(rtag, pathdata, pathdatartag=None, boolgalx=False):
     
 
     ## h5 file path
-    print 'Will write the chain to %s...' % pathcatlcond
     filecatlcond = h5py.File(pathcatlcond, 'w')
     filecatlcond.create_dataset('catlcond', data=catlcond)
     filecatlcond.close()
@@ -5032,7 +4152,6 @@ def cnfg_wise():
     pathmask = os.environ['LION_DATA_PATH'] + '/unwise/unwise-1497p015-msk.fits.gz'
     pathpsfn = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.info.fits'
     pathback = os.environ['LION_DATA_PATH'] + '/unwise/1497p015.1.mod.fits'
-    print 'Reading %s...' % pathdata
     xmin, ymin, smalbnds = 896, 896, 128
     cntpdata = fits.open(pathdata)[0].data[None, ymin:ymin+smalbnds, xmin:xmin+smalbnds, None]
     cntpback = fits.open(pathback)[2].data[None, ymin:ymin+smalbnds, xmin:xmin+smalbnds, None]
@@ -5145,7 +4264,6 @@ def cnfg_defa():
     # read the data
     strgdata = 'sdss0921_00010001_nomi'
     path = pathdata + strgdata + '_mock.h5'
-    print 'Reading %s...' % path
     filetemp = h5py.File(path, 'r')
     cntpdata = filetemp['cntpdata'][()]
     #gain = filetemp['gain'][()]
@@ -5234,8 +4352,6 @@ def mainarry( \
              scalxaxi=None, \
             ):
     
-    print 'Running Lion in array mode...'
-    
     numbswep = len(dictvarbvari)
     indxswep = np.arange(numbswep)
 
@@ -5254,8 +4370,8 @@ def mainarry( \
         
         strgcnfg = inspect.stack()[1][3] + '_' + strgcnfgextn
     
-        print 'Configuration: '
-        print strgcnfg 
+        print('Configuration: ')
+        print(strgcnfg)
 
         dictvarbtemp = copy.deepcopy(dictvarb)
         for strgvarb, valu in dictvarbvari[strgcnfgextn].iteritems():
@@ -5270,32 +4386,23 @@ def mainarry( \
             if prid > 0:
                 listpridchld.append(prid)
             else:
-                print 'Forking a child process to run the configuration extension...' 
                 rtag = main(**dictvarbtemp)
                 #if 'checprio' in dictvarbtemp and dictvarbtemp['checprio']:
                 os._exit(0)
         else:
-            print 'Calling the main Lion function without forking a child...' 
             listrtag.append(main(**dictvarbtemp))
     
     if execpara and strgcnfgextnexec is None:
         for prid in listpridchld:
             os.waitpid(prid, 0)
         if cntrproc > 0:
-            print 'Exiting before comparion plots because of parallel execution...'
             return
     
-    if cntrcomp == 0:
-        print 'Found no runs...'
-
     strgtimestmp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     
     if strgcnfgextnexec != None or namexaxi is None: 
         return
     
-    print
-    print 'Making comparison plots...'
-     
     if 'mockonly' in dictvarb and dictvarb['mockonly']:
         listgdat = retr_listgdat(listrtag, typegdat='init')
     else:
@@ -5369,10 +4476,6 @@ def mainarry( \
     cmnd = 'mkdir -p %s' % pathbase 
     os.system(cmnd)
     
-    print 'dictoutp'
-    print dictoutp
-    print 'listnamevarbcomp'
-    print listnamevarbcomp
     cmnd = 'gs -dBATCH -dNOPAUSE -q -sDEVICE=pdfwrite -sOutputFile=%smrgd.pdf' % pathbase
     for strgvarbtotl, varboutp in dictoutp.iteritems():
         
@@ -5422,15 +4525,6 @@ def mainarry( \
                         yerr[:, k] = getattr(listgdat[k], 'errr' + listpdfnvarbcomp[indxlist] + listnamevarbcomp[indxlist])
                 ydat[k] = varboutp[k][0]
         
-        print 'listnamevarbcomp[indxlist]'
-        print listnamevarbcomp[indxlist]
-        print 'lablyaxi'
-        print lablyaxi
-        print 'ydat'
-        print ydat
-        print 'yerr'
-        print yerr
-
         axis.errorbar(indxswep+1., ydat * factplot, yerr=yerr * factplot, color='b', ls='', markersize=15, marker='o', lw=3)
         indxrtagyerr = where((yerr[0, :] > 0.) | (yerr[1, :] > 0.))[0]
         if indxrtagyerr.size > 0:
@@ -5458,25 +4552,14 @@ def mainarry( \
         plt.tight_layout()
         
         pathfull = '%s%s_%s_%s.pdf' % (pathbase, strgtimestmp, inspect.stack()[1][3], liststrgvarbtotl[indxlist])
-        print 'Writing to %s...' % pathfull
-        print
-        print
-        print
         plt.tight_layout()
         plt.savefig(pathfull)
         plt.close(figr)
     
         cmnd += ' %s' % pathfull
 
-    print cmnd
     os.system(cmnd)
 
-    #print 'Making animations...'
-    #for rtag in listrtag:
-    #    print 'Working on %s...' % rtag
-    #    proc_anim(rtag=rtag)
-    
-    print 'Compiling run plots...'
     cmnd = 'python comp_rtag.py'
     for rtag in listrtag: 
         cmnd += ' %s' % rtag
@@ -5649,7 +4732,6 @@ def cnfg_ener():
     #strgdata = 'sdss0921_00020001'
 
     path = pathdata + strgdata + '_mock.h5'
-    print 'Reading %s...' % path
     filetemp = h5py.File(path, 'r')
     cntpdata = filetemp['cntpdata'][()]
     truegain = filetemp['gain'][()]
@@ -5659,10 +4741,6 @@ def cnfg_ener():
     numbsidexpos = cntpdata.shape[2]
     numbsideypos = cntpdata.shape[1]
     numbpixl = numbsidexpos * numbsideypos
-    print 'cntpdata'
-    summgene(cntpdata)
-    print 'numbpixl'
-    print numbpixl
     
     strgmode = 'pcat'
     #strgmode = 'forc'
@@ -5724,7 +4802,6 @@ def cnfg_ener():
 #import astroquery
 #from astroquery.simbad import Simbad
 #result_table = Simbad.query_object("m1")
-#print(result_table)
          
 if __name__ == "__main__":
     if len(sys.argv) == 1:
