@@ -27,6 +27,8 @@ import astropy.io.fits as fits
 
 import scipy.misc
 
+from tdpy.util import summgene
+
 import sys, os, warnings
 
 from __init__ import *
@@ -131,7 +133,7 @@ def plot_pcat(gdat=None, rtag=None):
 
     kdtrrefr = []
     magtrefr = []
-    for a in xrange(1, len(gdat.catlrefr)):
+    for a in np.arange(1, len(gdat.catlrefr)):
         catlthis = gdat.catlrefr[a]
         catlcord = np.dstack((catlthis['xpos'], catlthis['ypos']))[0]
         kdtrrefr.append(scipy.spatial.KDTree(catlcord))
@@ -191,11 +193,11 @@ def plot_pcat(gdat=None, rtag=None):
 
     goodmatchCC, indxmtch = associate(CCkd, CCmag, HTkd, HTmag, dr, dmag)
     goodmatchPC, indxmtch = associate(PCkd, PCmag_all, HTkd, HTmag, dr, dmag)
-    for a in xrange(len(gdat.catlrefr) - 1):
+    for a in np.arange(len(gdat.catlrefr) - 1):
         goodmtchthis, indxmtch = associate(kdtrrefr[a], magtrefr[a], HTkd, HTmag, dr, dmag)
         goodmtchrefr.append(goodmtchthis)
     
-    for i in xrange(nbins):
+    for i in np.arange(nbins):
         rlo = minr + i * binw
         rhi = rlo + binw
     
@@ -206,13 +208,13 @@ def plot_pcat(gdat=None, rtag=None):
         precCC[i] = np.sum(CCconf[np.logical_and(inbin, goodmatchCC)]) / float(np.sum(CCconf[inbin]))
 
         # loop only runs if more than one reference catalogue; assumes catalogues after first are not ground truth
-        for a in xrange(len(gdat.catlrefr) - 1):
+        for a in np.arange(len(gdat.catlrefr) - 1):
             inbin = np.logical_and(magtrefr[a] >= rlo, magtrefr[a] < rhi)
             precrefr[a,i] = np.sum(np.logical_and(inbin, goodmtchrefr[a])) / float(np.sum(inbin))
 
     plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
     plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-    for a in xrange(len(gdat.catlrefr) - 1):
+    for a in np.arange(len(gdat.catlrefr) - 1):
         plt.plot(minr + (np.arange(nbins)+0.5)*binw, 1-precrefr[a,:], c=gdat.colrrefr[a+1], label=gdat.lablrefr[a+1], marker='+', markersize=10, mew=2)
     plt.xlabel(gdat.lablrefr[0] + ' magnitude')
     plt.ylabel('false discovery rate')
@@ -224,7 +226,7 @@ def plot_pcat(gdat=None, rtag=None):
     completeCC, indxmtchtrue, confmatchCC, sigfCC = associate(HTkd, HTmag, CCkd, CCmag, dr, dmag, confs_b=CCconf, sigfs_b=CCs)
     
     completePC = np.zeros((PCx.shape[0], HTx.size))
-    for i in xrange(PCx.shape[0]):
+    for i in np.arange(PCx.shape[0]):
         n = PCn[i]
         CCc_one = np.zeros((n,2))
         CCc_one[:, 0] = PCx[i, 0:n]
@@ -243,22 +245,22 @@ def plot_pcat(gdat=None, rtag=None):
     if len(gdat.catlrefr) > 1:
         reclrefr = np.zeros((len(gdat.catlrefr) - 1, nbins))
         cmplrefr = []
-    for a in xrange(len(gdat.catlrefr) - 1):
+    for a in np.arange(len(gdat.catlrefr) - 1):
         cmplthis, indxmtchtrue = associate(HTkd, HTmag, kdtrrefr[a], magtrefr[a], dr, dmag)
         cmplrefr.append(cmplthis)
     
-    for i in xrange(nbins):
+    for i in np.arange(nbins):
         rlo = minr + i * binw
         rhi = rlo + binw
         inbin = np.logical_and(HTmag >= rlo, HTmag < rhi)
         reclPC[i] = np.sum(completePC[inbin]) / float(np.sum(inbin))
         reclCC[i] = np.sum(confmatchCC[inbin]) / float(np.sum(inbin))
-        for a in xrange(len(gdat.catlrefr) - 1):
+        for a in np.arange(len(gdat.catlrefr) - 1):
             reclrefr[a,i] = np.sum(cmplrefr[a][inbin]) / float(np.sum(inbin))
     
     plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclPC, c='r', label='Catalog Ensemble', marker='x', markersize=10, mew=2)
     plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclCC, c='purple', label='Condensed Catalog', marker='1', markersize=10, mew=2)
-    for a in xrange(len(gdat.catlrefr) - 1):
+    for a in np.arange(len(gdat.catlrefr) - 1):
         plt.plot(minr + (np.arange(nbins)+0.5)*binw, reclrefr[a], c=gdat.colrrefr[a+1], label=gdat.lablrefr[a+1], marker='+', markersize=10, mew=2)
     plt.xlabel(gdat.lablrefr[0] + ' magnitude')
     plt.ylabel('completeness')
@@ -278,12 +280,12 @@ def plot_pcat(gdat=None, rtag=None):
     reclCCt = np.zeros((nbins, nsigf))
     precCCt = np.zeros((nbins, nsigf))
     
-    for i in xrange(nbins):
+    for i in np.arange(nbins):
         rlo = minr + i * binw
         rhi = rlo + binw
         inbinHT = np.logical_and(HTmag >= rlo, HTmag < rhi)
         inbinCC = np.logical_and(CCmag >= rlo, CCmag < rhi)
-        for j in xrange(nsigf):
+        for j in np.arange(nsigf):
             sigfaccut = sigfaccuts[j]
             reclCCt[i,j] = np.sum(confmatchCC[np.logical_and(inbinHT, sigfCC < sigfaccut)]) / float(np.sum(inbinHT))
             precCCt[i,j] = np.sum(CCconf[np.logical_and(inbinCC, np.logical_and(goodmatchCC, CCs < sigfaccut))]) / float(np.sum(CCconf[np.logical_and(inbinCC, CCs < sigfaccut)]))
@@ -293,7 +295,7 @@ def plot_pcat(gdat=None, rtag=None):
     markers = ['o', 'v', 's', 'D', 'p', '*']
     #markers = ['$1.8$', '$3.2$', '$5.6$', '$10$', '$18$']
     
-    for i in xrange(nbins):
+    for i in np.arange(nbins):
         rlo = minr + i * binw
         rme = rlo + 0.5*binw
         rhi = rlo + binw
@@ -305,7 +307,7 @@ def plot_pcat(gdat=None, rtag=None):
             label1 = None
             label2 = 'mag %2.0f' % rme
         # make it convex: more stringent cuts that worsen precision are not used
-        for j in xrange(nsigf-2, -1, -1):
+        for j in np.arange(nsigf-2, -1, -1):
             if precCCt[i,j] < precCCt[i,j+1]:
                 precCCt[i,j] = precCCt[i,j+1]
                 reclCCt[i,j] = reclCCt[i,j+1]
@@ -313,8 +315,8 @@ def plot_pcat(gdat=None, rtag=None):
         # repeats make it maximally convex as allowed by data points
         plt.plot(1-np.repeat(precCCt[i,:], 2)[:-1], np.repeat(reclCCt[i,:], 2)[1:], c='purple', ls=linestyles[i], label=label2, zorder=2)
     
-    for i in xrange(nbins):
-        for j in xrange(len(markers)):
+    for i in np.arange(nbins):
+        for j in np.arange(len(markers)):
             if i == 0:
                 if j == 0:
                     label3 = 'DF = %2.1f' % sigfaccuts[10*j+10]
@@ -341,7 +343,7 @@ def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
     if sigfs_b is not None:
         sigfmatch = np.zeros(mags_a.size) + float('inf')
     
-    for i in xrange(len(allmatches)):
+    for i in np.arange(len(allmatches)):
         matches = allmatches[i]
         if len(matches):
             mag_a = mags_a[i]
@@ -459,7 +461,7 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                     
                 cntpmodlstmp = np.zeros((numbphon,gdat.numbsidepsfn,gdat.numbsidepsfn), dtype=np.float32)
                 cntpmodlstmp[:,:,:] = cntpmodlstmp2[:,:,:]
-                for k in xrange(numbphon):
+                for k in np.arange(numbphon):
                     cntpmodltemp[iy[k]:iy[k]+rad+rad+1,ix[k]:ix[k]+rad+rad+1] += cntpmodlstmp[k, :, :]
                 cntpmodl[i, :, :, t] = cntpmodltemp[rad:sizeimag[1]+rad,rad:sizeimag[0]+rad]
                 
@@ -474,10 +476,10 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 if cntprefr is not None:
                     cntpdiff = cntprefr[i, :, :, t] - cntpmodl[i, :, :, t]
                 
-                for v in xrange(gdat.numbregiyaxi):
+                for v in np.arange(gdat.numbregiyaxi):
                     y0 = max(v*sizeregi - offsypos - gdat.marg, 0)
                     y1 = min((v+1)*sizeregi - offsypos + gdat.marg, sizeimag[1])
-                    for u in xrange(gdat.numbregixaxi):
+                    for u in np.arange(gdat.numbregixaxi):
                         x0 = max(u*sizeregi - offsxpos - gdat.marg, 0)
                         x1 = min((u+1)*sizeregi - offsxpos + gdat.marg, sizeimag[0])
                         cntpdifftemp = cntpdiff[y0:y1,x0:x1]
@@ -558,7 +560,8 @@ def retr_coefspix(gdat):
     if gdat.boolspre:
         A = np.column_stack([np.full(nx*nx, 1, dtype=np.float32), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y]).astype(np.float32)
     else:
-        A = np.column_stack([np.full(nx*nx, 1), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y])
+        nx = int(nx)    
+        A = np.column_stack([np.full(nx**2, 1), x, y, x*x, x*y, y*y, x*x*x, x*x*y, x*y*y, y*y*y])
     
     # number of subpixel parameters
     gdat.numbparaspix = A.shape[1]
@@ -567,12 +570,13 @@ def retr_coefspix(gdat):
     if gdat.boolspre:
         gdat.coefspix = np.zeros((gdat.numbener, gdat.numbparaspix, gdat.numbsidepsfn, gdat.numbsidepsfn), dtype=np.float32)
     else:
+        gdat.numbsidepsfn = int(gdat.numbsidepsfn)
         gdat.coefspix = np.zeros((gdat.numbener, gdat.numbparaspix, gdat.numbsidepsfn, gdat.numbsidepsfn))
 
     # loop over original psf pixels and get fit coefficients
     for i in gdat.indxener:
-        for a in xrange(gdat.numbsidepsfn):
-            for j in xrange(gdat.numbsidepsfn):
+        for a in np.arange(gdat.numbsidepsfn):
+            for j in np.arange(gdat.numbsidepsfn):
                 # solve p = A gdat.coefspix for gdat.coefspix
                 p = gdat.cntppsfnusampadd[i, a*gdat.factusam:a*gdat.factusam+nx, j*gdat.factusam:j*gdat.factusam+nx].flatten()
                 gdat.coefspix[i, :, a, j] = np.dot(np.linalg.inv(np.dot(A.T, A)), np.dot(A.T, p)) 
@@ -2277,7 +2281,7 @@ def main( \
                     if gdat.chi2totl < 0.:
                         raise Exception('')
 
-                for a in xrange(gdat.numbloop):
+                for a in np.arange(gdat.numbloop):
 
                     t1 = time.clock()
                     self.thisindxproptype = np.random.choice(np.arange(gdat.probprop.size, dtype=int), p=gdat.probprop)
@@ -2463,7 +2467,7 @@ def main( \
                     
                     for j in gdat.indxvarbdiag:
                         print(gdat.strgvarbdiag[j] + '\t(all) %0.3f' % np.mean(statarrays[j][indxsweplogg]))
-                        for k in xrange(len(gdat.listproptype)):
+                        for k in np.arange(len(gdat.listproptype)):
                             print('(' + gdat.listproptype[k] + ') %0.3f' % np.mean(statarrays[j][indxsweplogg][chan['proptype'][indxsweplogg] == k]))
         
                 if gdat.verbtype > 1:
@@ -2758,7 +2762,7 @@ def main( \
                     # need to calculate factor
                     fluxspmrtotl = stars0[gdat.indxflux,:]
                     invpairs = np.empty(numbspmr)
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
                         ytemp = self.stars[gdat.indxypos, 0:self.n].copy()
                         xtemp[idx_move[k]] = starsp[gdat.indxxpos, k]
@@ -2795,7 +2799,7 @@ def main( \
                     nchoosable = float(idx_reg.size)
                     invpairs = np.empty(numbspmr)
         
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         idx_move[k] = np.random.choice(gdat.maxmnumbstar, p=choosable/nchoosable)
                         invpairs[k], idx_kill[k] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.scalspmrposi, idx_move[k], generate=True)
                         if invpairs[k] > 0:
@@ -3070,7 +3074,7 @@ def main( \
                     # need star pairs to calculate factor
                     fluxspmrtotl = fkg
                     weigoverpairs = np.empty(numbspmr) # w (1/sum w_1 + 1/sum w_2) / 2
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
                         ytemp = self.stars[gdat.indxypos, 0:self.n].copy()
                         xtemp = np.concatenate([xtemp, starsb[0, k:k+1, gdat.indxxpos], starsb[1, k:k+1, gdat.indxxpos]])
@@ -3093,7 +3097,7 @@ def main( \
                     nchoosable = float(idx_reg.size)
                     invpairs = np.empty(numbspmr)
         
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         idx_kill[k,0] = np.random.choice(gdat.maxmnumbstar, p=choosable/nchoosable)
                         invpairs[k], idx_kill[k,1] = neighbours(self.stars[gdat.indxxpos, 0:self.n], self.stars[gdat.indxypos, 0:self.n], self.scalspmrposi_g, idx_kill[k,0], generate=True)
                         # prevent sources from being involved in multiple proposals
@@ -3207,7 +3211,7 @@ def main( \
                     # need to calculate factor
                     fluxspmrtotl = f0g
                     invpairs = np.zeros(numbspmr)
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         xtemp = self.stars[gdat.indxxpos, 0:self.n].copy()
                         ytemp = self.stars[gdat.indxypos, 0:self.n].copy()
                         xtemp = np.concatenate([xtemp, galaxiesp[gdat.indxxpos, k:k+1], starsb[gdat.indxxpos, k:k+1]])
@@ -3223,7 +3227,7 @@ def main( \
                     nchoosable = float(gdat.maxmnumbstar)
                     invpairs = np.empty(numbspmr)
         
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         l = idx_move_g[k]
                         invpairs[k], idx_kill[k] = neighbours(np.concatenate([self.stars[gdat.indxxpos, 0:self.n], self.galaxies[gdat.indxxpos, l:l+1]]), \
                                 np.concatenate([self.stars[gdat.indxypos, 0:self.n], self.galaxies[gdat.indxypos, l:l+1]]), self.scalspmrposi_g, self.n, generate=True)
@@ -3363,7 +3367,7 @@ def main( \
                     # need to calculate factor
                     fluxspmrtotl = galaxies0[gdat.indxflux,:]
                     invpairs = np.empty(numbspmr)
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         xtemp = self.galaxies[gdat.indxxpos, 0:self.ng].copy()
                         ytemp = self.galaxies[gdat.indxypos, 0:self.ng].copy()
                         xtemp[idx_move_g[k]] = galaxiesp[gdat.indxxpos, k]
@@ -3384,7 +3388,7 @@ def main( \
                     nchoosable = float(idx_reg.size)
                     invpairs = np.empty(numbspmr)
         
-                    for k in xrange(numbspmr):
+                    for k in np.arange(numbspmr):
                         idx_move_g[k] = np.random.choice(gdat.maxmnumbgalx, p=choosable/nchoosable)
                         invpairs[k], idx_kill_g[k] = neighbours(self.galaxies[gdat.indxxpos, 0:self.ng], \
                                                                 self.galaxies[gdat.indxypos, 0:self.ng], self.scalspmrposi_g, idx_move_g[k], generate=True)
@@ -3468,7 +3472,7 @@ def main( \
         temps = np.sqrt(2) ** np.arange(ntemps)
         
         # construct model for each temperature
-        listobjtmodl = [Model() for k in xrange(ntemps)]
+        listobjtmodl = [Model() for k in np.arange(ntemps)]
         
         # write the chain
         ## h5 file path
@@ -3523,12 +3527,12 @@ def main( \
         
             #temptemp = max(50 - 0.1*j, 1)
             temptemp = 1.
-            for k in xrange(ntemps):
+            for k in np.arange(ntemps):
                 _, _, listchi2totl[k] = listobjtmodl[k].run_sampler(gdat, chan, temptemp, j)
         
             lliktotl = -0.5 * listchi2totl[0]
 
-            for k in xrange(ntemps-1, 0, -1):
+            for k in np.arange(ntemps-1, 0, -1):
                 logfac = (listchi2totl[k-1] - listchi2totl[k]) * (1./temps[k-1] - 1./temps[k]) / 2.
                 if np.log(np.random.uniform()) < logfac:
                     listobjtmodl[k-1], listobjtmodl[k] = listobjtmodl[k], listobjtmodl[k-1]
@@ -3746,15 +3750,15 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
     matches = kdtree.query_ball_tree(kdtree, 0.75)
     
     G = networkx.Graph()
-    G.add_nodes_from(xrange(0, PCc_all.shape[0]))
+    G.add_nodes_from(np.arange(0, PCc_all.shape[0]))
     # for each source, add edges to all other sources from other catalogues within match radius
-    for i in xrange(PCc_all.shape[0]):
+    for i in np.arange(PCc_all.shape[0]):
         for j in matches[i]:
             if PCi[i] != PCi[j]:
                 G.add_edge(i, j)
     
 
-    for i in xrange(PCc_all.shape[0]):
+    for i in np.arange(PCc_all.shape[0]):
         # sort matches so they are in order of catalogues they belong to
         matches[i].sort()
         bincount = np.bincount(PCi[matches[i]]).astype(np.int) # how many matches are from each catalogue
@@ -3762,7 +3766,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
         starting = np.zeros(bincount.size).astype(np.int)
         starting[1:bincount.size] = ending[0:bincount.size-1] # starting index for each catalogue
         # for each other catalogue
-        for j in xrange(bincount.size):
+        for j in np.arange(bincount.size):
             if j == PCi[i]: # do not match to same catalogue
                 continue
             if bincount[j] == 0: # no match to catalogue j
@@ -3773,7 +3777,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
                 # find closest match in catalogue j
                 dist2 = 0.75**2
                 l = -1
-                for k in xrange(starting[j], ending[j]):
+                for k in np.arange(starting[j], ending[j]):
                     m = matches[i][k]
                     newdist2 = np.sum((PCc_all[i,:] - PCc_all[m,:])**2)
                     if newdist2 < dist2:
@@ -3782,7 +3786,7 @@ def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
                 if l == -1:
                     print("didn't find edge even though multiple matches from this catalogue?")
                 # only keep edge to closest match
-                for k in xrange(starting[j], ending[j]):
+                for k in np.arange(starting[j], ending[j]):
                     m = matches[i][k]
                     if m != l:
                         if G.has_edge(i, m):
