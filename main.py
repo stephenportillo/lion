@@ -444,6 +444,11 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 chi2temp = np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi), dtype=np.float64)
                 
                 cntpmodltemp = np.full((sizeimag[1]+2*rad+1,sizeimag[0]+2*rad+1), 0., dtype=np.float32)
+                
+                #print('t')
+                #print(t)
+                #print('cntpback')
+                #summgene(cntpback)
                 cntpmodltemp[rad:sizeimag[1]+rad, rad:sizeimag[0]+rad] = np.copy(cntpback[i, :, :, t])
                 
                 #if gdat.boolspre:
