@@ -31,8 +31,6 @@ from tdpy.util import summgene
 
 import sys, os, warnings
 
-from __init__ import *
-
 class gdatstrt(object):
 
     def __init__(self):
