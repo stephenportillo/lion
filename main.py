@@ -407,7 +407,7 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
         f = f.compress(goodsrc, axis=2)
     
     numbphon = x.size
-    rad = gdat.numbsidepsfn / 2
+    rad = int(gdat.numbsidepsfn / 2)
     
     ix = np.rint(x).astype(np.int32)
     dx = ix - x
@@ -552,12 +552,20 @@ def retr_coefspix(gdat):
 
     # make design matrix for each original pixel
     gdat.numbsidepsfn = gdat.numbsidepsfnusam / gdat.factusam # dimension of original psf
+    print('gdat.numbsidepsfnusam')
+    print(gdat.numbsidepsfnusam)
+    print('gdat.factusam')
+    print(gdat.factusam)
     assert(gdat.numbsidepsfn % 2 == 1)
-    rad = gdat.factusam / 2 # upsampling factor / 2, rounded down
+    rad = (gdat.factusam - 1) / 2 # upsampling factor / 2, rounded down
+    print('rad')
+    print(rad)
     # eg, factusam = 4 -> rad 2 -> subpixel shifts [-3/4, -1/2, -1/4, 0, 1/4, 1/2, 3/4]
     #     factusam = 5 -> rad 2 -> subpixel shifts [-3/5, -2/5, -1/5, 0, 1/5, 2/5, 3/5]
     nx = 2*rad + 3
     y, x = np.mgrid[-rad-1:rad+2, -rad-1:rad+2] / np.float32(gdat.factusam)
+    print('x')
+    summgene(x)
     x = x.flatten()
     y = y.flatten()
     if gdat.boolspre:
@@ -577,6 +585,14 @@ def retr_coefspix(gdat):
         gdat.coefspix = np.zeros((gdat.numbener, gdat.numbparaspix, gdat.numbsidepsfn, gdat.numbsidepsfn))
 
     # loop over original psf pixels and get fit coefficients
+    print('gdat.numbsidepsfn')
+    print(gdat.numbsidepsfn)
+    print('gdat.cntppsfnusampadd')
+    summgene(gdat.cntppsfnusampadd)
+    print('gdat.coefspix')
+    summgene(gdat.coefspix)
+    print('A')
+    summgene(A)
     for i in gdat.indxener:
         for a in np.arange(gdat.numbsidepsfn):
             for j in np.arange(gdat.numbsidepsfn):
