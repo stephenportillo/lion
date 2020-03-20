@@ -552,14 +552,8 @@ def retr_coefspix(gdat):
 
     # make design matrix for each original pixel
     gdat.numbsidepsfn = gdat.numbsidepsfnusam / gdat.factusam # dimension of original psf
-    print('gdat.numbsidepsfnusam')
-    print(gdat.numbsidepsfnusam)
-    print('gdat.factusam')
-    print(gdat.factusam)
     assert(gdat.numbsidepsfn % 2 == 1)
     rad = (gdat.factusam - 1) / 2 # upsampling factor / 2, rounded down
-    print('rad')
-    print(rad)
     # eg, factusam = 4 -> rad 2 -> subpixel shifts [-3/4, -1/2, -1/4, 0, 1/4, 1/2, 3/4]
     #     factusam = 5 -> rad 2 -> subpixel shifts [-3/5, -2/5, -1/5, 0, 1/5, 2/5, 3/5]
     nx = 2*rad + 3
@@ -585,14 +579,6 @@ def retr_coefspix(gdat):
         gdat.coefspix = np.zeros((gdat.numbener, gdat.numbparaspix, gdat.numbsidepsfn, gdat.numbsidepsfn))
 
     # loop over original psf pixels and get fit coefficients
-    print('gdat.numbsidepsfn')
-    print(gdat.numbsidepsfn)
-    print('gdat.cntppsfnusampadd')
-    summgene(gdat.cntppsfnusampadd)
-    print('gdat.coefspix')
-    summgene(gdat.coefspix)
-    print('A')
-    summgene(A)
     for i in gdat.indxener:
         for a in np.arange(gdat.numbsidepsfn):
             for j in np.arange(gdat.numbsidepsfn):
