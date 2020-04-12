@@ -558,8 +558,6 @@ def retr_coefspix(gdat):
     #     factusam = 5 -> rad 2 -> subpixel shifts [-3/5, -2/5, -1/5, 0, 1/5, 2/5, 3/5]
     nx = 2*rad + 3
     y, x = np.mgrid[-rad-1:rad+2, -rad-1:rad+2] / np.float32(gdat.factusam)
-    print('x')
-    summgene(x)
     x = x.flatten()
     y = y.flatten()
     if gdat.boolspre:
