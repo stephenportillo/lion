@@ -19,7 +19,6 @@ import matplotlib.pyplot as plt
 import pickle, inspect
 
 import scipy.spatial
-import networkx
 
 import time
 import astropy.wcs
@@ -368,7 +367,10 @@ def associate(a, mags_a, b, mags_b, dr, dmag, confs_b = None, sigfs_b = None):
 
 
 def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntprefr=None, clib=None, sizeimag=None):
-        
+    
+    numbener = cntpback.shape[0]
+    numbtime = cntpback.shape[3]
+
     if gdat.boolspre:
         assert x.dtype == np.float32
         assert y.dtype == np.float32
@@ -390,9 +392,9 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
     
     if weig is None:
         if gdat.boolspre:
-            weig = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
+            weig = np.ones([numbener] + sizeimag +[numbtime], dtype=np.float32)
         else:
-            weig = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime])
+            weig = np.ones([numbener] + sizeimag +[numbtime])
     
     if gdat.diagmode:
         pass
@@ -425,15 +427,15 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
     chi2 = np.zeros((gdat.numbregiyaxi, gdat.numbregixaxi), dtype=np.float64)
     
     if gdat.boolspre:
-        cntpmodl = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
+        cntpmodl = np.ones([numbener] + sizeimag +[numbtime], dtype=np.float32)
     else: 
-        cntpmodl = np.ones([gdat.numbener] + sizeimag +[gdat.numbtime])
+        cntpmodl = np.ones([numbener] + sizeimag +[numbtime])
     
     if cntprefr is None:
         if gdat.boolspre:
-            cntprefr = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime], dtype=np.float32)
+            cntprefr = np.zeros([numbener] + sizeimag +[numbtime], dtype=np.float32)
         else:
-            cntprefr = np.zeros([gdat.numbener] + sizeimag +[gdat.numbtime])
+            cntprefr = np.zeros([numbener] + sizeimag +[numbtime])
     
     if clib is None:
         
@@ -470,11 +472,14 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 
                 if gdat.diagmode:
                     if not np.isfinite(cntpmodltemp).all():
-                        raise Exception('')
+                        print('Lion WARNING: cntpmodltemp was infinite!!!!')
+                        #raise Exception('')
                     if not np.isfinite(cntpmodlstmp2).all():
-                        raise Exception('')
+                        print('Lion WARNING: cntpmodltmp2 was infinite!!!!')
+                        #raise Exception('')
                     if not np.isfinite(cntpmodl).all():
-                        raise Exception('')
+                        print('Lion WARNING: cntpmodl was infinite!!!!')
+                        #raise Exception('')
 
                 if cntprefr is not None:
                     cntpdiff = cntprefr[i, :, :, t] - cntpmodl[i, :, :, t]
@@ -531,10 +536,6 @@ def eval_modl(gdat, x, y, f, cntpback, offsxpos=0, offsypos=0, weig=None, cntpre
                 chi2 += chi2temp
                 cntpmodl[i, :, :, t] = cntpmodltemp
                 
-    if gdat.diagmode:
-        if not np.isfinite(cntpmodl).all():
-            raise Exception('')
-
     if boolretrdoub:
         return cntpmodl, chi2
     else:
@@ -3709,6 +3710,8 @@ def samp_prio_momegalx(truermin_g, ngalx, slope=np.float32(4)):
             
 
 def retr_catlseed(rtag, pathdata, pathdatartag=None, boolgalx=False):
+
+    import networkx
     
     strgtimestmp = rtag[:15]
     
